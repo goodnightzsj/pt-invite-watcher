@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Annotated, Optional
-from urllib.parse import quote
+from pathlib import Path
+from typing import Annotated, Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from pt_invite_watcher.app_context import AppContext, build_context
@@ -18,17 +17,23 @@ from pt_invite_watcher.config import Settings, load_settings
 logger = logging.getLogger("pt_invite_watcher")
 
 app = FastAPI(title="PT Invite Watcher", version="0.1.0")
-templates = Jinja2Templates(directory="pt_invite_watcher/web/templates")
-app.mount("/static", StaticFiles(directory="pt_invite_watcher/web/static"), name="static")
 
 basic_security = HTTPBasic(auto_error=False)
 
+_DIST_DIR = Path(__file__).resolve().parent / "webui_dist"
+_ASSETS_DIR = _DIST_DIR / "assets"
 
-def _cfg_str(value: Optional[str]) -> str:
-    return (value or "").strip()
+# Serve Vite build assets. We intentionally don't require auth here; the SPA entry and APIs are protected.
+app.mount("/assets", StaticFiles(directory=_ASSETS_DIR.as_posix(), check_dir=False), name="assets")
 
 
-def _cfg_int(value: Optional[str], default: int, min_value: int, max_value: int) -> int:
+def _cfg_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _cfg_int(value: Any, default: int, min_value: int, max_value: int) -> int:
     if value is None or value == "":
         return default
     try:
@@ -38,7 +43,7 @@ def _cfg_int(value: Optional[str], default: int, min_value: int, max_value: int)
     return max(min_value, min(max_value, parsed))
 
 
-def _cfg_bool(value: object, default: bool) -> bool:
+def _cfg_bool(value: Any, default: bool) -> bool:
     if value is None or value == "":
         return default
     if isinstance(value, bool):
@@ -46,6 +51,10 @@ def _cfg_bool(value: object, default: bool) -> bool:
     if isinstance(value, int):
         return value != 0
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _safe_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 async def get_ctx() -> AppContext:
@@ -89,6 +98,7 @@ async def _startup() -> None:
                 logger.info("scan status: %s", status)
             except Exception:
                 logger.exception("scan cycle failed")
+
             interval = app.state.ctx.settings.scan.interval_seconds
             try:
                 cfg = await app.state.ctx.store.get_json("app_config", default={}) or {}
@@ -113,83 +123,31 @@ async def _shutdown() -> None:
 
 
 @app.get("/health")
-async def health() -> dict:
+async def health() -> Dict[str, Any]:
     return {"ok": True}
 
 
-@app.get("/", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
-async def index(request: Request, ctx: Annotated[AppContext, Depends(get_ctx)]) -> HTMLResponse:
+@app.get("/api/dashboard", dependencies=[Depends(require_auth)])
+async def api_dashboard(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     rows = await ctx.store.list_site_states()
     scan_status = await ctx.store.get_json("scan_status", default=None)
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "title": "站点状态",
-            "rows": rows,
-            "scan_status": scan_status,
-            "flash": request.query_params.get("flash"),
-        },
-    )
+    return {"rows": rows, "scan_status": scan_status}
 
 
-@app.post("/scan/run", dependencies=[Depends(require_auth)])
-async def scan_run(ctx: Annotated[AppContext, Depends(get_ctx)]) -> RedirectResponse:
+@app.post("/api/scan/run", dependencies=[Depends(require_auth)])
+async def api_scan_run(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     status = await ctx.scanner.run_once()
-    if status.get("ok"):
-        msg = f"scan ok: {status.get('site_count', 0)} sites"
-    else:
-        msg = f"scan failed: {status.get('error') or 'unknown error'}"
-    return RedirectResponse(url=f"/?flash={quote(msg)}", status_code=303)
+    return status
 
 
-@app.get("/notifications", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
-async def notifications(request: Request, ctx: Annotated[AppContext, Depends(get_ctx)]) -> HTMLResponse:
-    cfg = await ctx.store.get_json("notifications", default={})
-    telegram = cfg.get("telegram") or {}
-    wecom = cfg.get("wecom") or {}
-
-    telegram_view = {
-        "enabled": bool(telegram.get("enabled")),
-        "configured": bool(telegram.get("token") and telegram.get("chat_id")),
-    }
-    wecom_view = {
-        "enabled": bool(wecom.get("enabled")),
-        "configured": bool(wecom.get("corpid") and wecom.get("app_secret") and wecom.get("agent_id")),
-        "to_user": wecom.get("to_user") or "@all",
-        "to_party": wecom.get("to_party") or "",
-        "to_tag": wecom.get("to_tag") or "",
-    }
-
-    return templates.TemplateResponse(
-        request=request,
-        name="notifications.html",
-        context={
-            "title": "通知设置",
-            "telegram": telegram_view,
-            "wecom": wecom_view,
-            "flash": request.query_params.get("flash"),
-        },
-    )
-
-
-@app.get("/config", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
-async def config_page(request: Request, ctx: Annotated[AppContext, Depends(get_ctx)]) -> HTMLResponse:
+@app.get("/api/config", dependencies=[Depends(require_auth)])
+async def api_config_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     cfg = await ctx.store.get_json("app_config", default={})
-    if not isinstance(cfg, dict):
-        cfg = {}
-    mp_cfg = cfg.get("moviepilot") or {}
-    if not isinstance(mp_cfg, dict):
-        mp_cfg = {}
-    cookie_cfg = cfg.get("cookie") or {}
-    if not isinstance(cookie_cfg, dict):
-        cookie_cfg = {}
-    cc_cfg = cookie_cfg.get("cookiecloud") or {}
-    if not isinstance(cc_cfg, dict):
-        cc_cfg = {}
-    scan_cfg = cfg.get("scan") or {}
-    if not isinstance(scan_cfg, dict):
-        scan_cfg = {}
+    cfg = _safe_dict(cfg)
+    mp_cfg = _safe_dict(cfg.get("moviepilot"))
+    cookie_cfg = _safe_dict(cfg.get("cookie"))
+    cc_cfg = _safe_dict(cookie_cfg.get("cookiecloud"))
+    scan_cfg = _safe_dict(cfg.get("scan"))
 
     moviepilot = {
         "base_url": _cfg_str(mp_cfg.get("base_url")) or ctx.settings.moviepilot.base_url,
@@ -204,7 +162,7 @@ async def config_page(request: Request, ctx: Annotated[AppContext, Depends(get_c
             "uuid": _cfg_str(cc_cfg.get("uuid")) or ctx.settings.cookie.cookiecloud.uuid,
             "password_configured": bool(_cfg_str(cc_cfg.get("password")) or ctx.settings.cookie.cookiecloud.password),
             "refresh_interval_seconds": _cfg_int(
-                str(cc_cfg.get("refresh_interval_seconds")) if cc_cfg.get("refresh_interval_seconds") is not None else None,
+                cc_cfg.get("refresh_interval_seconds"),
                 ctx.settings.cookie.cookiecloud.refresh_interval_seconds,
                 30,
                 24 * 3600,
@@ -213,19 +171,19 @@ async def config_page(request: Request, ctx: Annotated[AppContext, Depends(get_c
     }
     scan = {
         "interval_seconds": _cfg_int(
-            str(scan_cfg.get("interval_seconds")) if scan_cfg.get("interval_seconds") is not None else None,
+            scan_cfg.get("interval_seconds"),
             ctx.settings.scan.interval_seconds,
             30,
             24 * 3600,
         ),
         "timeout_seconds": _cfg_int(
-            str(scan_cfg.get("timeout_seconds")) if scan_cfg.get("timeout_seconds") is not None else None,
+            scan_cfg.get("timeout_seconds"),
             ctx.settings.scan.timeout_seconds,
             5,
             180,
         ),
         "concurrency": _cfg_int(
-            str(scan_cfg.get("concurrency")) if scan_cfg.get("concurrency") is not None else None,
+            scan_cfg.get("concurrency"),
             ctx.settings.scan.concurrency,
             1,
             64,
@@ -234,48 +192,29 @@ async def config_page(request: Request, ctx: Annotated[AppContext, Depends(get_c
         "trust_env": _cfg_bool(scan_cfg.get("trust_env"), default=ctx.settings.scan.trust_env),
     }
 
-    return templates.TemplateResponse(
-        request=request,
-        name="config.html",
-        context={
-            "title": "服务配置",
-            "moviepilot": moviepilot,
-            "cookie": cookie,
-            "scan": scan,
-            "flash": request.query_params.get("flash"),
-        },
-    )
+    return {"moviepilot": moviepilot, "cookie": cookie, "scan": scan}
 
 
-@app.post("/config/save", dependencies=[Depends(require_auth)])
-async def config_save(
+@app.put("/api/config", dependencies=[Depends(require_auth)])
+async def api_config_put(
     ctx: Annotated[AppContext, Depends(get_ctx)],
-    moviepilot_base_url: Annotated[Optional[str], Form()] = None,
-    moviepilot_username: Annotated[Optional[str], Form()] = None,
-    moviepilot_password: Annotated[Optional[str], Form()] = None,
-    moviepilot_otp_password: Annotated[Optional[str], Form()] = None,
-    cookie_source: Annotated[Optional[str], Form()] = None,
-    cookiecloud_base_url: Annotated[Optional[str], Form()] = None,
-    cookiecloud_uuid: Annotated[Optional[str], Form()] = None,
-    cookiecloud_password: Annotated[Optional[str], Form()] = None,
-    cookiecloud_refresh_interval_seconds: Annotated[Optional[str], Form()] = None,
-    scan_interval_seconds: Annotated[Optional[str], Form()] = None,
-    scan_timeout_seconds: Annotated[Optional[str], Form()] = None,
-    scan_concurrency: Annotated[Optional[str], Form()] = None,
-    scan_user_agent: Annotated[Optional[str], Form()] = None,
-    scan_trust_env: Annotated[Optional[str], Form()] = None,
-) -> RedirectResponse:
+    payload: Dict[str, Any] = Body(default={}),
+) -> Dict[str, Any]:
     cfg = await ctx.store.get_json("app_config", default={}) or {}
-    if not isinstance(cfg, dict):
-        cfg = {}
+    cfg = _safe_dict(cfg)
 
-    mp = cfg.get("moviepilot")
-    if not isinstance(mp, dict):
-        mp = {}
-    mp_base = _cfg_str(moviepilot_base_url)
-    mp_user = _cfg_str(moviepilot_username)
-    mp_pass = _cfg_str(moviepilot_password)
-    mp_otp = _cfg_str(moviepilot_otp_password)
+    payload = _safe_dict(payload)
+
+    mp_in = _safe_dict(payload.get("moviepilot"))
+    cookie_in = _safe_dict(payload.get("cookie"))
+    cc_in = _safe_dict(cookie_in.get("cookiecloud"))
+    scan_in = _safe_dict(payload.get("scan"))
+
+    mp = _safe_dict(cfg.get("moviepilot"))
+    mp_base = _cfg_str(mp_in.get("base_url"))
+    mp_user = _cfg_str(mp_in.get("username"))
+    mp_pass = _cfg_str(mp_in.get("password"))
+    mp_otp = _cfg_str(mp_in.get("otp_password"))
     if mp_base:
         mp["base_url"] = mp_base
     if mp_user:
@@ -286,19 +225,15 @@ async def config_save(
         mp["otp_password"] = mp_otp
     cfg["moviepilot"] = mp
 
-    cookie = cfg.get("cookie")
-    if not isinstance(cookie, dict):
-        cookie = {}
-    src = _cfg_str(cookie_source).lower()
+    cookie = _safe_dict(cfg.get("cookie"))
+    src = _cfg_str(cookie_in.get("source")).lower()
     if src in {"auto", "cookiecloud", "moviepilot"}:
         cookie["source"] = src
 
-    cc = cookie.get("cookiecloud")
-    if not isinstance(cc, dict):
-        cc = {}
-    cc_base = _cfg_str(cookiecloud_base_url)
-    cc_uuid = _cfg_str(cookiecloud_uuid)
-    cc_pass = _cfg_str(cookiecloud_password)
+    cc = _safe_dict(cookie.get("cookiecloud"))
+    cc_base = _cfg_str(cc_in.get("base_url"))
+    cc_uuid = _cfg_str(cc_in.get("uuid"))
+    cc_pass = _cfg_str(cc_in.get("password"))
     if cc_base:
         cc["base_url"] = cc_base
     if cc_uuid:
@@ -306,84 +241,140 @@ async def config_save(
     if cc_pass:
         cc["password"] = cc_pass
     cc_refresh_default = int(cc.get("refresh_interval_seconds") or ctx.settings.cookie.cookiecloud.refresh_interval_seconds)
-    cc["refresh_interval_seconds"] = _cfg_int(cookiecloud_refresh_interval_seconds, cc_refresh_default, 30, 24 * 3600)
+    cc["refresh_interval_seconds"] = _cfg_int(cc_in.get("refresh_interval_seconds"), cc_refresh_default, 30, 24 * 3600)
     cookie["cookiecloud"] = cc
     cfg["cookie"] = cookie
 
-    scan = cfg.get("scan")
-    if not isinstance(scan, dict):
-        scan = {}
+    scan = _safe_dict(cfg.get("scan"))
     scan_interval_default = int(scan.get("interval_seconds") or ctx.settings.scan.interval_seconds)
     scan_timeout_default = int(scan.get("timeout_seconds") or ctx.settings.scan.timeout_seconds)
     scan_concurrency_default = int(scan.get("concurrency") or ctx.settings.scan.concurrency)
-    scan["interval_seconds"] = _cfg_int(scan_interval_seconds, scan_interval_default, 30, 24 * 3600)
-    scan["timeout_seconds"] = _cfg_int(scan_timeout_seconds, scan_timeout_default, 5, 180)
-    scan["concurrency"] = _cfg_int(scan_concurrency, scan_concurrency_default, 1, 64)
-    ua = (scan_user_agent or "").strip()
-    if ua != "":
-        scan["user_agent"] = ua
-    scan["trust_env"] = scan_trust_env == "1"
+    scan["interval_seconds"] = _cfg_int(scan_in.get("interval_seconds"), scan_interval_default, 30, 24 * 3600)
+    scan["timeout_seconds"] = _cfg_int(scan_in.get("timeout_seconds"), scan_timeout_default, 5, 180)
+    scan["concurrency"] = _cfg_int(scan_in.get("concurrency"), scan_concurrency_default, 1, 64)
+
+    if "user_agent" in scan_in:
+        ua_in = scan_in.get("user_agent")
+        ua = ("" if ua_in is None else str(ua_in)).strip()
+        if ua != "":
+            scan["user_agent"] = ua
+        elif "user_agent" in scan:
+            scan.pop("user_agent", None)
+
+    if "trust_env" in scan_in:
+        scan["trust_env"] = _cfg_bool(scan_in.get("trust_env"), default=ctx.settings.scan.trust_env)
+
     cfg["scan"] = scan
 
     await ctx.store.set_json("app_config", cfg)
-    return RedirectResponse(url="/config?flash=saved", status_code=303)
+    return {"ok": True}
 
 
-@app.post("/config/reset", dependencies=[Depends(require_auth)])
-async def config_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> RedirectResponse:
+@app.post("/api/config/reset", dependencies=[Depends(require_auth)])
+async def api_config_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     await ctx.store.set_json("app_config", {})
-    return RedirectResponse(url="/config?flash=reset", status_code=303)
+    return {"ok": True}
 
 
-@app.post("/notifications/save", dependencies=[Depends(require_auth)])
-async def notifications_save(
+@app.get("/api/notifications", dependencies=[Depends(require_auth)])
+async def api_notifications_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
+    cfg = await ctx.store.get_json("notifications", default={}) or {}
+    cfg = _safe_dict(cfg)
+    telegram = _safe_dict(cfg.get("telegram"))
+    wecom = _safe_dict(cfg.get("wecom"))
+
+    telegram_view = {
+        "enabled": bool(telegram.get("enabled")),
+        "configured": bool(telegram.get("token") and telegram.get("chat_id")),
+        "chat_id": _cfg_str(telegram.get("chat_id")),
+    }
+    wecom_view = {
+        "enabled": bool(wecom.get("enabled")),
+        "configured": bool(wecom.get("corpid") and wecom.get("app_secret") and wecom.get("agent_id")),
+        "corpid": _cfg_str(wecom.get("corpid")),
+        "agent_id": _cfg_str(wecom.get("agent_id")),
+        "to_user": _cfg_str(wecom.get("to_user")) or "@all",
+        "to_party": _cfg_str(wecom.get("to_party")),
+        "to_tag": _cfg_str(wecom.get("to_tag")),
+    }
+
+    return {"telegram": telegram_view, "wecom": wecom_view}
+
+
+@app.put("/api/notifications", dependencies=[Depends(require_auth)])
+async def api_notifications_put(
     ctx: Annotated[AppContext, Depends(get_ctx)],
-    telegram_enabled: Annotated[Optional[str], Form()] = None,
-    telegram_token: Annotated[Optional[str], Form()] = None,
-    telegram_chat_id: Annotated[Optional[str], Form()] = None,
-    wecom_enabled: Annotated[Optional[str], Form()] = None,
-    wecom_corpid: Annotated[Optional[str], Form()] = None,
-    wecom_app_secret: Annotated[Optional[str], Form()] = None,
-    wecom_agent_id: Annotated[Optional[str], Form()] = None,
-    wecom_to_user: Annotated[Optional[str], Form()] = None,
-    wecom_to_party: Annotated[Optional[str], Form()] = None,
-    wecom_to_tag: Annotated[Optional[str], Form()] = None,
-) -> RedirectResponse:
-    cfg = await ctx.store.get_json("notifications", default={})
-    telegram = cfg.get("telegram") or {}
-    wecom = cfg.get("wecom") or {}
+    payload: Dict[str, Any] = Body(default={}),
+) -> Dict[str, Any]:
+    cfg = await ctx.store.get_json("notifications", default={}) or {}
+    cfg = _safe_dict(cfg)
 
-    telegram["enabled"] = telegram_enabled == "1"
-    if telegram_token:
-        telegram["token"] = telegram_token.strip()
-    if telegram_chat_id:
-        telegram["chat_id"] = telegram_chat_id.strip()
+    payload = _safe_dict(payload)
+    tg_in = _safe_dict(payload.get("telegram"))
+    wc_in = _safe_dict(payload.get("wecom"))
 
-    wecom["enabled"] = wecom_enabled == "1"
-    if wecom_corpid:
-        wecom["corpid"] = wecom_corpid.strip()
-    if wecom_app_secret:
-        wecom["app_secret"] = wecom_app_secret.strip()
-    if wecom_agent_id:
-        wecom["agent_id"] = wecom_agent_id.strip()
-    if wecom_to_user is not None:
-        wecom["to_user"] = (wecom_to_user or "@all").strip()
-    if wecom_to_party is not None:
-        wecom["to_party"] = (wecom_to_party or "").strip()
-    if wecom_to_tag is not None:
-        wecom["to_tag"] = (wecom_to_tag or "").strip()
+    telegram = _safe_dict(cfg.get("telegram"))
+    wecom = _safe_dict(cfg.get("wecom"))
+
+    if "enabled" in tg_in:
+        telegram["enabled"] = bool(tg_in.get("enabled"))
+    token = _cfg_str(tg_in.get("token"))
+    if token:
+        telegram["token"] = token
+    chat_id = _cfg_str(tg_in.get("chat_id"))
+    if chat_id:
+        telegram["chat_id"] = chat_id
+
+    if "enabled" in wc_in:
+        wecom["enabled"] = bool(wc_in.get("enabled"))
+    corpid = _cfg_str(wc_in.get("corpid"))
+    if corpid:
+        wecom["corpid"] = corpid
+    app_secret = _cfg_str(wc_in.get("app_secret"))
+    if app_secret:
+        wecom["app_secret"] = app_secret
+    agent_id = _cfg_str(wc_in.get("agent_id"))
+    if agent_id:
+        wecom["agent_id"] = agent_id
+
+    if "to_user" in wc_in:
+        wecom["to_user"] = (_cfg_str(wc_in.get("to_user")) or "@all").strip()
+    if "to_party" in wc_in:
+        wecom["to_party"] = _cfg_str(wc_in.get("to_party"))
+    if "to_tag" in wc_in:
+        wecom["to_tag"] = _cfg_str(wc_in.get("to_tag"))
 
     await ctx.store.set_json("notifications", {"telegram": telegram, "wecom": wecom})
-    return RedirectResponse(url="/notifications?flash=saved", status_code=303)
+    return {"ok": True}
 
 
-@app.post("/notifications/test/telegram", dependencies=[Depends(require_auth)])
-async def notifications_test_telegram(ctx: Annotated[AppContext, Depends(get_ctx)]) -> RedirectResponse:
-    ok, msg = await ctx.notifier.test("telegram")
-    return RedirectResponse(url=f"/notifications?flash={'ok' if ok else 'fail'}%3A{msg}", status_code=303)
+@app.post("/api/notifications/test/{channel}", dependencies=[Depends(require_auth)])
+async def api_notifications_test(channel: str, ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
+    if channel not in {"telegram", "wecom"}:
+        raise HTTPException(status_code=404, detail="unknown channel")
+    ok, msg = await ctx.notifier.test(channel)
+    return {"ok": bool(ok), "message": str(msg or "")}
 
 
-@app.post("/notifications/test/wecom", dependencies=[Depends(require_auth)])
-async def notifications_test_wecom(ctx: Annotated[AppContext, Depends(get_ctx)]) -> RedirectResponse:
-    ok, msg = await ctx.notifier.test("wecom")
-    return RedirectResponse(url=f"/notifications?flash={'ok' if ok else 'fail'}%3A{msg}", status_code=303)
+def _spa_file_response() -> HTMLResponse:
+    index_path = _DIST_DIR / "index.html"
+    if not index_path.exists():
+        detail = (
+            "<h1>Web UI not built</h1>"
+            "<p>Run:</p>"
+            "<pre>npm --prefix webui install\nnpm --prefix webui run build</pre>"
+        )
+        return HTMLResponse(detail, status_code=503)
+    return HTMLResponse(index_path.read_text(encoding="utf-8"), status_code=200)
+
+
+@app.get("/", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
+async def spa_root() -> HTMLResponse:
+    return _spa_file_response()
+
+
+@app.get("/{path:path}", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
+async def spa_routes(path: str) -> HTMLResponse:
+    if path.startswith("api") or path.startswith("assets") or path in {"docs", "openapi.json", "redoc", "health"}:
+        raise HTTPException(status_code=404)
+    return _spa_file_response()

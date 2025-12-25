@@ -22,7 +22,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2) 配置环境变量（示例）
+2) 构建 Web UI（Vue + Tailwind）
+
+```bash
+npm --prefix webui install
+npm --prefix webui run build
+```
+
+3) 配置环境变量（示例）
 
 ```bash
 export MP_BASE_URL="http://moviepilot:3001"  # MoviePilot: ${MP_BASE_URL}/docs
@@ -49,7 +56,7 @@ export NO_PROXY="localhost,127.0.0.1,192.168.31.122"
 
 也可以使用 YAML 配置：复制 `config/config.example.yaml` 到 `config/config.yaml`，或设置 `PTIW_CONFIG` 指向你的配置文件。
 
-3) 运行
+4) 运行
 
 ```bash
 python3 -m pt_invite_watcher run

@@ -1,12 +1,15 @@
+.git
+.gitignore
 .DS_Store
+
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-.env
-.env.*
+.venv/
+venv/
 
 data/
 *.db
@@ -15,12 +18,6 @@ data/
 config/config.yaml
 config/*.local.yaml
 
-dist/
-build/
-*.egg-info/
-.venv/
-venv/
-
 webui/node_modules/
-webui/.vite/
 pt_invite_watcher/webui_dist/
+

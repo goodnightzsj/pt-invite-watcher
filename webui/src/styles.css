@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+@layer components {
+  .ui-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-200/60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-700 dark:focus:ring-slate-800/60;
+  }
+
+  .ui-select {
+    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm focus:border-slate-300 focus:ring-2 focus:ring-slate-200/60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-700 dark:focus:ring-slate-800/60;
+  }
+}

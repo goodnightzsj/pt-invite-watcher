@@ -44,12 +44,17 @@
 - **StateStore（状态存储）**：SQLite（独立于 MP），保存上次结果与通知水位，保证“只在变化时通知”
 - **Notifier（通知）**：Telegram Bot API + 企业微信应用 API
 - **Runner（调度器）**：定时循环（可配置间隔、并发数、超时、重试策略）
+- **Web UI（Vue3 + Tailwind）**：
+  - 完全替换 Jinja 模板，前端通过后端 JSON API 获取数据与保存配置
+  - 采用现代卡片风格，支持浅色/深色/跟随系统三态切换（localStorage 持久化）
+  - “自动刷新”仅用于刷新页面数据（轮询 API），不触发扫描；扫描仍由后台 `scan.interval_seconds` 定时执行，用户也可手动“立即扫描”
 
 ### 目录结构（拟）
 - `pt_invite_watcher/`：主包
   - `main.py`：入口（run/check-once）
   - `config.py`：配置读取与校验（YAML + env 覆盖）
   - `models.py`：状态/结果数据模型
+  - `app.py`：FastAPI 应用（SPA + JSON API + scheduler）
   - `providers/`
     - `moviepilot_api.py`：通过 MP API 读取站点
     - `cookiecloud.py`：从 CookieCloud 拉取并按域名过滤 cookie
@@ -61,10 +66,10 @@
   - `notify/`
     - `telegram.py`
     - `wecom.py`
-  - `web/`
-    - `app.py`：Web UI 与配置 API（通知配置）
+  - `webui_dist/`：前端构建产物（由 `webui/` build 生成；不手工编辑）
 - `config/`
   - `config.example.yaml`
+- `webui/`：Vue3 + Vite + Tailwind 前端工程（构建后输出到 `pt_invite_watcher/webui_dist/`）
 - `docker/`
   - `Dockerfile`
   - `docker-compose.example.yml`
@@ -138,6 +143,22 @@
 ### 站点特例（第一版）
 - M-Team（馒头）：默认不开放注册（直接按 `closed` 处理；后续若有更可靠规则再单独适配）
 
+### Web UI 与 API 设计（Vue 化）
+- 静态资源与路由：
+  - 后端提供 SPA：`GET /` 返回 `webui_dist/index.html`；`/assets/*` 提供静态资源
+  - 其余前端路由走 history 模式（后端 catch-all 返回 `index.html`），避免刷新 404
+  - 受 BasicAuth 保护（沿用现有 `web.basic_auth`）
+- JSON API（同域，供前端调用；均受 BasicAuth 保护）：
+  - `GET /api/dashboard`：站点列表 + 扫描摘要（用于“站点状态”页）
+  - `POST /api/scan/run`：立即扫描一次（返回 scan_status）
+  - `GET /api/config` / `PUT /api/config` / `POST /api/config/reset`：运行时配置（除 `db.path`、`web.host`、`web.port` 外）
+  - `GET /api/notifications` / `PUT /api/notifications`：通知配置（Telegram/企业微信应用）
+  - `POST /api/notifications/test/{channel}`：通知测试（`telegram|wecom`）
+- 前端交互：
+  - “自动刷新”：默认关闭；开启后每 N 分钟拉取一次 `GET /api/dashboard`（N 最大 24 小时，存 localStorage）
+  - 不与后台扫描间隔重复：后台扫描决定数据更新频率；自动刷新只是把已存储的新结果展示出来
+  - 站点行可展开/弹窗查看：可访问/注册/邀请的 note 与异常摘要（便于排障）
+
 ## Gate A：步骤拆分（小步可验收）
 
 ### Step 1：定义数据模型 + 最小输出
@@ -173,6 +194,13 @@
 ### Step 7：Docker 化与运行文档
 - 产出：Dockerfile、compose 示例、README（含与 MP/CookieCloud 同网络的部署示例）
 - 验证：`docker compose up -d` 可常驻，容器重启后仍能保持状态与不重复通知
+
+### Step 8：前端 Vue 化（完全替换）+ UI 美化
+- 产出：Vue3 + Tailwind 前端（站点状态/服务配置/通知设置），支持浅色/深色/跟随系统切换
+- 产出：后端 JSON API + 静态资源集成（SPA）
+- 验证：
+  - 本地：`npm --prefix webui install && npm --prefix webui run build && python -m pt_invite_watcher run`
+  - Docker：多阶段构建产物可用，`docker compose up -d` 后访问 `/` 正常
 
 ## 静态检查与自检命令（拟）
 - `python -m compileall .`
