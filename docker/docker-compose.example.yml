@@ -1,0 +1,27 @@
+version: "3.8"
+services:
+  pt-invite-watcher:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pt-invite-watcher
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MP_BASE_URL: "http://moviepilot:3001"
+      MP_USERNAME: "admin"
+      MP_PASSWORD: "CHANGE_ME"
+      COOKIE_SOURCE: "auto"
+      COOKIECLOUD_BASE_URL: "http://cookiecloud:8088"
+      COOKIECLOUD_UUID: "CHANGE_ME"
+      COOKIECLOUD_PASSWORD: "CHANGE_ME"
+      PTIW_DB_PATH: "/data/ptiw.db"
+      PTIW_SCAN_INTERVAL_SECONDS: "600"
+      PTIW_SCAN_TIMEOUT_SECONDS: "20"
+      PTIW_SCAN_CONCURRENCY: "8"
+      # Optional: protect Web UI with BasicAuth
+      # PTIW_WEB_AUTH_USERNAME: "admin"
+      # PTIW_WEB_AUTH_PASSWORD: "CHANGE_ME"
+    volumes:
+      - ../data:/data

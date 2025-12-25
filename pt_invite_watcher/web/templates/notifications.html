@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card">
+  <div style="font-weight: 700;">通知设置</div>
+  <div class="muted">敏感信息会存储在本服务的 SQLite 中；建议为 Web UI 配置 BasicAuth 或放到内网。</div>
+</div>
+
+<div class="card">
+  <form method="post" action="/notifications/save">
+    <div style="font-weight: 700; margin-bottom: 6px;">Telegram</div>
+    <label>
+      <input type="checkbox" name="telegram_enabled" value="1" {% if telegram.enabled %}checked{% endif %} />
+      启用 Telegram
+    </label>
+    <label>Bot Token（留空表示不修改）</label>
+    <input type="password" name="telegram_token" placeholder="{% if telegram.configured %}已配置{% else %}未配置{% endif %}" />
+    <label>Chat ID（留空表示不修改）</label>
+    <input type="text" name="telegram_chat_id" placeholder="{% if telegram.configured %}已配置{% else %}未配置{% endif %}" />
+
+    <div style="height: 12px;"></div>
+    <div style="font-weight: 700; margin-bottom: 6px;">企业微信（企业应用）</div>
+    <label>
+      <input type="checkbox" name="wecom_enabled" value="1" {% if wecom.enabled %}checked{% endif %} />
+      启用 企业微信
+    </label>
+    <label>CorpID（留空表示不修改）</label>
+    <input type="text" name="wecom_corpid" placeholder="{% if wecom.configured %}已配置{% else %}未配置{% endif %}" />
+    <label>AppSecret（留空表示不修改）</label>
+    <input type="password" name="wecom_app_secret" placeholder="{% if wecom.configured %}已配置{% else %}未配置{% endif %}" />
+    <label>AgentID（留空表示不修改）</label>
+    <input type="text" name="wecom_agent_id" placeholder="{% if wecom.configured %}已配置{% else %}未配置{% endif %}" />
+    <label>收件人 ToUser（默认 @all）</label>
+    <input type="text" name="wecom_to_user" value="{{ wecom.to_user or '@all' }}" />
+    <label>收件人 ToParty（可选）</label>
+    <input type="text" name="wecom_to_party" value="{{ wecom.to_party or '' }}" />
+    <label>收件人 ToTag（可选）</label>
+    <input type="text" name="wecom_to_tag" value="{{ wecom.to_tag or '' }}" />
+
+    <div style="height: 14px;"></div>
+    <button type="submit">保存</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="row">
+    <form method="post" action="/notifications/test/telegram">
+      <button type="submit">测试 Telegram</button>
+    </form>
+    <form method="post" action="/notifications/test/wecom">
+      <button type="submit">测试 企业微信</button>
+    </form>
+  </div>
+  <div class="muted">测试消息会发送到你配置的渠道。</div>
+</div>
+{% endblock %}
+

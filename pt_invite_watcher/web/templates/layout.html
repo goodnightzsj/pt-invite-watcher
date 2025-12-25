@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or "PT Invite Watcher" }}</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="row" style="justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 18px; font-weight: 700;">PT Invite Watcher</div>
+            <div class="muted">MoviePilot 站点来源 · NexusPHP 检测 · Web UI 配置通知</div>
+          </div>
+          <div class="row">
+            <a class="pill" href="/">站点状态</a>
+            <a class="pill" href="/config">服务配置</a>
+            <a class="pill" href="/notifications">通知设置</a>
+            <a class="pill" href="/docs">API Docs</a>
+          </div>
+        </div>
+      </div>
+      {% if flash %}
+      <div class="card">
+        <div>{{ flash }}</div>
+      </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </body>
+</html>

@@ -1,0 +1,89 @@
+{% extends "layout.html" %}
+{% block content %}
+{% if scan_status %}
+<div class="card">
+  <div style="font-weight: 700;">扫描状态</div>
+  <div class="muted">最后运行：{{ scan_status.last_run_at or "-" }} · 站点数：{{ scan_status.site_count or 0 }}</div>
+  {% if not scan_status.ok %}
+    <div class="danger" style="margin-top: 8px;">失败：{{ scan_status.error }}</div>
+    <div class="muted" style="margin-top: 6px;">请检查 `MP_BASE_URL/MP_USERNAME/MP_PASSWORD` 是否已正确配置，且 MoviePilot 的站点列表已启用。</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="row" style="justify-content: space-between; align-items: center;">
+    <div>
+      <div style="font-weight: 700;">站点状态</div>
+      <div class="muted">只在状态变化时通知；unknown 不触发通知（默认）。</div>
+    </div>
+    <form method="post" action="/scan/run">
+      <button type="submit">立即扫描</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>站点</th>
+        <th>域名</th>
+        <th>引擎</th>
+        <th>可访问</th>
+        <th>开放注册</th>
+        <th>可用邀请</th>
+        <th>最后检查</th>
+        <th>最后变更</th>
+        <th>异常</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if not rows %}
+      <tr>
+        <td colspan="9" class="muted">暂无数据：请先确认 MoviePilot 已配置站点并点击“立即扫描”。</td>
+      </tr>
+      {% endif %}
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.name or "-" }}</td>
+        <td><a href="{{ row.url }}" target="_blank" rel="noreferrer">{{ row.domain }}</a></td>
+        <td><span class="pill unknown">{{ row.engine or "unknown" }}</span></td>
+        <td>
+          {% set rs = row.reachability_state or "unknown" %}
+          <span class="pill {{ rs }}">
+            {% if rs == "up" %}正常{% elif rs == "down" %}异常{% else %}未知{% endif %}
+          </span>
+          {% if row.reachability_note %}
+            <span class="muted">({{ row.reachability_note }})</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="pill {{ row.registration_state }}">{{ row.registration_state }}</span>
+          {% if row.registration_note %}
+            <span class="muted">({{ row.registration_note }})</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="pill {{ row.invites_state }}">{{ row.invites_state }}</span>
+          {% if row.invites_state == "open" and row.invites_display %}
+            <span class="muted">{{ row.invites_display }}</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ row.last_checked_at }}</td>
+        <td class="muted">{{ row.last_changed_at or "-" }}</td>
+        <td>
+          {% if row.errors %}
+            {% for err in row.errors %}
+              <div class="danger">{{ err }}</div>
+            {% endfor %}
+          {% else %}
+            <span class="muted">-</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

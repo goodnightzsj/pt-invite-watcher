@@ -1,0 +1,69 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card">
+  <div style="font-weight: 700;">服务配置</div>
+  <div class="muted">
+    除 `db.path`、`web.host`、`web.port` 外，其余配置可在此保存到本服务的 SQLite，并在下一轮扫描生效。
+    敏感信息会存储在本服务的 SQLite 中；建议为 Web UI 配置 BasicAuth 或放到内网。
+  </div>
+</div>
+
+<div class="card">
+  <form method="post" action="/config/save">
+    <div style="font-weight: 700; margin-bottom: 6px;">MoviePilot</div>
+    <label>Base URL（如 http://192.168.31.122:3010，留空不修改）</label>
+    <input type="text" name="moviepilot_base_url" value="{{ moviepilot.base_url or '' }}" />
+    <label>Username（留空不修改）</label>
+    <input type="text" name="moviepilot_username" value="{{ moviepilot.username or '' }}" />
+    <label>Password（留空不修改）</label>
+    <input type="password" name="moviepilot_password" placeholder="{% if moviepilot.password_configured %}已配置{% else %}未配置{% endif %}" />
+    <label>OTP Password（可选，留空不修改）</label>
+    <input type="password" name="moviepilot_otp_password" placeholder="{% if moviepilot.otp_configured %}已配置{% else %}未配置{% endif %}" />
+
+    <div style="height: 14px;"></div>
+    <div style="font-weight: 700; margin-bottom: 6px;">Cookie</div>
+    <label>Cookie Source</label>
+    <select name="cookie_source" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #263154; background: #0b1020; color: #e7e9ee;">
+      <option value="auto" {% if cookie.source == 'auto' %}selected{% endif %}>auto（优先 CookieCloud，失败回退 MoviePilot）</option>
+      <option value="cookiecloud" {% if cookie.source == 'cookiecloud' %}selected{% endif %}>cookiecloud</option>
+      <option value="moviepilot" {% if cookie.source == 'moviepilot' %}selected{% endif %}>moviepilot</option>
+    </select>
+
+    <div style="height: 10px;"></div>
+    <div class="muted">CookieCloud（可选，仅在 source=auto/cookiecloud 时使用）</div>
+    <label>Base URL（留空不修改）</label>
+    <input type="text" name="cookiecloud_base_url" value="{{ cookie.cookiecloud.base_url or '' }}" />
+    <label>UUID（留空不修改）</label>
+    <input type="text" name="cookiecloud_uuid" value="{{ cookie.cookiecloud.uuid or '' }}" />
+    <label>Password（留空不修改）</label>
+    <input type="password" name="cookiecloud_password" placeholder="{% if cookie.cookiecloud.password_configured %}已配置{% else %}未配置{% endif %}" />
+    <label>Refresh Interval Seconds（留空不修改）</label>
+    <input type="text" name="cookiecloud_refresh_interval_seconds" value="{{ cookie.cookiecloud.refresh_interval_seconds or 300 }}" />
+
+    <div style="height: 14px;"></div>
+    <div style="font-weight: 700; margin-bottom: 6px;">Scan</div>
+    <label>Interval Seconds（保存后下一轮生效）</label>
+    <input type="text" name="scan_interval_seconds" value="{{ scan.interval_seconds or 600 }}" />
+    <label>Timeout Seconds</label>
+    <input type="text" name="scan_timeout_seconds" value="{{ scan.timeout_seconds or 20 }}" />
+    <label>Concurrency</label>
+    <input type="text" name="scan_concurrency" value="{{ scan.concurrency or 8 }}" />
+    <label>User-Agent（留空表示使用默认/站点自带 UA）</label>
+    <input type="text" name="scan_user_agent" value="{{ scan.user_agent or '' }}" />
+    <label>
+      <input type="checkbox" name="scan_trust_env" value="1" {% if scan.trust_env %}checked{% endif %} />
+      使用系统代理环境变量（HTTP_PROXY/HTTPS_PROXY/ALL_PROXY）
+    </label>
+
+    <div style="height: 14px;"></div>
+    <button type="submit">保存</button>
+  </form>
+</div>
+
+<div class="card">
+  <form method="post" action="/config/reset" onsubmit="return confirm('确认清空 Web UI 配置并回退到 config.yaml/env 吗？');">
+    <button type="submit">重置为 config.yaml/env</button>
+  </form>
+</div>
+{% endblock %}
+

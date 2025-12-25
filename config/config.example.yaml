@@ -1,0 +1,35 @@
+# Non-secret config example (secrets 建议用环境变量注入)
+
+moviepilot:
+  base_url: "http://moviepilot:3001"  # Swagger: ${base_url}/docs
+  username: "admin"
+  password: "CHANGE_ME"  # 推荐用 MP_PASSWORD env 注入
+  otp_password: ""  # 可选
+
+cookie:
+  source: "auto"  # auto|cookiecloud|moviepilot
+  cookiecloud:
+    base_url: "http://cookiecloud:8088"  # 支持 API_ROOT 前缀（例如 http://host:8088/cookie）
+    uuid: "CHANGE_ME"
+    password: "CHANGE_ME"  # 推荐用 COOKIECLOUD_PASSWORD env 注入
+    refresh_interval_seconds: 300
+
+scan:
+  interval_seconds: 600
+  timeout_seconds: 20
+  concurrency: 8
+  user_agent: ""
+  # 是否使用系统代理环境变量（ALL_PROXY/HTTP_PROXY/HTTPS_PROXY）
+  # - 如果你本机开了代理且部分站点无法通过代理访问，建议设为 false
+  # - 若你需要通过代理访问站点，设为 true
+  trust_env: false
+
+db:
+  path: "./data/ptiw.db"
+
+web:
+  host: "0.0.0.0"
+  port: 8080
+  basic_auth:
+    username: ""
+    password: ""
