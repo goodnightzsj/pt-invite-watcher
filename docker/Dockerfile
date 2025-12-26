@@ -24,7 +24,6 @@ COPY pt_invite_watcher /app/pt_invite_watcher
 COPY --from=webui /app/pt_invite_watcher/webui_dist /app/pt_invite_watcher/webui_dist
 COPY config /app/config
 COPY README.md /app/README.md
-COPY Plan.md /app/Plan.md
 
 EXPOSE 8080
 
