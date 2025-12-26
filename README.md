@@ -66,6 +66,85 @@ python3 -m pt_invite_watcher run
 
 ## Docker
 
+### 方式 A：docker run（拉取镜像直接运行）
+
+示例（将宿主机 `8003` 映射到容器 `8080`，并持久化 SQLite 到本地 `./data`）：
+
+```bash
+mkdir -p data
+
+docker run -d \
+  --name pt-invite-watcher \
+  --restart always \
+  -p 8003:8080 \
+  -v "$(pwd)/data:/data" \
+  -e PTIW_DB_PATH="/data/ptiw.db" \
+  helloworldz1024/pt-invite-watcher:latest
+```
+
+Web UI：`http://<host>:8003`
+
+如需在启动时直接配置 MoviePilot / CookieCloud（也可启动后在 Web UI 中配置并保存到 SQLite），追加环境变量即可：
+
+```bash
+docker run -d \
+  --name pt-invite-watcher \
+  --restart always \
+  -p 8003:8080 \
+  -v "$(pwd)/data:/data" \
+  -e PTIW_DB_PATH="/data/ptiw.db" \
+  -e MP_BASE_URL="http://moviepilot:3001" \
+  -e MP_USERNAME="admin" \
+  -e MP_PASSWORD="CHANGE_ME" \
+  -e COOKIE_SOURCE="auto" \
+  -e COOKIECLOUD_BASE_URL="http://cookiecloud:8088" \
+  -e COOKIECLOUD_UUID="CHANGE_ME" \
+  -e COOKIECLOUD_PASSWORD="CHANGE_ME" \
+  helloworldz1024/pt-invite-watcher:latest
+```
+
+### 方式 B：docker compose
+
+#### 直接拉取镜像运行
+
+在任意目录创建 `docker-compose.yml`：
+
+```yaml
+services:
+  pt-invite-watcher:
+    image: helloworldz1024/pt-invite-watcher:latest
+    container_name: pt-invite-watcher
+    restart: unless-stopped
+    ports:
+      - "8003:8080"
+    environment:
+      PTIW_DB_PATH: "/data/ptiw.db"
+      # 可选：启动时直接配置 MP / CookieCloud（也可启动后在 Web UI 中配置并保存到 SQLite）
+      # MP_BASE_URL: "http://moviepilot:3001"
+      # MP_USERNAME: "admin"
+      # MP_PASSWORD: "CHANGE_ME"
+      # COOKIE_SOURCE: "auto"
+      # COOKIECLOUD_BASE_URL: "http://cookiecloud:8088"
+      # COOKIECLOUD_UUID: "CHANGE_ME"
+      # COOKIECLOUD_PASSWORD: "CHANGE_ME"
+      # 可选：保护 Web UI（BasicAuth）
+      # PTIW_WEB_AUTH_USERNAME: "admin"
+      # PTIW_WEB_AUTH_PASSWORD: "CHANGE_ME"
+    volumes:
+      - ./data:/data
+```
+
+启动：
+
+```bash
+mkdir -p data
+docker compose up -d
+```
+
+Web UI：`http://<host>:8003`
+
+#### 从源码构建运行
+
 参考 `docker/docker-compose.example.yml`：
 
 ```bash
