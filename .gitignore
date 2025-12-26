@@ -24,3 +24,5 @@ venv/
 webui/node_modules/
 webui/.vite/
 pt_invite_watcher/webui_dist/
+
+Plan.md

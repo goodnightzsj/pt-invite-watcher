@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import aiosqlite
+from urllib.parse import parse_qs, urlparse
 
-from pt_invite_watcher.models import SiteCheckResult, to_jsonable
+from pt_invite_watcher.models import Site, SiteCheckResult, to_jsonable
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class SqliteStore:
 
         await self._ensure_default_notifications()
         await self._ensure_default_app_config()
+        await self._ensure_default_sites()
 
     async def close(self) -> None:
         if self._conn:
@@ -98,6 +100,12 @@ class SqliteStore:
         if existing is not None:
             return
         await self.set_json("app_config", {})
+
+    async def _ensure_default_sites(self) -> None:
+        existing = await self.get_json("sites", default=None)
+        if existing is not None:
+            return
+        await self.set_json("sites", {"version": 1, "entries": {}})
 
     async def get_site_state(self, domain: str) -> Optional[StoredSiteState]:
         conn = self._require_conn()
@@ -197,7 +205,11 @@ class SqliteStore:
                         item["reachability_note"] = reach_reason or "down"
                     errors.append(f"站点不可访问：{item['reachability_note']}")
                 elif reach_status is not None:
-                    item["reachability_note"] = f"HTTP {reach_status}"
+                    try:
+                        status_value = int(reach_status)
+                    except Exception:
+                        status_value = None
+                    item["reachability_note"] = "" if status_value == 200 else f"HTTP {reach_status}"
                 else:
                     item["reachability_note"] = ""
 
@@ -253,6 +265,185 @@ class SqliteStore:
             items.append(item)
 
         return items
+
+    async def get_reachability_states(self, domains: list[str]) -> dict[str, str]:
+        conn = self._require_conn()
+        targets = [str(d or "").strip().lower() for d in (domains or []) if str(d or "").strip()]
+        if not targets:
+            return {}
+
+        placeholders = ",".join(["?"] * len(targets))
+        cur = await conn.execute(
+            f"""
+            SELECT domain, last_evidence
+            FROM site_state
+            WHERE domain IN ({placeholders})
+            """,
+            tuple(targets),
+        )
+        rows = await cur.fetchall()
+
+        states: dict[str, str] = {}
+        for r in rows:
+            domain = str(r["domain"] or "").strip().lower()
+            if not domain:
+                continue
+            state = "unknown"
+            try:
+                payload = json.loads(r["last_evidence"] or "{}")
+                reach = payload.get("reachability") if isinstance(payload, dict) else None
+                if isinstance(reach, dict):
+                    state = str(reach.get("state") or "unknown")
+            except Exception:
+                state = "unknown"
+            states[domain] = state
+
+        return states
+
+    async def get_sites_extras(self, domains: list[str]) -> dict[str, dict[str, Any]]:
+        conn = self._require_conn()
+        targets = [str(d or "").strip().lower() for d in (domains or []) if str(d or "").strip()]
+        if not targets:
+            return {}
+
+        placeholders = ",".join(["?"] * len(targets))
+        cur = await conn.execute(
+            f"""
+            SELECT domain, last_evidence
+            FROM site_state
+            WHERE domain IN ({placeholders})
+            """,
+            tuple(targets),
+        )
+        rows = await cur.fetchall()
+
+        def _extract_invite_uid(url: str) -> Optional[str]:
+            raw = str(url or "").strip()
+            if not raw:
+                return None
+            try:
+                p = urlparse(raw)
+                q = parse_qs(p.query or "")
+                value = (q.get("id") or [None])[0]
+                if value is None:
+                    return None
+                s = str(value).strip()
+                return s if s.isdigit() else None
+            except Exception:
+                return None
+
+        extras: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            domain = str(r["domain"] or "").strip().lower()
+            if not domain:
+                continue
+            reachability_state = "unknown"
+            invite_uid: Optional[str] = None
+            try:
+                payload = json.loads(r["last_evidence"] or "{}")
+                reach = payload.get("reachability") if isinstance(payload, dict) else None
+                if isinstance(reach, dict):
+                    reachability_state = str(reach.get("state") or "unknown")
+
+                inv = payload.get("invites") if isinstance(payload, dict) else None
+                if isinstance(inv, dict):
+                    ev = inv.get("evidence")
+                    if isinstance(ev, dict):
+                        invite_uid = _extract_invite_uid(str(ev.get("url") or ""))
+            except Exception:
+                reachability_state = "unknown"
+                invite_uid = None
+            extras[domain] = {"reachability_state": reachability_state, "invite_uid": invite_uid}
+
+        return extras
+
+    async def load_sites_snapshot(self) -> tuple[Optional[datetime], list[Site]]:
+        conn = self._require_conn()
+        cur = await conn.execute(
+            """
+            SELECT domain, name, url, last_checked_at, last_evidence
+            FROM site_state
+            ORDER BY domain
+            """
+        )
+        rows = await cur.fetchall()
+
+        latest: Optional[datetime] = None
+        sites: list[Site] = []
+
+        def _safe_str(value: Any) -> str:
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _safe_int(value: Any) -> Optional[int]:
+            if value is None or value == "":
+                return None
+            try:
+                return int(value)
+            except Exception:
+                return None
+
+        def _parse_dt(value: Any) -> Optional[datetime]:
+            s = _safe_str(value)
+            if not s:
+                return None
+            try:
+                dt = datetime.fromisoformat(s)
+            except Exception:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+
+        for r in rows:
+            domain = _safe_str(r["domain"]).lower()
+            url = _safe_str(r["url"])
+            if not domain or not url:
+                continue
+            name = _safe_str(r["name"]) or domain
+
+            checked_at = _parse_dt(r["last_checked_at"])
+            if checked_at and (latest is None or checked_at > latest):
+                latest = checked_at
+
+            ua = None
+            cookie = None
+            is_active = True
+            site_id: Optional[int] = 0
+            try:
+                payload = json.loads(r["last_evidence"] or "{}")
+                if isinstance(payload, dict):
+                    site_payload = payload.get("site")
+                    if isinstance(site_payload, dict):
+                        ua = _safe_str(site_payload.get("ua")) or None
+                        cookie = _safe_str(site_payload.get("cookie")) or None
+                        is_active = bool(site_payload.get("is_active", True))
+                        parsed_id = _safe_int(site_payload.get("id"))
+                        if parsed_id is not None:
+                            site_id = parsed_id
+            except Exception:
+                pass
+
+            sites.append(
+                Site(
+                    id=site_id,
+                    name=name,
+                    domain=domain,
+                    url=url,
+                    ua=ua,
+                    cookie=cookie,
+                    cookie_override=None,
+                    authorization=None,
+                    did=None,
+                    is_active=is_active,
+                    template=None,
+                    registration_path=None,
+                    invite_path=None,
+                )
+            )
+
+        return latest, sites
 
     async def get_json(self, key: str, default: Any) -> Any:
         conn = self._require_conn()

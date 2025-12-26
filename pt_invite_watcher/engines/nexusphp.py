@@ -326,7 +326,9 @@ class NexusPhpDetector:
         last_http_err: Optional[httpx.Response] = None
         last_http_used: int = 1
         last_unknown: Optional[AspectResult] = None
-        for path in ("signup.php",):
+        raw_path = (site.registration_path or "").strip()
+        paths = [raw_path] if raw_path else ["signup.php"]
+        for path in paths:
             url = _join(site.url, path)
             resp, err, used = await _get_with_retry(client, url, headers={"User-Agent": ua})
             if err:
@@ -455,6 +457,21 @@ class NexusPhpDetector:
         quota_total: Optional[int] = None
         if quota_perm is not None:
             quota_total = quota_perm + (quota_temp or 0)
+            if quota_perm == 0 and (quota_temp or 0) == 0 and quota_matched:
+                user_id = _extract_user_id_from_html(home_resp.text)
+                evidence_url = _join(site.url, f"invite.php?id={user_id}") if user_id else str(home_resp.url)
+                return AspectResult(
+                    state="closed",
+                    available=0,
+                    permanent=quota_perm,
+                    temporary=quota_temp or 0,
+                    evidence=Evidence(
+                        url=evidence_url,
+                        http_status=home_resp.status_code,
+                        reason="invite_quota_home_zero",
+                        matched=quota_matched,
+                    ),
+                )
         invite_url = _extract_invite_url_from_html(home_resp.text, site.url)
         if not invite_url:
             user_id = _extract_user_id_from_html(home_resp.text)
@@ -462,7 +479,9 @@ class NexusPhpDetector:
                 invite_url = _join(site.url, f"invite.php?id={user_id}")
 
         # Some sites use /invite without .php (e.g. M-Team); keep a small fallback list.
-        invite_candidates = [u for u in [invite_url, _join(site.url, "invite.php"), _join(site.url, "invite")] if u]
+        preferred_invite = (site.invite_path or "").strip()
+        preferred_invite_url = _join(site.url, preferred_invite) if preferred_invite else None
+        invite_candidates = [u for u in [preferred_invite_url, invite_url, _join(site.url, "invite.php"), _join(site.url, "invite")] if u]
         invite_resp: Optional[httpx.Response] = None
         last_err: Optional[Exception] = None
         last_err_url: Optional[str] = None

@@ -16,8 +16,14 @@ class Site:
     domain: str
     url: str
     ua: Optional[str] = None
-    cookie: Optional[str] = None
+    cookie: Optional[str] = None  # cookie from MoviePilot site config (fallback only)
+    cookie_override: Optional[str] = None  # user-provided cookie override (highest priority)
+    authorization: Optional[str] = None  # site-specific Authorization header (e.g. M-Team)
+    did: Optional[str] = None  # site-specific API key header "did" (e.g. M-Team)
     is_active: bool = True
+    template: Optional[str] = None  # "nexusphp" | "custom" | "mteam" | None
+    registration_path: Optional[str] = None  # relative path like "signup.php" or "signup"
+    invite_path: Optional[str] = None  # relative path like "invite.php?id=1" or "invite"
 
 
 @dataclass(frozen=True)

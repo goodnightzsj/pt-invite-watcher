@@ -75,6 +75,22 @@ docker compose -f docker/docker-compose.example.yml up -d --build
 
 Web UI：`http://<host>:8080`
 
+## 自动构建并推送到 DockerHub（GitHub Actions）
+
+本项目已提供 GitHub Actions workflow：`.github/workflows/docker-publish.yml`。
+
+1) 在 DockerHub 创建 Access Token（建议只给 push 权限）
+
+2) 在 GitHub 仓库 Settings → Secrets and variables → Actions 添加 Secrets：
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+3) push 到 `main` 分支后，会自动构建并推送镜像（基于 `docker/Dockerfile`）：
+
+- `${DOCKERHUB_USERNAME}/pt-invite-watcher:latest`
+- `${DOCKERHUB_USERNAME}/pt-invite-watcher:${GITHUB_SHA}`
+
 ## 免责声明
 
 本项目仅用于“状态监控与通知”，不包含任何绕过验证/突破安全机制/获取邀请码等功能。

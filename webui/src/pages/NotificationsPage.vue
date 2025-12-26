@@ -21,7 +21,7 @@ const model = reactive<Model>({
   wecom: { enabled: false, corpid: "", app_secret: "", agent_id: "", to_user: "@all", to_party: "", to_tag: "" },
 });
 
-async function load() {
+async function load(opts: { toast?: boolean } = {}) {
   loading.value = true;
   try {
     const data = await api.notificationsGet();
@@ -37,6 +37,7 @@ async function load() {
     model.wecom.to_user = data.wecom.to_user || "@all";
     model.wecom.to_party = data.wecom.to_party || "";
     model.wecom.to_tag = data.wecom.to_tag || "";
+    if (opts.toast) showToast("已重新加载", "success", 1800);
   } catch (e: any) {
     showToast(String(e?.message || e || "加载失败"), "error");
   } finally {
@@ -44,9 +45,16 @@ async function load() {
   }
 }
 
+async function reload() {
+  if (loading.value) return;
+  showToast("正在重新加载…", "info", 1600);
+  await load({ toast: true });
+}
+
 async function save() {
   saving.value = true;
   try {
+    showToast("正在保存…", "info", 1600);
     const payload: any = {
       telegram: {
         enabled: model.telegram.enabled,
@@ -77,6 +85,7 @@ async function save() {
 async function test(channel: "telegram" | "wecom") {
   testing.value = channel;
   try {
+    showToast(`正在测试：${channel}`, "info", 1600);
     const res = await api.notificationsTest(channel);
     showToast(res.ok ? `测试成功：${res.message || "ok"}` : `测试失败：${res.message || "fail"}`, res.ok ? "success" : "error", 3500);
   } catch (e: any) {
@@ -101,16 +110,16 @@ onMounted(() => load());
           <button
             class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
             :disabled="loading"
-            @click="load"
+            @click="reload"
           >
-            {{ loading ? "加载中…" : "重新加载" }}
+            重新加载
           </button>
           <button
             class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
             :disabled="saving"
             @click="save"
           >
-            {{ saving ? "保存中…" : "保存" }}
+            保存
           </button>
         </div>
       </div>

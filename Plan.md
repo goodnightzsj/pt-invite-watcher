@@ -202,6 +202,63 @@
   - 本地：`npm --prefix webui install && npm --prefix webui run build && python -m pt_invite_watcher run`
   - Docker：多阶段构建产物可用，`docker compose up -d` 后访问 `/` 正常
 
+### Step 9：站点列表缓存 + 过期策略（MoviePilot）
+- 产出：
+  - 将最近一次成功从 MoviePilot 拉取的站点列表缓存到本服务 SQLite（KV），记录 `fetched_at`
+  - 扫描与“站点管理”接口在 MoviePilot 拉取失败时：
+    - 若缓存未过期（默认 24h，可在服务配置中调整），使用缓存继续工作，并在 `scan_status`/返回值中标记 `warning`
+    - 若缓存已过期或不存在，按原逻辑只使用手动站点（无站点则报错）
+  - 便于排障：`scan_status` 增加 cache 相关字段（source/age/expired）
+- 验证：
+  - 正常拉取一次 MoviePilot 更新缓存
+  - 停掉 MoviePilot（或改 base_url）后手动扫描：仍能扫描到 MP 站点，并提示“使用缓存”
+  - 将缓存 TTL 设置为极短并等待过期后再停掉 MoviePilot：不再使用缓存（仅手动站点）
+
+### Step 10：依赖连接探测 + 失败退避（MoviePilot / CookieCloud）
+- 目标：当 MP/CookieCloud 连接失败时，避免每轮扫描都重复连接超时；优先用缓存继续工作，并按固定间隔重试恢复。
+- 产出：
+  - 服务启动时探测一次 MP/CookieCloud 连接可用性，并把结果存入本服务 SQLite（KV，包含 `ok/checked_at/error`）
+  - 扫描/站点管理接口在检测到 MP/CookieCloud 处于失败状态且未到重试时间前：
+    - **不再主动发起连接请求**
+    - 站点列表使用缓存（MP 站点缓存 / 本地扫描快照 / 手动站点）
+    - Cookie 使用缓存（站点 cookie 字段 / 本地扫描快照中的 cookie / 手动 cookie）
+  - 当到达重试间隔后（默认 1h），再尝试连接 MP/CookieCloud；成功则更新缓存与状态
+  - 重试间隔可在 Web UI 配置（可选项与“自动刷新”一致）
+- 验证：
+  - 断开 MP/CookieCloud 后，扫描不再出现每轮大量连接超时日志，且仍可用缓存继续扫描
+  - 恢复 MP/CookieCloud 后，等待重试间隔或手动触发探测，能自动恢复到实时数据/实时 cookie
+  - Web UI 可配置重试间隔并生效
+
+### Step 11：排序/探测优化 + 通知展示一致性
+- 目标：优化站点列表排序、更少的无意义探测请求，并让通知里的“邀请”展示与 UI 保持一致（永久(临时)）。
+- 产出：
+  - 站点状态列表排序：在“可访问=正常”前提下，`可用邀请=open` 的权重高于 `开放注册=open`
+  - NexusPHP 邀请检测优化：若首页解析到 `邀请[发送]` 的 **永久=0 且 临时=0**，则不再请求邀请页，直接判定 `closed`
+  - 通知模板：详情行 `邀请：...` 展示为 `永久(临时)`（如 `12(0)`），而不是仅显示总数
+- 验证：
+  - 构造几条不同组合（正常/异常、注册 open/closed、邀请 open/closed）的站点，确认排序符合期望
+  - 对邀请名额为 `0(0)` 的站点，日志中不再出现邀请页请求，且结果为 `closed`
+  - 触发一次邀请状态变更通知，确认“邀请”行显示为 `永久(临时)`
+
+### Step 12：站点管理展示优化（排序 + 路径显示）
+- 目标：站点管理列表更易读，并把“可访问异常”的站点放到列表底部。
+- 产出：
+  - 站点管理列表排序：`可访问=异常`（reachability=down）的站点置于底部，其余保持原有排序规则
+  - 站点管理列表“注册页/邀请页”列：不再只显示 `Link`，改为显示 URL 中域名后的 `path`（包含 query）
+  - 邀请页显示规则：除 m-team 外统一显示为 `invite.php?id=xxx`（作为路径展示格式）
+- 验证：
+  - 任意一次扫描后，站点管理页能将可访问异常站点排序到底部
+  - 注册页/邀请页列显示为路径（可点击），且非 m-team 的邀请页显示为 `invite.php?id=xxx`
+
+### Step 13：站点管理增强（异常标签 + 邀请页 UID）
+- 目标：让站点管理列表更直观，并展示实际可用的邀请页路径（带 UID）。
+- 产出：
+  - 站点管理：对 `可访问=异常(down)` 的站点在列表行上展示「异常」标签
+  - 站点管理：非 m-team 站点的邀请页路径展示为 `invite.php?id=<实际uid>`（uid 从最近一次扫描结果解析；若无扫描数据则回退到占位）
+- 验证：
+  - 任意一次扫描后，站点管理列表异常站点行能看到「异常」标签
+  - 已成功登录扫描的 NexusPHP 站点，邀请页列展示 `invite.php?id=<数字>`，与该账号实际 UID 一致
+
 ## 静态检查与自检命令（拟）
 - `python -m compileall .`
 - `python -m pt_invite_watcher check-once --domain <domain>`

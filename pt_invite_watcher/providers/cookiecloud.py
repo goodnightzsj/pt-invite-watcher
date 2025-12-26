@@ -72,13 +72,18 @@ class CookieManager:
         cookie_source: str,
         cookiecloud: Optional[CookieCloudClient],
         refresh_interval_seconds: int,
+        prefetched_cookies: Optional[list[dict[str, Any]]] = None,
+        prefetched_at: Optional[datetime] = None,
     ):
         self._source = (cookie_source or "auto").strip().lower()
         self._cc = cookiecloud
         self._refresh_interval_seconds = max(30, int(refresh_interval_seconds or 300))
 
-        self._cached_at: Optional[datetime] = None
-        self._cached: Optional[list[dict[str, Any]]] = None
+        if prefetched_cookies is not None and prefetched_at is None:
+            prefetched_at = datetime.now(timezone.utc)
+
+        self._cached_at: Optional[datetime] = prefetched_at
+        self._cached: Optional[list[dict[str, Any]]] = prefetched_cookies
 
     async def _ensure_cookiecloud(self) -> list[dict[str, Any]]:
         if not self._cc:
@@ -100,15 +105,19 @@ class CookieManager:
         hostname = urlparse(site_url).hostname or ""
 
         if source in {"cookiecloud", "auto"}:
-            try:
-                cookies = await self._ensure_cookiecloud()
-                header = self._build_cookie_header(cookies, hostname)
-                if header:
-                    return header
-            except Exception:
-                logger.exception("cookiecloud failed, fallback=%s", "enabled" if source == "auto" else "disabled")
+            if not self._cc:
                 if source == "cookiecloud":
                     return None
+            else:
+                try:
+                    cookies = await self._ensure_cookiecloud()
+                    header = self._build_cookie_header(cookies, hostname)
+                    if header:
+                        return header
+                except Exception:
+                    logger.exception("cookiecloud failed, fallback=%s", "enabled" if source == "auto" else "disabled")
+                    if source == "cookiecloud":
+                        return None
 
         if source in {"moviepilot", "auto"}:
             return (fallback_cookie or "").strip() or None

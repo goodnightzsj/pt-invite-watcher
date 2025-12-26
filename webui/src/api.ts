@@ -6,6 +6,10 @@ export type ScanStatus = {
   site_count: number;
   error: string;
   last_run_at: string;
+  warning?: string;
+  domain?: string;
+  moviepilot_ok?: boolean;
+  moviepilot_error?: string;
 };
 
 export type SiteRow = {
@@ -30,12 +34,39 @@ export type DashboardResponse = {
   scan_status: ScanStatus | null;
 };
 
+export type SiteTemplate = "nexusphp" | "custom" | "mteam";
+
+export type SiteConfigItem = {
+  domain: string;
+  name: string;
+  url: string;
+  source: "moviepilot" | "manual";
+  template: SiteTemplate;
+  has_local_config: boolean;
+  reachability_state?: ReachabilityState;
+  cookie_configured: boolean;
+  authorization_configured: boolean;
+  did_configured: boolean;
+  registration_url: string;
+  invite_url: string;
+};
+
+export type SitesListResponse = {
+  items: SiteConfigItem[];
+  moviepilot_ok: boolean;
+  moviepilot_error: string;
+};
+
 export type ConfigResponse = {
   moviepilot: {
     base_url: string;
     username: string;
     password_configured: boolean;
     otp_configured: boolean;
+    sites_cache_ttl_seconds: number;
+  };
+  connectivity: {
+    retry_interval_seconds: number;
   };
   cookie: {
     source: string;
@@ -86,13 +117,20 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   dashboard: () => requestJson<DashboardResponse>("/api/dashboard"),
   scanRun: () => requestJson<ScanStatus>("/api/scan/run", { method: "POST" }),
+  scanRunOne: (domain: string) => requestJson<ScanStatus>(`/api/scan/run/${encodeURIComponent(domain)}`, { method: "POST" }),
+  sitesList: () => requestJson<SitesListResponse>("/api/sites"),
+  sitesUpsert: (payload: unknown) => requestJson<{ ok: boolean }>("/api/sites", { method: "PUT", body: JSON.stringify(payload) }),
+  sitesDelete: (domain: string) => requestJson<{ ok: boolean }>(`/api/sites/${encodeURIComponent(domain)}`, { method: "DELETE" }),
   configGet: () => requestJson<ConfigResponse>("/api/config"),
   configPut: (payload: unknown) => requestJson<{ ok: boolean }>("/api/config", { method: "PUT", body: JSON.stringify(payload) }),
   configReset: () => requestJson<{ ok: boolean }>("/api/config/reset", { method: "POST" }),
+  backupExport: (includeSecrets: boolean) =>
+    requestJson<any>(`/api/backup/export?include_secrets=${includeSecrets ? 1 : 0}`),
+  backupImport: (payload: unknown, mode: "merge" | "replace") =>
+    requestJson<{ ok: boolean; message?: string }>(`/api/backup/import?mode=${mode}`, { method: "POST", body: JSON.stringify(payload) }),
   notificationsGet: () => requestJson<NotificationsResponse>("/api/notifications"),
   notificationsPut: (payload: unknown) =>
     requestJson<{ ok: boolean }>("/api/notifications", { method: "PUT", body: JSON.stringify(payload) }),
   notificationsTest: (channel: "telegram" | "wecom") =>
     requestJson<{ ok: boolean; message: string }>(`/api/notifications/test/${channel}`, { method: "POST" }),
 };
-
