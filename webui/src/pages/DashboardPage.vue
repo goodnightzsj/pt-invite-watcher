@@ -17,6 +17,8 @@ const scanRunning = ref(false);
 const rowScanDomain = ref("");
 const rows = ref<SiteRow[]>([]);
 const scanStatus = ref<any>(null);
+const scanHint = ref<any>(null);
+const allowStateReset = ref(true);
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -81,6 +83,8 @@ async function refresh(opts: { toast?: boolean } = {}) {
     const data = await api.dashboard();
     rows.value = data.rows || [];
     scanStatus.value = data.scan_status;
+    scanHint.value = (data as any).scan_hint || null;
+    allowStateReset.value = (data as any).ui?.allow_state_reset ?? true;
     if (opts.toast) showToast("数据已刷新", "success", 1800);
   } catch (e: any) {
     showToast(String(e?.message || e || "加载失败"), "error");
@@ -126,6 +130,19 @@ async function runRowScan(row: SiteRow) {
     showToast(String(e?.message || e || "扫描失败"), "error", 4500);
   } finally {
     rowScanDomain.value = "";
+  }
+}
+
+async function resetState() {
+  if (scanRunning.value || loading.value || rowScanDomain.value) return;
+  if (!confirm("确认清空所有站点的扫描结果吗？（不会删除站点配置）")) return;
+  try {
+    showToast("正在重置站点状态…", "info", 1600);
+    await api.stateReset();
+    showToast("已重置站点状态", "success", 2200);
+    await refresh();
+  } catch (e: any) {
+    showToast(String(e?.message || e || "重置失败"), "error", 4500);
   }
 }
 
@@ -227,8 +244,38 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
             >
               刷新数据
             </button>
+            <button
+              v-if="allowStateReset"
+              class="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-5 py-2.5 text-sm font-semibold text-rose-800 shadow-sm transition-all hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-950/60"
+              :disabled="scanRunning || loading || !!rowScanDomain"
+              @click="resetState"
+              title="清空扫描结果（不影响站点配置）"
+            >
+              重置状态
+            </button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div
+      v-if="scanHint"
+      class="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm dark:border-indigo-900 dark:bg-indigo-950/40"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div class="text-base font-semibold text-indigo-900 dark:text-indigo-100">提示</div>
+          <div class="mt-1 text-sm text-indigo-800/80 dark:text-indigo-200/80">
+            检测到配置已导入/更新。站点状态需要扫描后生成/刷新。
+          </div>
+        </div>
+        <button
+          class="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="scanRunning"
+          @click="runScan"
+        >
+          {{ scanRunning ? "扫描中…" : "立即扫描" }}
+        </button>
       </div>
     </div>
 
@@ -247,7 +294,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
       </div>
       <div v-if="!scanStatus.ok" class="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
         失败：{{ scanStatus.error || "unknown" }}
-        <div class="mt-1 text-rose-700/80 dark:text-rose-200/80">请检查 MoviePilot 配置与站点列表是否已启用。</div>
+        <div class="mt-1 text-rose-700/80 dark:text-rose-200/80">请检查站点配置与网络连通性；导入/新增站点后需先点击“立即扫描”。</div>
       </div>
       <div
         v-else-if="scanStatus.warning"
@@ -262,7 +309,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
     >
       <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
         <span v-if="hasRows">共 {{ rows.length }} 个站点</span>
-        <span v-else>暂无数据：请先确认 MoviePilot 已配置站点并点击“立即扫描”。</span>
+        <span v-else>暂无扫描数据：请先在“站点管理”配置/导入站点，然后点击“立即扫描”。</span>
       </div>
 
       <div class="overflow-x-auto">

@@ -47,6 +47,7 @@ basic_security = HTTPBasic(auto_error=False)
 _DIST_DIR = Path(__file__).resolve().parent / "webui_dist"
 _ASSETS_DIR = _DIST_DIR / "assets"
 _BACKUP_VERSION = 1
+_SCAN_HINT_KEY = "scan_hint"
 
 # Serve Vite build assets. We intentionally don't require auth here; the SPA entry and APIs are protected.
 app.mount("/assets", StaticFiles(directory=_ASSETS_DIR.as_posix(), check_dir=False), name="assets")
@@ -243,7 +244,11 @@ async def health() -> Dict[str, Any]:
 async def api_dashboard(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     rows = await ctx.store.list_site_states()
     scan_status = await ctx.store.get_json("scan_status", default=None)
-    return {"rows": rows, "scan_status": scan_status}
+    scan_hint = await ctx.store.get_json(_SCAN_HINT_KEY, default=None)
+    cfg = await _load_app_config(ctx)
+    ui_cfg = _safe_dict(cfg.get("ui"))
+    ui = {"allow_state_reset": _cfg_bool(ui_cfg.get("allow_state_reset"), default=True)}
+    return {"rows": rows, "scan_status": scan_status, "scan_hint": scan_hint, "ui": ui}
 
 
 @app.post("/api/scan/run", dependencies=[Depends(require_auth)])
@@ -258,6 +263,20 @@ async def api_scan_run_one(domain: str, ctx: Annotated[AppContext, Depends(get_c
     return status
 
 
+@app.post("/api/state/reset", dependencies=[Depends(require_auth)])
+async def api_state_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
+    cfg = await _load_app_config(ctx)
+    ui_cfg = _safe_dict(cfg.get("ui"))
+    allowed = _cfg_bool(ui_cfg.get("allow_state_reset"), default=True)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="state reset disabled")
+
+    await ctx.store.reset_site_states()
+    await ctx.store.set_json("scan_status", None)
+    await ctx.store.set_json(_SCAN_HINT_KEY, None)
+    return {"ok": True}
+
+
 @app.get("/api/config", dependencies=[Depends(require_auth)])
 async def api_config_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     cfg = await ctx.store.get_json("app_config", default={})
@@ -267,6 +286,7 @@ async def api_config_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[s
     cookie_cfg = _safe_dict(cfg.get("cookie"))
     cc_cfg = _safe_dict(cookie_cfg.get("cookiecloud"))
     scan_cfg = _safe_dict(cfg.get("scan"))
+    ui_cfg = _safe_dict(cfg.get("ui"))
 
     moviepilot = {
         "base_url": _cfg_str(mp_cfg.get("base_url")) or ctx.settings.moviepilot.base_url,
@@ -326,7 +346,9 @@ async def api_config_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[s
         ),
     }
 
-    return {"moviepilot": moviepilot, "connectivity": connectivity, "cookie": cookie, "scan": scan}
+    ui = {"allow_state_reset": _cfg_bool(ui_cfg.get("allow_state_reset"), default=True)}
+
+    return {"moviepilot": moviepilot, "connectivity": connectivity, "cookie": cookie, "scan": scan, "ui": ui}
 
 
 @app.put("/api/config", dependencies=[Depends(require_auth)])
@@ -344,6 +366,7 @@ async def api_config_put(
     cookie_in = _safe_dict(payload.get("cookie"))
     cc_in = _safe_dict(cookie_in.get("cookiecloud"))
     scan_in = _safe_dict(payload.get("scan"))
+    ui_in = _safe_dict(payload.get("ui"))
 
     mp = _safe_dict(cfg.get("moviepilot"))
     mp_base = _cfg_str(mp_in.get("base_url"))
@@ -417,6 +440,11 @@ async def api_config_put(
         scan["trust_env"] = _cfg_bool(scan_in.get("trust_env"), default=ctx.settings.scan.trust_env)
 
     cfg["scan"] = scan
+
+    ui = _safe_dict(cfg.get("ui"))
+    if "allow_state_reset" in ui_in:
+        ui["allow_state_reset"] = _cfg_bool(ui_in.get("allow_state_reset"), default=True)
+    cfg["ui"] = ui
 
     await ctx.store.set_json("app_config", cfg)
     return {"ok": True}
@@ -553,7 +581,17 @@ async def api_backup_import(
     if not changed:
         raise HTTPException(status_code=400, detail="no supported keys found in payload")
 
-    return {"ok": True, "message": f"imported: {', '.join(changed)}"}
+    # After importing site/app configuration, old scan status may no longer be valid.
+    # Also, importing sites does NOT import scan results; user should run a scan to populate the dashboard.
+    needs_scan_hint = any(k in changed for k in ("app_config", "sites"))
+    if needs_scan_hint:
+        await ctx.store.set_json(
+            _SCAN_HINT_KEY,
+            {"reason": "import", "at": datetime.now(timezone.utc).isoformat(), "changed": list(changed)},
+        )
+        await ctx.store.set_json("scan_status", None)
+
+    return {"ok": True, "message": f"imported: {', '.join(changed)}", "changed": list(changed), "needs_scan": needs_scan_hint}
 
 
 @app.get("/api/notifications", dependencies=[Depends(require_auth)])

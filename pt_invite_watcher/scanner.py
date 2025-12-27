@@ -606,6 +606,10 @@ class Scanner:
                 "last_run_at": datetime.now(timezone.utc).isoformat(),
             }
             await self._store.set_json("scan_status", status)
+            try:
+                await self._store.set_json("scan_hint", None)
+            except Exception:
+                pass
             return status
 
     async def run_one(self, domain: str) -> Dict[str, Any]:
@@ -880,6 +884,10 @@ class Scanner:
                 "moviepilot_cache_expired": mp_cache_expired,
                 "last_run_at": datetime.now(timezone.utc).isoformat(),
             }
+            try:
+                await self._store.set_json("scan_hint", None)
+            except Exception:
+                pass
             return status
 
     async def _check_one(

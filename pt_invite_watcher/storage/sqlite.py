@@ -266,6 +266,11 @@ class SqliteStore:
 
         return items
 
+    async def reset_site_states(self) -> None:
+        conn = self._require_conn()
+        await conn.execute("DELETE FROM site_state")
+        await conn.commit()
+
     async def get_reachability_states(self, domains: list[str]) -> dict[str, str]:
         conn = self._require_conn()
         targets = [str(d or "").strip().lower() for d in (domains or []) if str(d or "").strip()]

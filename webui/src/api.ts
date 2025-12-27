@@ -32,6 +32,8 @@ export type SiteRow = {
 export type DashboardResponse = {
   rows: SiteRow[];
   scan_status: ScanStatus | null;
+  scan_hint?: { reason: string; at: string; changed?: string[] } | null;
+  ui?: { allow_state_reset: boolean } | null;
 };
 
 export type SiteTemplate = "nexusphp" | "custom" | "mteam";
@@ -84,6 +86,7 @@ export type ConfigResponse = {
     user_agent: string;
     trust_env: boolean;
   };
+  ui?: { allow_state_reset: boolean };
 };
 
 export type NotificationsResponse = {
@@ -118,6 +121,7 @@ export const api = {
   dashboard: () => requestJson<DashboardResponse>("/api/dashboard"),
   scanRun: () => requestJson<ScanStatus>("/api/scan/run", { method: "POST" }),
   scanRunOne: (domain: string) => requestJson<ScanStatus>(`/api/scan/run/${encodeURIComponent(domain)}`, { method: "POST" }),
+  stateReset: () => requestJson<{ ok: boolean }>("/api/state/reset", { method: "POST" }),
   sitesList: () => requestJson<SitesListResponse>("/api/sites"),
   sitesUpsert: (payload: unknown) => requestJson<{ ok: boolean }>("/api/sites", { method: "PUT", body: JSON.stringify(payload) }),
   sitesDelete: (domain: string) => requestJson<{ ok: boolean }>(`/api/sites/${encodeURIComponent(domain)}`, { method: "DELETE" }),
@@ -127,7 +131,7 @@ export const api = {
   backupExport: (includeSecrets: boolean) =>
     requestJson<any>(`/api/backup/export?include_secrets=${includeSecrets ? 1 : 0}`),
   backupImport: (payload: unknown, mode: "merge" | "replace") =>
-    requestJson<{ ok: boolean; message?: string }>(`/api/backup/import?mode=${mode}`, { method: "POST", body: JSON.stringify(payload) }),
+    requestJson<{ ok: boolean; message?: string; changed?: string[]; needs_scan?: boolean }>(`/api/backup/import?mode=${mode}`, { method: "POST", body: JSON.stringify(payload) }),
   notificationsGet: () => requestJson<NotificationsResponse>("/api/notifications"),
   notificationsPut: (payload: unknown) =>
     requestJson<{ ok: boolean }>("/api/notifications", { method: "PUT", body: JSON.stringify(payload) }),

@@ -14,11 +14,14 @@ type Model = {
   connectivity: { retry_interval_seconds: number };
   cookie: { source: string; cookiecloud: { base_url: string; uuid: string; password: string; refresh_interval_seconds: number } };
   scan: { interval_seconds: number; timeout_seconds: number; concurrency: number; user_agent: string; trust_env: boolean };
+  ui: { allow_state_reset: boolean };
 };
 
 const loading = ref(false);
 const saving = ref(false);
 const backupBusy = ref(false);
+const scanNowRunning = ref(false);
+const importScanPrompt = ref(false);
 const view = ref<ConfigResponse | null>(null);
 const baselineJson = ref<string>("");
 const model = reactive<Model>({
@@ -26,6 +29,7 @@ const model = reactive<Model>({
   connectivity: { retry_interval_seconds: 3600 },
   cookie: { source: "auto", cookiecloud: { base_url: "", uuid: "", password: "", refresh_interval_seconds: 300 } },
   scan: { interval_seconds: 600, timeout_seconds: 20, concurrency: 8, user_agent: "", trust_env: false },
+  ui: { allow_state_reset: true },
 });
 
 function _normStr(v: string) {
@@ -60,6 +64,9 @@ function normalizedModelForCompare(m: Model) {
       user_agent: _normStr(m.scan.user_agent),
       trust_env: Boolean(m.scan.trust_env),
     },
+    ui: {
+      allow_state_reset: Boolean(m.ui.allow_state_reset),
+    },
   };
 }
 
@@ -92,6 +99,7 @@ async function load(opts: { toast?: boolean } = {}) {
     model.scan.concurrency = data.scan.concurrency || 8;
     model.scan.user_agent = data.scan.user_agent || "";
     model.scan.trust_env = !!data.scan.trust_env;
+    model.ui.allow_state_reset = data.ui?.allow_state_reset ?? true;
 
     baselineJson.value = JSON.stringify(normalizedModelForCompare(model));
     if (opts.toast) showToast("已重新加载", "success", 1800);
@@ -135,6 +143,9 @@ async function save() {
         concurrency: model.scan.concurrency,
         user_agent: model.scan.user_agent,
         trust_env: model.scan.trust_env,
+      },
+      ui: {
+        allow_state_reset: model.ui.allow_state_reset,
       },
     };
 
@@ -221,6 +232,20 @@ async function exportBackup(includeSecrets: boolean) {
   }
 }
 
+async function runScanNow() {
+  if (scanNowRunning.value) return;
+  scanNowRunning.value = true;
+  try {
+    showToast("开始扫描…", "info", 1600);
+    const status = await api.scanRun();
+    showToast(status?.ok ? "扫描已完成" : `扫描失败：${status?.error || "unknown"}`, status?.ok ? "success" : "error", status?.ok ? 2200 : 4500);
+  } catch (e: any) {
+    showToast(String(e?.message || e || "扫描失败"), "error", 4500);
+  } finally {
+    scanNowRunning.value = false;
+  }
+}
+
 const importMode = ref<"merge" | "replace">("merge");
 const importFile = ref<File | null>(null);
 
@@ -244,9 +269,13 @@ async function importBackup() {
       _applyAutoRefreshPrefs(parsed.ui.auto_refresh);
     }
     const res = await api.backupImport(parsed, importMode.value);
-    showToast(res?.ok ? `导入成功：${res?.message || "ok"}` : `导入失败：${res?.message || "fail"}`, res?.ok ? "success" : "error", 4500);
+    if (res?.ok) {
+      importScanPrompt.value = !!res?.needs_scan;
+      showToast(res?.needs_scan ? "导入成功：请立即扫描生成站点状态" : "导入成功", "success", 3600);
+    } else {
+      showToast(`导入失败：${res?.message || "fail"}`, "error", 4500);
+    }
     await load();
-    showToast("站点管理/通知设置页请点“重新加载”以查看导入结果", "info", 4200);
   } catch (e: any) {
     showToast(String(e?.message || e || "导入失败"), "error", 4500);
   } finally {
@@ -314,6 +343,27 @@ onMounted(() => load());
 
       <div class="mt-3 text-xs text-slate-500 dark:text-slate-400">
         备份文件会额外包含浏览器本地的“自动刷新开关/间隔”设置；导入后会写入当前浏览器 localStorage。
+      </div>
+
+      <div
+        v-if="importScanPrompt"
+        class="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div class="font-semibold">下一步</div>
+            <div class="mt-1 text-indigo-800/80 dark:text-indigo-200/80">
+              导入只恢复站点/通知/服务配置，不包含扫描结果；请点击“立即扫描”生成站点状态。站点管理/通知设置页需要点“重新加载”查看导入结果。
+            </div>
+          </div>
+          <button
+            class="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="scanNowRunning"
+            @click="runScanNow"
+          >
+            {{ scanNowRunning ? "扫描中…" : "立即扫描" }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -503,6 +553,17 @@ onMounted(() => load());
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="mb-4 flex items-center justify-between">
+        <div class="text-sm font-semibold">UI</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <Toggle v-model="model.ui.allow_state_reset" />
+        <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>
+      </div>
+      <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
     </div>
   </div>
 </template>
