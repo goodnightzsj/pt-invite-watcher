@@ -13,6 +13,7 @@ from pt_invite_watcher.config import Settings
 from pt_invite_watcher.engines.mteam import MTeamDetector
 from pt_invite_watcher.engines.nexusphp import NexusPhpDetector
 from pt_invite_watcher.models import AspectResult, Evidence, ReachabilityResult, Site, SiteCheckResult
+from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, request_with_retry
 from pt_invite_watcher.notify.manager import NotifierManager
 from pt_invite_watcher.providers.cookiecloud import CookieCloudClient, CookieManager
 from pt_invite_watcher.providers.deps_status import (
@@ -45,6 +46,12 @@ logger = logging.getLogger("pt_invite_watcher.scanner")
 
 _MAX_ERROR_DETAIL_LEN = 240
 _DOWN_HTTP_STATUSES = set(range(520, 530))
+
+
+class AlreadyScanningError(RuntimeError):
+    def __init__(self, domain: str):
+        super().__init__(f"already scanning: {domain}")
+        self.domain = domain
 
 
 def _format_error_detail(exc: Exception) -> str:
@@ -118,10 +125,14 @@ class Scanner:
         self._store = store
         self._notifier = notifier
 
-        self._lock = asyncio.Lock()
+        self._deps_lock = asyncio.Lock()
         self._sem = asyncio.Semaphore(max(1, settings.scan.concurrency))
         self._detector = NexusPhpDetector()
         self._mteam = MTeamDetector()
+        self._in_flight: dict[str, asyncio.Task[Any]] = {}
+
+    def in_flight_domains(self) -> set[str]:
+        return set(list(self._in_flight.keys()))
 
     async def _load_app_config(self) -> dict[str, Any]:
         try:
@@ -242,7 +253,7 @@ class Scanner:
         return list(by_domain.values())
 
     async def probe_dependencies(self) -> Dict[str, Any]:
-        async with self._lock:
+        async with self._deps_lock:
             now = datetime.now(timezone.utc)
             cfg = await self._load_app_config()
 
@@ -261,6 +272,12 @@ class Scanner:
                 default=DEFAULT_RETRY_INTERVAL_SECONDS,
                 min_value=MIN_RETRY_INTERVAL_SECONDS,
                 max_value=MAX_RETRY_INTERVAL_SECONDS,
+            )
+            request_retry_delay_seconds = _cfg_int(
+                connectivity_cfg.get("request_retry_delay_seconds"),
+                default=30,
+                min_value=5,
+                max_value=24 * 3600,
             )
             scan_timeout = _cfg_int(
                 scan_cfg.get("timeout_seconds"),
@@ -289,6 +306,7 @@ class Scanner:
                         password=mp_password,
                         otp_password=mp_otp_password or None,
                         timeout_seconds=scan_timeout,
+                        retry_delay_seconds=request_retry_delay_seconds,
                     )
                     try:
                         mp_sites = await mp_client.list_sites(only_active=True)
@@ -326,6 +344,7 @@ class Scanner:
                         uuid=cc_uuid,
                         password=cc_password,
                         timeout_seconds=scan_timeout,
+                        retry_delay_seconds=request_retry_delay_seconds,
                     )
                     try:
                         await cc_client.fetch_cookie_items()
@@ -363,202 +382,328 @@ class Scanner:
             }
             return status
 
-    async def run_once(self) -> Dict[str, Any]:
-        async with self._lock:
-            started_at = datetime.now(timezone.utc)
-            cfg = await self._load_app_config()
-            sites_cfg = await self._load_sites_config()
+    async def _prepare_scan_context(
+        self, started_at: datetime
+    ) -> tuple[list[Site], CookieManager, dict[str, Any]]:
+        cfg = await self._load_app_config()
+        sites_cfg = await self._load_sites_config()
 
-            mp_cfg = _safe_dict(cfg.get("moviepilot"))
-            connectivity_cfg = _safe_dict(cfg.get("connectivity"))
-            cookie_cfg = _safe_dict(cfg.get("cookie"))
-            cc_cfg = _safe_dict(cookie_cfg.get("cookiecloud"))
-            scan_cfg = _safe_dict(cfg.get("scan"))
+        mp_cfg = _safe_dict(cfg.get("moviepilot"))
+        connectivity_cfg = _safe_dict(cfg.get("connectivity"))
+        cookie_cfg = _safe_dict(cfg.get("cookie"))
+        cc_cfg = _safe_dict(cookie_cfg.get("cookiecloud"))
+        scan_cfg = _safe_dict(cfg.get("scan"))
 
-            mp_base_url = _cfg_str(mp_cfg.get("base_url")) or self._settings.moviepilot.base_url
-            mp_username = _cfg_str(mp_cfg.get("username")) or self._settings.moviepilot.username
-            mp_password = _cfg_str(mp_cfg.get("password")) or self._settings.moviepilot.password
-            mp_otp_password = _cfg_str(mp_cfg.get("otp_password")) or (self._settings.moviepilot.otp_password or "")
-            mp_sites_cache_ttl = _cfg_int(
-                mp_cfg.get("sites_cache_ttl_seconds"),
-                default=MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
-                min_value=MP_SITES_CACHE_MIN_TTL_SECONDS,
-                max_value=MP_SITES_CACHE_MAX_TTL_SECONDS,
-            )
-            deps_retry_interval = _cfg_int(
-                connectivity_cfg.get("retry_interval_seconds"),
-                default=DEFAULT_RETRY_INTERVAL_SECONDS,
-                min_value=MIN_RETRY_INTERVAL_SECONDS,
-                max_value=MAX_RETRY_INTERVAL_SECONDS,
-            )
+        mp_base_url = _cfg_str(mp_cfg.get("base_url")) or self._settings.moviepilot.base_url
+        mp_username = _cfg_str(mp_cfg.get("username")) or self._settings.moviepilot.username
+        mp_password = _cfg_str(mp_cfg.get("password")) or self._settings.moviepilot.password
+        mp_otp_password = _cfg_str(mp_cfg.get("otp_password")) or (self._settings.moviepilot.otp_password or "")
+        mp_sites_cache_ttl = _cfg_int(
+            mp_cfg.get("sites_cache_ttl_seconds"),
+            default=MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
+            min_value=MP_SITES_CACHE_MIN_TTL_SECONDS,
+            max_value=MP_SITES_CACHE_MAX_TTL_SECONDS,
+        )
 
-            cookie_source = (_cfg_str(cookie_cfg.get("source")) or self._settings.cookie.source or "auto").strip().lower()
-            cc_base_url = _cfg_str(cc_cfg.get("base_url")) or self._settings.cookie.cookiecloud.base_url
-            cc_uuid = _cfg_str(cc_cfg.get("uuid")) or self._settings.cookie.cookiecloud.uuid
-            cc_password = _cfg_str(cc_cfg.get("password")) or self._settings.cookie.cookiecloud.password
-            cc_refresh = _cfg_int(
-                cc_cfg.get("refresh_interval_seconds"),
-                default=int(self._settings.cookie.cookiecloud.refresh_interval_seconds),
-                min_value=30,
-                max_value=24 * 3600,
-            )
+        deps_retry_interval = _cfg_int(
+            connectivity_cfg.get("retry_interval_seconds"),
+            default=DEFAULT_RETRY_INTERVAL_SECONDS,
+            min_value=MIN_RETRY_INTERVAL_SECONDS,
+            max_value=MAX_RETRY_INTERVAL_SECONDS,
+        )
+        request_retry_delay_seconds = _cfg_int(
+            connectivity_cfg.get("request_retry_delay_seconds"),
+            default=30,
+            min_value=5,
+            max_value=24 * 3600,
+        )
 
-            scan_timeout = _cfg_int(
-                scan_cfg.get("timeout_seconds"),
-                default=int(self._settings.scan.timeout_seconds),
-                min_value=5,
-                max_value=180,
-            )
-            scan_concurrency = _cfg_int(
-                scan_cfg.get("concurrency"),
-                default=int(self._settings.scan.concurrency),
-                min_value=1,
-                max_value=64,
-            )
-            scan_user_agent = _cfg_str(scan_cfg.get("user_agent")) or self._settings.scan.user_agent or ""
-            scan_trust_env = _cfg_bool(scan_cfg.get("trust_env"), default=bool(self._settings.scan.trust_env))
+        cookie_source = (_cfg_str(cookie_cfg.get("source")) or self._settings.cookie.source or "auto").strip().lower()
+        cc_base_url = _cfg_str(cc_cfg.get("base_url")) or self._settings.cookie.cookiecloud.base_url
+        cc_uuid = _cfg_str(cc_cfg.get("uuid")) or self._settings.cookie.cookiecloud.uuid
+        cc_password = _cfg_str(cc_cfg.get("password")) or self._settings.cookie.cookiecloud.password
+        cc_refresh = _cfg_int(
+            cc_cfg.get("refresh_interval_seconds"),
+            default=int(self._settings.cookie.cookiecloud.refresh_interval_seconds),
+            min_value=30,
+            max_value=24 * 3600,
+        )
 
+        scan_timeout = _cfg_int(
+            scan_cfg.get("timeout_seconds"),
+            default=int(self._settings.scan.timeout_seconds),
+            min_value=5,
+            max_value=180,
+        )
+        scan_concurrency = _cfg_int(
+            scan_cfg.get("concurrency"),
+            default=int(self._settings.scan.concurrency),
+            min_value=1,
+            max_value=64,
+        )
+        scan_user_agent = _cfg_str(scan_cfg.get("user_agent")) or self._settings.scan.user_agent or ""
+        scan_trust_env = _cfg_bool(scan_cfg.get("trust_env"), default=bool(self._settings.scan.trust_env))
+
+        if scan_concurrency > 0 and not self._in_flight:
             self._sem = asyncio.Semaphore(max(1, scan_concurrency))
 
-            deps_status = load_deps_status(await self._store.get_json(DEPS_STATUS_KEY, default=None))
+        deps_status = load_deps_status(await self._store.get_json(DEPS_STATUS_KEY, default=None))
 
-            mp_attempted = bool(mp_base_url and mp_username and mp_password)
-            mp_sites: list[Site] = []
-            mp_error = ""
-            mp_ok = False
-            mp_source = "none"  # live|cache|none
-            mp_cache_fetched_at = ""
-            mp_cache_age_seconds: Optional[int] = None
-            mp_cache_expired: Optional[bool] = None
-            if mp_attempted:
-                mp_fp = fingerprint_moviepilot(mp_base_url)
-                mp_dep = get_dep_status(deps_status, "moviepilot")
-                mp_allowed = can_attempt(mp_dep, started_at, mp_fp)
-                if not mp_allowed:
-                    mp_error = mp_dep.error
-                else:
-                    mp_client = MoviePilotClient(
-                        base_url=mp_base_url,
-                        username=mp_username,
-                        password=mp_password,
-                        otp_password=mp_otp_password or None,
-                        timeout_seconds=scan_timeout,
-                    )
+        mp_attempted = bool(mp_base_url and mp_username and mp_password)
+        mp_sites: list[Site] = []
+        mp_error = ""
+        mp_ok = False
+        mp_source = "none"  # live|cache|state|none
+        mp_cache_fetched_at = ""
+        mp_cache_age_seconds: Optional[int] = None
+        mp_cache_expired: Optional[bool] = None
+
+        if mp_attempted:
+            mp_fp = fingerprint_moviepilot(mp_base_url)
+            mp_dep = get_dep_status(deps_status, "moviepilot")
+            mp_allowed = can_attempt(mp_dep, started_at, mp_fp)
+            if not mp_allowed:
+                mp_error = mp_dep.error
+            else:
+                mp_client = MoviePilotClient(
+                    base_url=mp_base_url,
+                    username=mp_username,
+                    password=mp_password,
+                    otp_password=mp_otp_password or None,
+                    timeout_seconds=scan_timeout,
+                    retry_delay_seconds=request_retry_delay_seconds,
+                )
+                try:
+                    mp_sites = await mp_client.list_sites(only_active=True)
+                    mp_ok = True
+                    mp_source = "live"
+                    mp_cache_fetched_at = started_at.isoformat()
+                    mp_cache_age_seconds = 0
+                    mp_cache_expired = False
                     try:
-                        mp_sites = await mp_client.list_sites(only_active=True)
-                        mp_ok = True
-                        mp_source = "live"
-                        mp_cache_fetched_at = started_at.isoformat()
-                        mp_cache_age_seconds = 0
-                        mp_cache_expired = False
-                        try:
-                            await self._store.set_json(MP_SITES_CACHE_KEY, build_cache(mp_base_url, mp_sites, fetched_at=started_at))
-                        except Exception:
-                            logger.exception("failed to persist MoviePilot sites cache")
-
-                        deps_status = update_dep_ok(deps_status, "moviepilot", started_at, mp_fp)
-                        try:
-                            await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                        except Exception:
-                            logger.exception("failed to persist deps status")
-                    except Exception as e:
-                        logger.exception("failed to load sites from MoviePilot")
-                        mp_error = _format_error_detail(e)
-                        deps_status = update_dep_fail(
-                            deps_status,
-                            "moviepilot",
-                            started_at,
-                            mp_fp,
-                            mp_error,
-                            retry_interval_seconds=deps_retry_interval,
-                        )
-                        try:
-                            await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                        except Exception:
-                            logger.exception("failed to persist deps status")
-
-                if mp_sites:
-                    pass
-                else:
-                    # Try cache / snapshot.
-                    try:
-                        cache = parse_cache(await self._store.get_json(MP_SITES_CACHE_KEY, default=None))
-                        if cache:
-                            mp_cache_fetched_at = cache.fetched_at_iso
-                            mp_cache_age_seconds = cache.age_seconds(started_at)
-                            mp_cache_expired = cache_expired(cache, started_at, mp_sites_cache_ttl, base_url=mp_base_url)
-                            if not mp_cache_expired:
-                                mp_sites = cache.sites
-                                mp_source = "cache"
+                        await self._store.set_json(MP_SITES_CACHE_KEY, build_cache(mp_base_url, mp_sites, fetched_at=started_at))
                     except Exception:
-                        logger.exception("failed to load MoviePilot sites cache")
-                    if not mp_sites:
-                        try:
-                            snap_at, snap_sites = await self._store.load_sites_snapshot()
-                            if snap_sites and snap_at:
-                                age = int(max(0, (started_at - snap_at).total_seconds()))
-                                mp_cache_fetched_at = snap_at.isoformat()
-                                mp_cache_age_seconds = age
-                                if age <= mp_sites_cache_ttl:
-                                    mp_cache_expired = False
-                                    mp_sites = snap_sites
-                                    mp_source = "state"
-                                    try:
-                                        await self._store.set_json(MP_SITES_CACHE_KEY, build_cache(mp_base_url, mp_sites, fetched_at=snap_at))
-                                    except Exception:
-                                        logger.exception("failed to persist MoviePilot sites cache (seeded)")
-                                else:
-                                    mp_cache_expired = True
-                        except Exception:
-                            logger.exception("failed to load sites snapshot from local state")
+                        logger.exception("failed to persist MoviePilot sites cache")
 
-            cc_should_attempt = bool(cc_base_url and cc_uuid and cc_password and cookie_source in {"auto", "cookiecloud"})
-            cc_cookies: Optional[list[dict[str, Any]]] = None
-            cc_client = None
-            if cc_should_attempt:
-                cc_fp = fingerprint_cookiecloud(cc_base_url, cc_uuid)
-                cc_dep = get_dep_status(deps_status, "cookiecloud")
-                cc_allowed = can_attempt(cc_dep, started_at, cc_fp)
-                if cc_allowed:
-                    cc_client = CookieCloudClient(
-                        base_url=cc_base_url,
-                        uuid=cc_uuid,
-                        password=cc_password,
-                        timeout_seconds=scan_timeout,
+                    deps_status = update_dep_ok(deps_status, "moviepilot", started_at, mp_fp)
+                    try:
+                        await self._store.set_json(DEPS_STATUS_KEY, deps_status)
+                    except Exception:
+                        logger.exception("failed to persist deps status")
+                except Exception as e:
+                    logger.exception("failed to load sites from MoviePilot")
+                    mp_error = _format_error_detail(e)
+                    deps_status = update_dep_fail(
+                        deps_status,
+                        "moviepilot",
+                        started_at,
+                        mp_fp,
+                        mp_error,
+                        retry_interval_seconds=deps_retry_interval,
                     )
                     try:
-                        cc_cookies = await cc_client.fetch_cookie_items()
-                        deps_status = update_dep_ok(deps_status, "cookiecloud", started_at, cc_fp)
                         await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                    except Exception as e:
-                        cc_error = _format_error_detail(e)
-                        deps_status = update_dep_fail(
-                            deps_status,
-                            "cookiecloud",
+                    except Exception:
+                        logger.exception("failed to persist deps status")
+
+            if not mp_sites:
+                # Try cache / snapshot.
+                try:
+                    cache = parse_cache(await self._store.get_json(MP_SITES_CACHE_KEY, default=None))
+                    if cache:
+                        mp_cache_fetched_at = cache.fetched_at_iso
+                        mp_cache_age_seconds = cache.age_seconds(started_at)
+                        mp_cache_expired = cache_expired(cache, started_at, mp_sites_cache_ttl, base_url=mp_base_url)
+                        if not mp_cache_expired:
+                            mp_sites = cache.sites
+                            mp_source = "cache"
+                except Exception:
+                    logger.exception("failed to load MoviePilot sites cache")
+                if not mp_sites:
+                    try:
+                        snap_at, snap_sites = await self._store.load_sites_snapshot()
+                        if snap_sites and snap_at:
+                            age = int(max(0, (started_at - snap_at).total_seconds()))
+                            mp_cache_fetched_at = snap_at.isoformat()
+                            mp_cache_age_seconds = age
+                            if age <= mp_sites_cache_ttl:
+                                mp_cache_expired = False
+                                mp_sites = snap_sites
+                                mp_source = "state"
+                                try:
+                                    await self._store.set_json(MP_SITES_CACHE_KEY, build_cache(mp_base_url, mp_sites, fetched_at=snap_at))
+                                except Exception:
+                                    logger.exception("failed to persist MoviePilot sites cache (seeded)")
+                            else:
+                                mp_cache_expired = True
+                    except Exception:
+                        logger.exception("failed to load sites snapshot from local state")
+
+        cc_should_attempt = bool(cc_base_url and cc_uuid and cc_password and cookie_source in {"auto", "cookiecloud"})
+        cc_cookies: Optional[list[dict[str, Any]]] = None
+        cc_client = None
+        if cc_should_attempt:
+            cc_fp = fingerprint_cookiecloud(cc_base_url, cc_uuid)
+            cc_dep = get_dep_status(deps_status, "cookiecloud")
+            cc_allowed = can_attempt(cc_dep, started_at, cc_fp)
+            if cc_allowed:
+                cc_client = CookieCloudClient(
+                    base_url=cc_base_url,
+                    uuid=cc_uuid,
+                    password=cc_password,
+                    timeout_seconds=scan_timeout,
+                    retry_delay_seconds=request_retry_delay_seconds,
+                )
+                try:
+                    cc_cookies = await cc_client.fetch_cookie_items()
+                    deps_status = update_dep_ok(deps_status, "cookiecloud", started_at, cc_fp)
+                    await self._store.set_json(DEPS_STATUS_KEY, deps_status)
+                except Exception as e:
+                    cc_error = _format_error_detail(e)
+                    deps_status = update_dep_fail(
+                        deps_status,
+                        "cookiecloud",
+                        started_at,
+                        cc_fp,
+                        cc_error,
+                        retry_interval_seconds=deps_retry_interval,
+                    )
+                    try:
+                        await self._store.set_json(DEPS_STATUS_KEY, deps_status)
+                    except Exception:
+                        logger.exception("failed to persist deps status")
+                    cc_client = None
+
+        cookie_mgr = CookieManager(
+            cookie_source=cookie_source,
+            cookiecloud=cc_client,
+            refresh_interval_seconds=cc_refresh,
+            prefetched_cookies=cc_cookies,
+            prefetched_at=started_at if cc_cookies is not None else None,
+        )
+
+        sites = self._merge_sites(mp_sites, _safe_dict(sites_cfg.get("entries")))
+
+        meta = {
+            "scan_timeout": scan_timeout,
+            "scan_user_agent": scan_user_agent,
+            "scan_trust_env": scan_trust_env,
+            "request_retry_delay_seconds": request_retry_delay_seconds,
+            "moviepilot_attempted": mp_attempted,
+            "moviepilot_ok": mp_ok,
+            "moviepilot_error": mp_error,
+            "moviepilot_source": mp_source,
+            "moviepilot_cache_fetched_at": mp_cache_fetched_at,
+            "moviepilot_cache_age_seconds": mp_cache_age_seconds,
+            "moviepilot_cache_expired": mp_cache_expired,
+        }
+        return sites, cookie_mgr, meta
+
+    async def run_once(self) -> Dict[str, Any]:
+        started_at = datetime.now(timezone.utc)
+        async with self._deps_lock:
+            sites, cookie_mgr, meta = await self._prepare_scan_context(started_at)
+
+        mp_attempted = bool(meta.get("moviepilot_attempted"))
+        mp_ok = bool(meta.get("moviepilot_ok"))
+        mp_error = str(meta.get("moviepilot_error") or "")
+        mp_source = str(meta.get("moviepilot_source") or "none")
+        mp_cache_fetched_at = str(meta.get("moviepilot_cache_fetched_at") or "")
+        mp_cache_age_seconds = meta.get("moviepilot_cache_age_seconds")
+        mp_cache_expired = meta.get("moviepilot_cache_expired")
+        scan_timeout = int(meta.get("scan_timeout") or int(self._settings.scan.timeout_seconds))
+        scan_user_agent = str(meta.get("scan_user_agent") or "")
+        scan_trust_env = bool(meta.get("scan_trust_env"))
+        request_retry_delay_seconds = int(meta.get("request_retry_delay_seconds") or 30)
+
+        if not sites:
+            error = mp_error if mp_error else "no sites configured"
+            status = {
+                "ok": False,
+                "site_count": 0,
+                "error": error,
+                "moviepilot_ok": mp_ok,
+                "moviepilot_error": mp_error,
+                "moviepilot_source": mp_source,
+                "moviepilot_cache_fetched_at": mp_cache_fetched_at,
+                "moviepilot_cache_age_seconds": mp_cache_age_seconds,
+                "moviepilot_cache_expired": mp_cache_expired,
+                "last_run_at": started_at.isoformat(),
+            }
+            await self._store.set_json("scan_status", status)
+            return status
+
+        to_scan: list[Site] = []
+        skipped_in_flight = 0
+        for site in sites:
+            dom = _normalize_domain(site.domain)
+            if not dom:
+                continue
+            if dom in self._in_flight:
+                skipped_in_flight += 1
+                continue
+            to_scan.append(site)
+
+        if not to_scan:
+            return {
+                "ok": True,
+                "site_count": len(sites),
+                "scanned_count": 0,
+                "skipped_in_flight": skipped_in_flight,
+                "error": "",
+                "warning": "all_sites_scanning",
+                "moviepilot_ok": mp_ok,
+                "moviepilot_error": mp_error,
+                "moviepilot_source": mp_source,
+                "moviepilot_cache_fetched_at": mp_cache_fetched_at,
+                "moviepilot_cache_age_seconds": mp_cache_age_seconds,
+                "moviepilot_cache_expired": mp_cache_expired,
+                "last_run_at": started_at.isoformat(),
+            }
+
+        manual_count = sum(1 for s in sites if s.id is None)
+        timeout = httpx.Timeout(scan_timeout)
+        client = httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            trust_env=scan_trust_env,
+        )
+        tasks: list[asyncio.Task[Any]] = []
+        try:
+            for site in to_scan:
+                dom = _normalize_domain(site.domain)
+                if not dom:
+                    continue
+                if dom in self._in_flight:
+                    skipped_in_flight += 1
+                    continue
+
+                async def _runner(site=site, dom=dom):
+                    try:
+                        await self._check_one(
+                            client,
+                            site,
                             started_at,
-                            cc_fp,
-                            cc_error,
-                            retry_interval_seconds=deps_retry_interval,
+                            cookie_mgr,
+                            scan_user_agent or None,
+                            retry_delay_seconds=request_retry_delay_seconds,
                         )
-                        try:
-                            await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                        except Exception:
-                            logger.exception("failed to persist deps status")
-                        cc_client = None
-            cookie_mgr = CookieManager(
-                cookie_source=cookie_source,
-                cookiecloud=cc_client,
-                refresh_interval_seconds=cc_refresh,
-                prefetched_cookies=cc_cookies,
-                prefetched_at=started_at if cc_cookies is not None else None,
-            )
-            sites = self._merge_sites(mp_sites, _safe_dict(sites_cfg.get("entries")))
-            if not sites:
-                error = mp_error if mp_error else "no sites configured"
-                status = {
-                    "ok": False,
-                    "site_count": 0,
-                    "error": error,
+                    finally:
+                        if self._in_flight.get(dom) is asyncio.current_task():
+                            self._in_flight.pop(dom, None)
+
+                task = asyncio.create_task(_runner())
+                self._in_flight[dom] = task
+                tasks.append(task)
+
+            if not tasks:
+                return {
+                    "ok": True,
+                    "site_count": len(sites),
+                    "scanned_count": 0,
+                    "skipped_in_flight": skipped_in_flight,
+                    "error": "",
+                    "warning": "all_sites_scanning",
                     "moviepilot_ok": mp_ok,
                     "moviepilot_error": mp_error,
                     "moviepilot_source": mp_source,
@@ -567,315 +712,124 @@ class Scanner:
                     "moviepilot_cache_expired": mp_cache_expired,
                     "last_run_at": started_at.isoformat(),
                 }
-                await self._store.set_json("scan_status", status)
-                return status
 
-            manual_count = sum(1 for s in sites if s.id is None)
-            logger.info("scan start: %d sites (moviepilot=%d manual=%d)", len(sites), len(sites) - manual_count, manual_count)
+            logger.info(
+                "scan start: %d sites (moviepilot=%d manual=%d skipped_in_flight=%d)",
+                len(tasks),
+                len(sites) - manual_count,
+                manual_count,
+                skipped_in_flight,
+            )
 
-            timeout = httpx.Timeout(scan_timeout)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            errors = [r for r in results if isinstance(r, Exception)]
+            if errors:
+                logger.warning("scan completed with %d task errors", len(errors))
+        finally:
+            await client.aclose()
+
+        logger.info("scan done")
+
+        warning = ""
+        if mp_attempted and mp_error:
+            if mp_source in {"cache", "state"} and mp_cache_age_seconds is not None:
+                warning = f"moviepilot_failed: {mp_error} (fallback={mp_source} age={mp_cache_age_seconds}s)"
+            else:
+                warning = f"moviepilot_failed: {mp_error}"
+
+        status = {
+            "ok": True,
+            "site_count": len(sites),
+            "scanned_count": len(tasks),
+            "skipped_in_flight": skipped_in_flight,
+            "error": "",
+            "warning": warning,
+            "moviepilot_ok": mp_ok,
+            "moviepilot_error": mp_error,
+            "moviepilot_source": mp_source,
+            "moviepilot_cache_fetched_at": mp_cache_fetched_at,
+            "moviepilot_cache_age_seconds": mp_cache_age_seconds,
+            "moviepilot_cache_expired": mp_cache_expired,
+            "last_run_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await self._store.set_json("scan_status", status)
+        try:
+            await self._store.set_json("scan_hint", None)
+        except Exception:
+            pass
+        return status
+
+    async def run_one(self, domain: str) -> Dict[str, Any]:
+        started_at = datetime.now(timezone.utc)
+        target = _normalize_domain(domain)
+        if not target:
+            return {"ok": False, "site_count": 0, "error": "domain is required", "last_run_at": started_at.isoformat()}
+
+        if target in self._in_flight:
+            raise AlreadyScanningError(target)
+
+        async with self._deps_lock:
+            sites, cookie_mgr, meta = await self._prepare_scan_context(started_at)
+
+        mp_attempted = bool(meta.get("moviepilot_attempted"))
+        mp_ok = bool(meta.get("moviepilot_ok"))
+        mp_error = str(meta.get("moviepilot_error") or "")
+        mp_source = str(meta.get("moviepilot_source") or "none")
+        mp_cache_fetched_at = str(meta.get("moviepilot_cache_fetched_at") or "")
+        mp_cache_age_seconds = meta.get("moviepilot_cache_age_seconds")
+        mp_cache_expired = meta.get("moviepilot_cache_expired")
+        scan_timeout = int(meta.get("scan_timeout") or int(self._settings.scan.timeout_seconds))
+        scan_user_agent = str(meta.get("scan_user_agent") or "")
+        scan_trust_env = bool(meta.get("scan_trust_env"))
+        request_retry_delay_seconds = int(meta.get("request_retry_delay_seconds") or 30)
+
+        site = next((s for s in sites if _normalize_domain(s.domain) == target), None)
+        if not site:
+            hint = ""
+            if mp_attempted and mp_error:
+                hint = " (MoviePilot unavailable and no local manual site)"
+            return {
+                "ok": False,
+                "site_count": 0,
+                "error": f"site not found: {target}{hint}",
+                "moviepilot_ok": mp_ok,
+                "moviepilot_error": mp_error,
+                "moviepilot_source": mp_source,
+                "moviepilot_cache_fetched_at": mp_cache_fetched_at,
+                "moviepilot_cache_age_seconds": mp_cache_age_seconds,
+                "moviepilot_cache_expired": mp_cache_expired,
+                "last_run_at": started_at.isoformat(),
+            }
+
+        if target in self._in_flight:
+            raise AlreadyScanningError(target)
+
+        logger.info("single scan start: %s", target)
+        task = asyncio.current_task()
+        if task is not None:
+            self._in_flight[target] = task
+        timeout = httpx.Timeout(scan_timeout)
+        try:
             async with httpx.AsyncClient(
                 timeout=timeout,
                 follow_redirects=True,
                 trust_env=scan_trust_env,
             ) as client:
-                tasks = [self._check_one(client, site, started_at, cookie_mgr, scan_user_agent or None) for site in sites]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                errors = [r for r in results if isinstance(r, Exception)]
-                if errors:
-                    logger.warning("scan completed with %d task errors", len(errors))
-
-            logger.info("scan done")
-            warning = ""
-            if mp_attempted and mp_error:
-                if mp_source in {"cache", "state"} and mp_cache_age_seconds is not None:
-                    warning = f"moviepilot_failed: {mp_error} (fallback={mp_source} age={mp_cache_age_seconds}s)"
-                else:
-                    warning = f"moviepilot_failed: {mp_error}"
-            status = {
-                "ok": True,
-                "site_count": len(sites),
-                "error": "",
-                "warning": warning,
-                "moviepilot_ok": mp_ok,
-                "moviepilot_error": mp_error,
-                "moviepilot_source": mp_source,
-                "moviepilot_cache_fetched_at": mp_cache_fetched_at,
-                "moviepilot_cache_age_seconds": mp_cache_age_seconds,
-                "moviepilot_cache_expired": mp_cache_expired,
-                "last_run_at": datetime.now(timezone.utc).isoformat(),
-            }
-            await self._store.set_json("scan_status", status)
-            try:
-                await self._store.set_json("scan_hint", None)
-            except Exception:
-                pass
-            return status
-
-    async def run_one(self, domain: str) -> Dict[str, Any]:
-        async with self._lock:
-            started_at = datetime.now(timezone.utc)
-            target = _normalize_domain(domain)
-            if not target:
-                status = {
-                    "ok": False,
-                    "site_count": 0,
-                    "error": "domain is required",
-                    "last_run_at": started_at.isoformat(),
-                }
-                return status
-
-            cfg = await self._load_app_config()
-            sites_cfg = await self._load_sites_config()
-
-            mp_cfg = _safe_dict(cfg.get("moviepilot"))
-            connectivity_cfg = _safe_dict(cfg.get("connectivity"))
-            cookie_cfg = _safe_dict(cfg.get("cookie"))
-            cc_cfg = _safe_dict(cookie_cfg.get("cookiecloud"))
-            scan_cfg = _safe_dict(cfg.get("scan"))
-
-            mp_base_url = _cfg_str(mp_cfg.get("base_url")) or self._settings.moviepilot.base_url
-            mp_username = _cfg_str(mp_cfg.get("username")) or self._settings.moviepilot.username
-            mp_password = _cfg_str(mp_cfg.get("password")) or self._settings.moviepilot.password
-            mp_otp_password = _cfg_str(mp_cfg.get("otp_password")) or (self._settings.moviepilot.otp_password or "")
-            mp_sites_cache_ttl = _cfg_int(
-                mp_cfg.get("sites_cache_ttl_seconds"),
-                default=MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
-                min_value=MP_SITES_CACHE_MIN_TTL_SECONDS,
-                max_value=MP_SITES_CACHE_MAX_TTL_SECONDS,
-            )
-            deps_retry_interval = _cfg_int(
-                connectivity_cfg.get("retry_interval_seconds"),
-                default=DEFAULT_RETRY_INTERVAL_SECONDS,
-                min_value=MIN_RETRY_INTERVAL_SECONDS,
-                max_value=MAX_RETRY_INTERVAL_SECONDS,
-            )
-            mp_sites_cache_ttl = _cfg_int(
-                mp_cfg.get("sites_cache_ttl_seconds"),
-                default=MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
-                min_value=MP_SITES_CACHE_MIN_TTL_SECONDS,
-                max_value=MP_SITES_CACHE_MAX_TTL_SECONDS,
-            )
-
-            cookie_source = (_cfg_str(cookie_cfg.get("source")) or self._settings.cookie.source or "auto").strip().lower()
-            cc_base_url = _cfg_str(cc_cfg.get("base_url")) or self._settings.cookie.cookiecloud.base_url
-            cc_uuid = _cfg_str(cc_cfg.get("uuid")) or self._settings.cookie.cookiecloud.uuid
-            cc_password = _cfg_str(cc_cfg.get("password")) or self._settings.cookie.cookiecloud.password
-            cc_refresh = _cfg_int(
-                cc_cfg.get("refresh_interval_seconds"),
-                default=int(self._settings.cookie.cookiecloud.refresh_interval_seconds),
-                min_value=30,
-                max_value=24 * 3600,
-            )
-
-            scan_timeout = _cfg_int(
-                scan_cfg.get("timeout_seconds"),
-                default=int(self._settings.scan.timeout_seconds),
-                min_value=5,
-                max_value=180,
-            )
-            scan_concurrency = _cfg_int(
-                scan_cfg.get("concurrency"),
-                default=int(self._settings.scan.concurrency),
-                min_value=1,
-                max_value=64,
-            )
-            scan_user_agent = _cfg_str(scan_cfg.get("user_agent")) or self._settings.scan.user_agent or ""
-            scan_trust_env = _cfg_bool(scan_cfg.get("trust_env"), default=bool(self._settings.scan.trust_env))
-
-            self._sem = asyncio.Semaphore(max(1, scan_concurrency))
-
-            deps_status = load_deps_status(await self._store.get_json(DEPS_STATUS_KEY, default=None))
-
-            mp_attempted = bool(mp_base_url and mp_username and mp_password)
-            mp_sites: list[Site] = []
-            mp_error = ""
-            mp_ok = False
-            mp_source = "none"
-            mp_cache_fetched_at = ""
-            mp_cache_age_seconds: Optional[int] = None
-            mp_cache_expired: Optional[bool] = None
-            if mp_attempted:
-                mp_fp = fingerprint_moviepilot(mp_base_url)
-                mp_dep = get_dep_status(deps_status, "moviepilot")
-                mp_allowed = can_attempt(mp_dep, started_at, mp_fp)
-                if not mp_allowed:
-                    mp_error = mp_dep.error
-                else:
-                    mp_client = MoviePilotClient(
-                        base_url=mp_base_url,
-                        username=mp_username,
-                        password=mp_password,
-                        otp_password=mp_otp_password or None,
-                        timeout_seconds=scan_timeout,
-                    )
-                    try:
-                        mp_sites = await mp_client.list_sites(only_active=True)
-                        mp_ok = True
-                        mp_source = "live"
-                        mp_cache_fetched_at = started_at.isoformat()
-                        mp_cache_age_seconds = 0
-                        mp_cache_expired = False
-                        try:
-                            await self._store.set_json(MP_SITES_CACHE_KEY, build_cache(mp_base_url, mp_sites, fetched_at=started_at))
-                        except Exception:
-                            logger.exception("failed to persist MoviePilot sites cache")
-
-                        deps_status = update_dep_ok(deps_status, "moviepilot", started_at, mp_fp)
-                        try:
-                            await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                        except Exception:
-                            logger.exception("failed to persist deps status")
-                    except Exception as e:
-                        logger.exception("failed to load sites from MoviePilot")
-                        mp_error = _format_error_detail(e)
-                        deps_status = update_dep_fail(
-                            deps_status,
-                            "moviepilot",
-                            started_at,
-                            mp_fp,
-                            mp_error,
-                            retry_interval_seconds=deps_retry_interval,
-                        )
-                        try:
-                            await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                        except Exception:
-                            logger.exception("failed to persist deps status")
-
-                if mp_sites:
-                    pass
-                else:
-                    try:
-                        cache = parse_cache(await self._store.get_json(MP_SITES_CACHE_KEY, default=None))
-                        if cache:
-                            mp_cache_fetched_at = cache.fetched_at_iso
-                            mp_cache_age_seconds = cache.age_seconds(started_at)
-                            mp_cache_expired = cache_expired(cache, started_at, mp_sites_cache_ttl, base_url=mp_base_url)
-                            if not mp_cache_expired:
-                                mp_sites = cache.sites
-                                mp_source = "cache"
-                    except Exception:
-                        logger.exception("failed to load MoviePilot sites cache")
-                    if not mp_sites:
-                        try:
-                            snap_at, snap_sites = await self._store.load_sites_snapshot()
-                            if snap_sites and snap_at:
-                                age = int(max(0, (started_at - snap_at).total_seconds()))
-                                mp_cache_fetched_at = snap_at.isoformat()
-                                mp_cache_age_seconds = age
-                                if age <= mp_sites_cache_ttl:
-                                    mp_cache_expired = False
-                                    mp_sites = snap_sites
-                                    mp_source = "state"
-                                    try:
-                                        await self._store.set_json(MP_SITES_CACHE_KEY, build_cache(mp_base_url, mp_sites, fetched_at=snap_at))
-                                    except Exception:
-                                        logger.exception("failed to persist MoviePilot sites cache (seeded)")
-                                else:
-                                    mp_cache_expired = True
-                        except Exception:
-                            logger.exception("failed to load sites snapshot from local state")
-
-            cc_client = None
-            cc_should_attempt = bool(cc_base_url and cc_uuid and cc_password and cookie_source in {"auto", "cookiecloud"})
-            cc_cookies: Optional[list[dict[str, Any]]] = None
-            if cc_should_attempt:
-                cc_fp = fingerprint_cookiecloud(cc_base_url, cc_uuid)
-                cc_dep = get_dep_status(deps_status, "cookiecloud")
-                cc_allowed = can_attempt(cc_dep, started_at, cc_fp)
-                if cc_allowed:
-                    cc_client = CookieCloudClient(
-                        base_url=cc_base_url,
-                        uuid=cc_uuid,
-                        password=cc_password,
-                        timeout_seconds=scan_timeout,
-                    )
-                    try:
-                        cc_cookies = await cc_client.fetch_cookie_items()
-                        deps_status = update_dep_ok(deps_status, "cookiecloud", started_at, cc_fp)
-                        await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                    except Exception as e:
-                        cc_error = _format_error_detail(e)
-                        deps_status = update_dep_fail(
-                            deps_status,
-                            "cookiecloud",
-                            started_at,
-                            cc_fp,
-                            cc_error,
-                            retry_interval_seconds=deps_retry_interval,
-                        )
-                        try:
-                            await self._store.set_json(DEPS_STATUS_KEY, deps_status)
-                        except Exception:
-                            logger.exception("failed to persist deps status")
-                        cc_client = None
-            cookie_mgr = CookieManager(
-                cookie_source=cookie_source,
-                cookiecloud=cc_client,
-                refresh_interval_seconds=cc_refresh,
-                prefetched_cookies=cc_cookies,
-                prefetched_at=started_at if cc_cookies is not None else None,
-            )
-
-            sites = self._merge_sites(mp_sites, _safe_dict(sites_cfg.get("entries")))
-            site = next((s for s in sites if _normalize_domain(s.domain) == target), None)
-            if not site:
-                hint = ""
-                if mp_attempted and mp_error:
-                    hint = " (MoviePilot unavailable and no local manual site)"
-                status = {
-                    "ok": False,
-                    "site_count": 0,
-                    "error": f"site not found: {target}{hint}",
-                    "moviepilot_ok": mp_ok,
-                    "moviepilot_error": mp_error,
-                    "moviepilot_source": mp_source,
-                    "moviepilot_cache_fetched_at": mp_cache_fetched_at,
-                    "moviepilot_cache_age_seconds": mp_cache_age_seconds,
-                    "moviepilot_cache_expired": mp_cache_expired,
-                    "last_run_at": started_at.isoformat(),
-                }
-                return status
-
-            logger.info("single scan start: %s", target)
-            timeout = httpx.Timeout(scan_timeout)
-            try:
-                async with httpx.AsyncClient(
-                    timeout=timeout,
-                    follow_redirects=True,
-                    trust_env=scan_trust_env,
-                ) as client:
-                    await self._check_one(client, site, started_at, cookie_mgr, scan_user_agent or None)
-            except Exception as e:
-                logger.exception("single scan failed: %s", target)
-                status = {
-                    "ok": False,
-                    "site_count": 1,
-                    "domain": target,
-                    "error": _format_error_detail(e),
-                    "moviepilot_ok": mp_ok,
-                    "moviepilot_error": mp_error,
-                    "moviepilot_source": mp_source,
-                    "moviepilot_cache_fetched_at": mp_cache_fetched_at,
-                    "moviepilot_cache_age_seconds": mp_cache_age_seconds,
-                    "moviepilot_cache_expired": mp_cache_expired,
-                    "last_run_at": datetime.now(timezone.utc).isoformat(),
-                }
-                return status
-
-            logger.info("single scan done: %s", target)
-            warning = ""
-            if mp_attempted and mp_error:
-                if mp_source in {"cache", "state"} and mp_cache_age_seconds is not None:
-                    warning = f"moviepilot_failed: {mp_error} (fallback={mp_source} age={mp_cache_age_seconds}s)"
-                else:
-                    warning = f"moviepilot_failed: {mp_error}"
-            status = {
-                "ok": True,
+                await self._check_one(
+                    client,
+                    site,
+                    started_at,
+                    cookie_mgr,
+                    scan_user_agent or None,
+                    retry_delay_seconds=request_retry_delay_seconds,
+                )
+        except Exception as e:
+            logger.exception("single scan failed: %s", target)
+            return {
+                "ok": False,
                 "site_count": 1,
                 "domain": target,
-                "error": "",
-                "warning": warning,
+                "error": _format_error_detail(e),
                 "moviepilot_ok": mp_ok,
                 "moviepilot_error": mp_error,
                 "moviepilot_source": mp_source,
@@ -884,11 +838,37 @@ class Scanner:
                 "moviepilot_cache_expired": mp_cache_expired,
                 "last_run_at": datetime.now(timezone.utc).isoformat(),
             }
-            try:
-                await self._store.set_json("scan_hint", None)
-            except Exception:
-                pass
-            return status
+        finally:
+            if task is not None and self._in_flight.get(target) is task:
+                self._in_flight.pop(target, None)
+
+        logger.info("single scan done: %s", target)
+        warning = ""
+        if mp_attempted and mp_error:
+            if mp_source in {"cache", "state"} and mp_cache_age_seconds is not None:
+                warning = f"moviepilot_failed: {mp_error} (fallback={mp_source} age={mp_cache_age_seconds}s)"
+            else:
+                warning = f"moviepilot_failed: {mp_error}"
+
+        status = {
+            "ok": True,
+            "site_count": 1,
+            "domain": target,
+            "error": "",
+            "warning": warning,
+            "moviepilot_ok": mp_ok,
+            "moviepilot_error": mp_error,
+            "moviepilot_source": mp_source,
+            "moviepilot_cache_fetched_at": mp_cache_fetched_at,
+            "moviepilot_cache_age_seconds": mp_cache_age_seconds,
+            "moviepilot_cache_expired": mp_cache_expired,
+            "last_run_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            await self._store.set_json("scan_hint", None)
+        except Exception:
+            pass
+        return status
 
     async def _check_one(
         self,
@@ -897,10 +877,12 @@ class Scanner:
         now: datetime,
         cookie_mgr: CookieManager,
         default_user_agent: Optional[str],
+        *,
+        retry_delay_seconds: int,
     ) -> None:
         async with self._sem:
             ua = site.ua or default_user_agent or None
-            reachability, engine_hint = await self._probe_reachability(client, site.url, ua)
+            reachability, engine_hint = await self._probe_reachability(client, site.url, ua, retry_delay_seconds=retry_delay_seconds)
             engine = engine_hint or "unknown"
             is_mteam = (site.domain or "").lower().endswith("m-team.cc")
             if is_mteam:
@@ -940,7 +922,7 @@ class Scanner:
                 return
 
             try:
-                registration = await self._detector.check_registration(client, site, ua)
+                registration = await self._detector.check_registration(client, site, ua, retry_delay_seconds=retry_delay_seconds)
             except Exception as e:
                 logger.exception("registration check failed: %s", site.domain)
                 registration = AspectResult(
@@ -960,7 +942,7 @@ class Scanner:
                 if is_mteam:
                     api_key = (getattr(site, "did", None) or "").strip()
                     if api_key:
-                        invites = await self._mteam.check_invites(client, site, ua)
+                        invites = await self._mteam.check_invites(client, site, ua, retry_delay_seconds=retry_delay_seconds)
                         if invites.state == "unknown":
                             cookie_header = None
                             try:
@@ -984,7 +966,13 @@ class Scanner:
                         except Exception:
                             logger.exception("cookie build failed: %s", site.domain)
                         if cookie_header:
-                            invites = await self._detector.check_invites(client, site, ua, cookie_header)
+                            invites = await self._detector.check_invites(
+                                client,
+                                site,
+                                ua,
+                                cookie_header,
+                                retry_delay_seconds=retry_delay_seconds,
+                            )
                         else:
                             invites = AspectResult(
                                 state="unknown",
@@ -1005,7 +993,13 @@ class Scanner:
                             cookie_header = await cookie_mgr.cookie_header_for(site.url, fallback_cookie=getattr(site, "cookie", None))
                     except Exception:
                         logger.exception("cookie build failed: %s", site.domain)
-                    invites = await self._detector.check_invites(client, site, ua, cookie_header)
+                    invites = await self._detector.check_invites(
+                        client,
+                        site,
+                        ua,
+                        cookie_header,
+                        retry_delay_seconds=retry_delay_seconds,
+                    )
             except Exception as e:
                 logger.exception("invites check failed: %s", site.domain)
                 invites = AspectResult(
@@ -1033,96 +1027,78 @@ class Scanner:
         client: httpx.AsyncClient,
         site_url: str,
         user_agent: Optional[str],
+        *,
+        retry_delay_seconds: int,
     ) -> tuple[ReachabilityResult, Optional[str]]:
         ua = user_agent or None
         orig_host = urlparse(site_url).hostname or ""
 
-        engine_hint: Optional[str] = None
-        last: tuple[ReachabilityResult, Optional[str]] = (
-            ReachabilityResult(state="unknown", evidence=Evidence(url=site_url, http_status=None, reason="probe_not_run")),
-            None,
+        resp, err, used = await request_with_retry(
+            lambda: client.get(site_url, headers={"User-Agent": ua} if ua else None),
+            attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
+            delay_seconds=max(0, int(retry_delay_seconds or 0)),
         )
 
-        attempts = 3
-        for attempt in range(attempts):
-            try:
-                resp = await client.get(site_url, headers={"User-Agent": ua} if ua else None)
-                status = resp.status_code
-                engine_hint = engine_hint or _engine_hint_from_html(resp.text)
-
-                final_host = resp.url.host if resp.url else ""
-                if orig_host and final_host and not _hosts_related(orig_host, final_host):
-                    last = (
-                        ReachabilityResult(
-                            state="down",
-                            evidence=Evidence(
-                                url=str(resp.url),
-                                http_status=status,
-                                reason="probe_redirect",
-                                detail=f"redirected_to:{final_host}",
-                            ),
-                        ),
-                        engine_hint,
-                    )
-                elif status >= 500 or status in _DOWN_HTTP_STATUSES:
-                    last = (
-                        ReachabilityResult(
-                            state="down",
-                            evidence=Evidence(url=str(resp.url), http_status=status, reason=f"probe_http_{status}"),
-                        ),
-                        engine_hint,
-                    )
-                else:
-                    return (
-                        ReachabilityResult(
-                            state="up",
-                            evidence=Evidence(url=str(resp.url), http_status=status, reason="probe_ok"),
-                        ),
-                        engine_hint,
-                    )
-            except httpx.RequestError as e:
-                last = (
-                    ReachabilityResult(
-                        state="down",
-                        evidence=Evidence(
-                            url=site_url,
-                            http_status=None,
-                            reason=f"probe_error:{type(e).__name__}",
-                            detail=_format_error_detail(e),
-                        ),
+        if err is not None or resp is None:
+            detail = _format_error_detail(err or RuntimeError("probe failed"))
+            if used > 1:
+                detail = f"{detail} (retries={used})"
+            state = "down" if isinstance(err, httpx.RequestError) else "unknown"
+            return (
+                ReachabilityResult(
+                    state=state,
+                    evidence=Evidence(
+                        url=site_url,
+                        http_status=None,
+                        reason=f"probe_error:{type(err).__name__}",
+                        detail=detail,
                     ),
-                    engine_hint,
-                )
-            except Exception as e:
-                last = (
-                    ReachabilityResult(
-                        state="unknown",
-                        evidence=Evidence(
-                            url=site_url,
-                            http_status=None,
-                            reason=f"probe_error:{type(e).__name__}",
-                            detail=_format_error_detail(e),
-                        ),
-                    ),
-                    engine_hint,
-                )
+                ),
+                None,
+            )
 
-            if attempt < attempts - 1:
-                await asyncio.sleep(0.3 * (attempt + 1))
+        engine_hint = _engine_hint_from_html(resp.text)
+        status = resp.status_code
 
-        # Mark that we retried before concluding it's down/unknown.
-        result, hint = last
-        ev = result.evidence
-        if ev.detail:
-            detail = f"{ev.detail} (retries={attempts})"
-        else:
-            detail = f"retries={attempts}"
+        final_host = resp.url.host if resp.url else ""
+        if orig_host and final_host and not _hosts_related(orig_host, final_host):
+            detail = f"redirected_to:{final_host}"
+            if used > 1:
+                detail = f"{detail} (retries={used})"
+            return (
+                ReachabilityResult(
+                    state="down",
+                    evidence=Evidence(url=str(resp.url), http_status=status, reason="probe_redirect", detail=detail),
+                ),
+                engine_hint,
+            )
+
+        if status >= 500 or status in _DOWN_HTTP_STATUSES:
+            detail = f"retries={used}" if used > 1 else None
+            return (
+                ReachabilityResult(
+                    state="down",
+                    evidence=Evidence(url=str(resp.url), http_status=status, reason=f"probe_http_{status}", detail=detail),
+                ),
+                engine_hint,
+            )
+
+        if status in {408, 429}:
+            detail = f"retries={used}" if used > 1 else None
+            return (
+                ReachabilityResult(
+                    state="down",
+                    evidence=Evidence(url=str(resp.url), http_status=status, reason=f"probe_http_{status}", detail=detail),
+                ),
+                engine_hint,
+            )
+
         return (
             ReachabilityResult(
-                state=result.state,
-                evidence=Evidence(url=ev.url, http_status=ev.http_status, reason=ev.reason, matched=ev.matched, detail=detail),
+                state="up",
+                evidence=Evidence(url=str(resp.url), http_status=status, reason="probe_ok"),
             ),
-            hint,
+            engine_hint,
         )
 
     async def _persist_and_notify(self, site, result: SiteCheckResult, now: datetime) -> None:

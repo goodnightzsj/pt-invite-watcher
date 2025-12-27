@@ -105,7 +105,19 @@ async function runScan() {
     showToast("开始扫描…", "info", 1600);
     const status = await api.scanRun();
     scanStatus.value = status;
-    showToast(status?.ok ? "扫描已完成" : `扫描失败：${status?.error || "unknown"}`, status?.ok ? "success" : "error");
+    if (status?.ok) {
+      const skipped = Number(status?.skipped_in_flight || 0);
+      const scanned = Number(status?.scanned_count ?? -1);
+      if (scanned === 0 && skipped > 0) {
+        showToast("当前无可扫描站点（均在扫描中）", "info", 2400);
+      } else if (skipped > 0) {
+        showToast(`扫描已完成（跳过 ${skipped} 个在途站点）`, "success", 2400);
+      } else {
+        showToast("扫描已完成", "success", 2200);
+      }
+    } else {
+      showToast(`扫描失败：${status?.error || "unknown"}`, "error", 4500);
+    }
     await refresh();
   } catch (e: any) {
     showToast(String(e?.message || e || "扫描失败"), "error");
@@ -115,6 +127,10 @@ async function runScan() {
 }
 
 async function runRowScan(row: SiteRow) {
+  if (row.scanning) {
+    showToast("该站点正在扫描中，请稍后再试", "info", 2400);
+    return;
+  }
   if (rowScanDomain.value) return;
   rowScanDomain.value = row.domain;
   showToast(`开始扫描：${row.name || row.domain}`, "info", 1600);
@@ -379,11 +395,11 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
                 <div class="flex items-center justify-end gap-2">
                   <button
                     class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
-                    :disabled="scanRunning || loading || rowScanDomain === row.domain"
+                    :disabled="scanRunning || loading || rowScanDomain === row.domain || row.scanning"
                     @click="runRowScan(row)"
                     title="扫描此站"
                   >
-                     <svg v-if="rowScanDomain === row.domain" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                     <svg v-if="rowScanDomain === row.domain || row.scanning" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                      <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-refresh-cw"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
                   </button>
                   <button

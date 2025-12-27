@@ -11,7 +11,7 @@ const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
 
 type Model = {
   moviepilot: { base_url: string; username: string; password: string; otp_password: string; sites_cache_ttl_seconds: number };
-  connectivity: { retry_interval_seconds: number };
+  connectivity: { retry_interval_seconds: number; request_retry_delay_seconds: number };
   cookie: { source: string; cookiecloud: { base_url: string; uuid: string; password: string; refresh_interval_seconds: number } };
   scan: { interval_seconds: number; timeout_seconds: number; concurrency: number; user_agent: string; trust_env: boolean };
   ui: { allow_state_reset: boolean };
@@ -26,7 +26,7 @@ const view = ref<ConfigResponse | null>(null);
 const baselineJson = ref<string>("");
 const model = reactive<Model>({
   moviepilot: { base_url: "", username: "", password: "", otp_password: "", sites_cache_ttl_seconds: 86400 },
-  connectivity: { retry_interval_seconds: 3600 },
+  connectivity: { retry_interval_seconds: 3600, request_retry_delay_seconds: 30 },
   cookie: { source: "auto", cookiecloud: { base_url: "", uuid: "", password: "", refresh_interval_seconds: 300 } },
   scan: { interval_seconds: 600, timeout_seconds: 20, concurrency: 8, user_agent: "", trust_env: false },
   ui: { allow_state_reset: true },
@@ -47,6 +47,7 @@ function normalizedModelForCompare(m: Model) {
     },
     connectivity: {
       retry_interval_seconds: Number(m.connectivity.retry_interval_seconds || 0),
+      request_retry_delay_seconds: Number(m.connectivity.request_retry_delay_seconds || 0),
     },
     cookie: {
       source: _normStr(m.cookie.source),
@@ -87,6 +88,7 @@ async function load(opts: { toast?: boolean } = {}) {
     model.moviepilot.otp_password = "";
     model.moviepilot.sites_cache_ttl_seconds = data.moviepilot.sites_cache_ttl_seconds || 86400;
     model.connectivity.retry_interval_seconds = data.connectivity?.retry_interval_seconds || 3600;
+    model.connectivity.request_retry_delay_seconds = data.connectivity?.request_retry_delay_seconds ?? 30;
 
     model.cookie.source = data.cookie.source || "auto";
     model.cookie.cookiecloud.base_url = data.cookie.cookiecloud.base_url || "";
@@ -128,6 +130,7 @@ async function save() {
       },
       connectivity: {
         retry_interval_seconds: model.connectivity.retry_interval_seconds,
+        request_retry_delay_seconds: model.connectivity.request_retry_delay_seconds,
       },
       cookie: {
         source: model.cookie.source,
@@ -533,6 +536,22 @@ onMounted(() => load());
           <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">
             依赖连接失败时会优先使用缓存，并按此间隔重新尝试恢复连接。
           </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">网络请求失败重试延迟（站点探测 / 通知）</label>
+          <select v-model.number="model.connectivity.request_retry_delay_seconds" class="mt-1 ui-select">
+            <option :value="30">30 秒</option>
+            <option :value="60">60 秒</option>
+            <option :value="300">5 分钟</option>
+            <option :value="600">10 分钟</option>
+            <option :value="1800">30 分钟</option>
+            <option :value="3600">60 分钟</option>
+            <option :value="7200">2 小时</option>
+            <option :value="21600">6 小时</option>
+            <option :value="43200">12 小时</option>
+            <option :value="86400">24 小时</option>
+          </select>
+          <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">遇到网络异常/5xx/429/408 时会按此间隔重试（最多 3 次）。</div>
         </div>
         <div>
           <label class="block text-sm font-medium">超时（秒）</label>

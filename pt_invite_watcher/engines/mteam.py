@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from typing import Any, Optional
@@ -8,6 +7,7 @@ from typing import Any, Optional
 import httpx
 
 from pt_invite_watcher.models import AspectResult, Evidence, Site
+from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS, request_with_retry
 
 
 logger = logging.getLogger("pt_invite_watcher.mteam")
@@ -147,7 +147,15 @@ def _extract_invite_quota(payload: Any) -> tuple[Optional[int], Optional[int], O
 
 
 class MTeamDetector:
-    async def check_invites(self, client: httpx.AsyncClient, site: Site, user_agent: Optional[str]) -> AspectResult:
+    async def check_invites(
+        self,
+        client: httpx.AsyncClient,
+        site: Site,
+        user_agent: Optional[str],
+        *,
+        retry_attempts: int = DEFAULT_REQUEST_RETRY_ATTEMPTS,
+        retry_delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
+    ) -> AspectResult:
         api_key = (site.did or "").strip()
         authorization = (site.authorization or "").strip()
         if not api_key:
@@ -171,43 +179,19 @@ class MTeamDetector:
         if user_agent:
             headers["User-Agent"] = user_agent
 
-        last_err: Optional[Exception] = None
-        last_resp: Optional[httpx.Response] = None
-        used = 1
-        for attempt in range(3):
-            used = attempt + 1
-            try:
-                resp = await client.post(_PROFILE_URL, headers=headers)
-                last_resp = resp
-                if resp.status_code >= 500 and attempt < 2:
-                    await asyncio.sleep(0.3 * (attempt + 1))
-                    continue
-                break
-            except httpx.RequestError as e:
-                last_err = e
-                if attempt < 2:
-                    await asyncio.sleep(0.3 * (attempt + 1))
-                    continue
-            except Exception as e:
-                last_err = e
-                break
-
-        if last_err is not None and last_resp is None:
-            detail = _truncate_detail(str(last_err))
+        resp, err, used = await request_with_retry(
+            lambda: client.post(_PROFILE_URL, headers=headers),
+            attempts=max(1, int(retry_attempts or 0)),
+            delay_seconds=max(0, int(retry_delay_seconds or 0)),
+        )
+        if err is not None or resp is None:
+            detail = _truncate_detail(str(err or "request failed"))
             if used > 1:
                 detail = f"{detail} (retries={used})"
             return AspectResult(
                 state="unknown",
-                evidence=Evidence(
-                    url=_PROFILE_URL,
-                    http_status=None,
-                    reason=f"mteam_error:{type(last_err).__name__}",
-                    detail=detail,
-                ),
+                evidence=Evidence(url=_PROFILE_URL, http_status=None, reason=f"mteam_error:{type(err).__name__}", detail=detail),
             )
-
-        resp = last_resp
-        assert resp is not None
 
         if resp.status_code in {401, 403}:
             detail = _truncate_detail(resp.text)

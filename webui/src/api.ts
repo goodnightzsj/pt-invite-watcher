@@ -4,6 +4,8 @@ export type State = "open" | "closed" | "unknown";
 export type ScanStatus = {
   ok: boolean;
   site_count: number;
+  scanned_count?: number;
+  skipped_in_flight?: number;
   error: string;
   last_run_at: string;
   warning?: string;
@@ -27,6 +29,7 @@ export type SiteRow = {
   last_checked_at: string;
   last_changed_at: string | null;
   errors: string[];
+  scanning?: boolean;
 };
 
 export type DashboardResponse = {
@@ -69,6 +72,7 @@ export type ConfigResponse = {
   };
   connectivity: {
     retry_interval_seconds: number;
+    request_retry_delay_seconds?: number;
   };
   cookie: {
     source: string;

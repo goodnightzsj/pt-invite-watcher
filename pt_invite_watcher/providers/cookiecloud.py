@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS, request_with_retry
+
 
 logger = logging.getLogger("pt_invite_watcher.cookiecloud")
 
@@ -45,6 +47,8 @@ class CookieCloudClient:
     uuid: str
     password: str
     timeout_seconds: int = 15
+    retry_attempts: int = DEFAULT_REQUEST_RETRY_ATTEMPTS
+    retry_delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS
 
     async def fetch_cookie_items(self) -> list[dict[str, Any]]:
         if not self.base_url or not self.uuid or not self.password:
@@ -53,7 +57,14 @@ class CookieCloudClient:
         url = _join(self.base_url, f"get/{self.uuid}")
         # CookieCloud is usually on LAN; ignore proxy env vars like ALL_PROXY to avoid 502 via local proxy.
         async with httpx.AsyncClient(timeout=self.timeout_seconds, trust_env=False) as client:
-            resp = await client.post(url, json={"password": self.password})
+            resp, err, _ = await request_with_retry(
+                lambda: client.post(url, json={"password": self.password}),
+                attempts=max(1, int(self.retry_attempts or 0)),
+                delay_seconds=max(0, int(self.retry_delay_seconds or 0)),
+            )
+            if err:
+                raise err
+            assert resp is not None
             resp.raise_for_status()
             data = resp.json()
 

@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import asyncio
 import html as html_lib
 import logging
 import re
@@ -12,12 +10,13 @@ import httpx
 from bs4 import BeautifulSoup
 
 from pt_invite_watcher.models import AspectResult, Evidence, Site
+from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS, request_with_retry
 
 
 logger = logging.getLogger("pt_invite_watcher.nexusphp")
 
 _UA_DEFAULT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-_HTTP_RETRY_ATTEMPTS = 3
+_HTTP_RETRY_ATTEMPTS = DEFAULT_REQUEST_RETRY_ATTEMPTS
 _MAX_ERROR_DETAIL_LEN = 240
 _MAX_SIGNUP_SNIPPET_LEN = 160
 
@@ -57,25 +56,18 @@ def _append_retry_detail(detail: Optional[str], attempts: int) -> Optional[str]:
 
 
 async def _get_with_retry(
-    client: httpx.AsyncClient, url: str, headers: dict[str, str], attempts: int = _HTTP_RETRY_ATTEMPTS
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    *,
+    attempts: int = _HTTP_RETRY_ATTEMPTS,
+    delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
 ) -> tuple[Optional[httpx.Response], Optional[Exception], int]:
-    last_exc: Optional[Exception] = None
-    last_resp: Optional[httpx.Response] = None
-    for attempt in range(max(1, attempts)):
-        try:
-            resp = await client.get(url, headers=headers)
-            last_resp = resp
-            if resp.status_code >= 500 and attempt < attempts - 1:
-                await asyncio.sleep(0.3 * (attempt + 1))
-                continue
-            return resp, None, attempt + 1
-        except httpx.RequestError as e:
-            last_exc = e
-            if attempt < attempts - 1:
-                await asyncio.sleep(0.3 * (attempt + 1))
-                continue
-            return None, e, attempt + 1
-    return last_resp, last_exc, attempts
+    return await request_with_retry(
+        lambda: client.get(url, headers=headers),
+        attempts=max(1, int(attempts or 0)),
+        delay_seconds=max(0, int(delay_seconds or 0)),
+    )
 
 
 def _join(base: str, path: str) -> str:
@@ -318,7 +310,14 @@ def _invite_send_action_status(raw_html: str) -> tuple[Optional[bool], Optional[
 
 @dataclass(frozen=True)
 class NexusPhpDetector:
-    async def check_registration(self, client: httpx.AsyncClient, site: Site, user_agent: Optional[str]) -> AspectResult:
+    async def check_registration(
+        self,
+        client: httpx.AsyncClient,
+        site: Site,
+        user_agent: Optional[str],
+        *,
+        retry_delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
+    ) -> AspectResult:
         ua = user_agent or _UA_DEFAULT
         last_err: Optional[Exception] = None
         last_err_url: Optional[str] = None
@@ -330,7 +329,7 @@ class NexusPhpDetector:
         paths = [raw_path] if raw_path else ["signup.php"]
         for path in paths:
             url = _join(site.url, path)
-            resp, err, used = await _get_with_retry(client, url, headers={"User-Agent": ua})
+            resp, err, used = await _get_with_retry(client, url, headers={"User-Agent": ua}, delay_seconds=retry_delay_seconds)
             if err:
                 last_err = err
                 last_err_url = url
@@ -414,6 +413,8 @@ class NexusPhpDetector:
         site: Site,
         user_agent: Optional[str],
         cookie_header: Optional[str],
+        *,
+        retry_delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
     ) -> AspectResult:
         ua = user_agent or _UA_DEFAULT
         if not cookie_header:
@@ -424,7 +425,12 @@ class NexusPhpDetector:
 
         # Many NexusPHP sites expose the invite quota in the top nav on homepage:
         # "邀请[发送]: 12(0)" (M-Team may show Traditional).
-        home_resp, err, used = await _get_with_retry(client, site.url, headers={"User-Agent": ua, "Cookie": cookie_header})
+        home_resp, err, used = await _get_with_retry(
+            client,
+            site.url,
+            headers={"User-Agent": ua, "Cookie": cookie_header},
+            delay_seconds=retry_delay_seconds,
+        )
         if err:
             return AspectResult(
                 state="unknown",
@@ -489,7 +495,12 @@ class NexusPhpDetector:
         last_http_err: Optional[httpx.Response] = None
         last_http_used: int = 1
         for u in invite_candidates:
-            r, fetch_err, fetch_used = await _get_with_retry(client, u, headers={"User-Agent": ua, "Cookie": cookie_header})
+            r, fetch_err, fetch_used = await _get_with_retry(
+                client,
+                u,
+                headers={"User-Agent": ua, "Cookie": cookie_header},
+                delay_seconds=retry_delay_seconds,
+            )
             if fetch_err:
                 last_err = fetch_err
                 last_err_url = u

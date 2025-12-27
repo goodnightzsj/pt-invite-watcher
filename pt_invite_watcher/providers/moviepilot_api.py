@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import httpx
 
 from pt_invite_watcher.models import Site
+from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS, request_with_retry
 
 
 logger = logging.getLogger("pt_invite_watcher.moviepilot")
@@ -44,6 +45,8 @@ class MoviePilotClient:
         password: str,
         otp_password: Optional[str] = None,
         timeout_seconds: int = 15,
+        retry_attempts: int = DEFAULT_REQUEST_RETRY_ATTEMPTS,
+        retry_delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
     ):
         self._base_url = base_url.rstrip("/")
         self._username = username
@@ -51,6 +54,8 @@ class MoviePilotClient:
         self._otp_password = otp_password
         self._timeout = timeout_seconds
         self._token: Optional[_Token] = None
+        self._retry_attempts = max(1, int(retry_attempts or DEFAULT_REQUEST_RETRY_ATTEMPTS))
+        self._retry_delay_seconds = max(0, int(retry_delay_seconds or 0))
 
     async def _login(self, client: httpx.AsyncClient) -> str:
         if not self._base_url:
@@ -63,7 +68,14 @@ class MoviePilotClient:
         if self._otp_password:
             data["otp_password"] = self._otp_password
 
-        resp = await client.post(url, data=data)
+        resp, err, used = await request_with_retry(
+            lambda: client.post(url, data=data),
+            attempts=self._retry_attempts,
+            delay_seconds=self._retry_delay_seconds,
+        )
+        if err:
+            raise MoviePilotError(f"login failed: {type(err).__name__} {str(err)[:200]}")
+        assert resp is not None
         if resp.status_code != 200:
             hint = ""
             if resp.status_code == 404:
@@ -71,7 +83,8 @@ class MoviePilotClient:
                     " (check MP_BASE_URL: it must be the MoviePilot backend address; "
                     "verify in browser that `${MP_BASE_URL}/docs` is reachable)"
                 )
-            raise MoviePilotError(f"login failed: {resp.status_code} {resp.text[:200]}{hint}")
+            retry_hint = f" (retries={used})" if used > 1 else ""
+            raise MoviePilotError(f"login failed: {resp.status_code} {resp.text[:200]}{hint}{retry_hint}")
 
         payload = resp.json()
         token = _safe_str(payload.get("access_token"))
@@ -92,13 +105,28 @@ class MoviePilotClient:
             token = await self._get_token(client)
             url = f"{self._base_url}/api/v1/site/"
             headers = {"Authorization": f"Bearer {token}"}
-            resp = await client.get(url, headers=headers)
+            resp, err, used = await request_with_retry(
+                lambda: client.get(url, headers=headers),
+                attempts=self._retry_attempts,
+                delay_seconds=self._retry_delay_seconds,
+            )
+            if err:
+                raise MoviePilotError(f"list sites failed: {type(err).__name__} {str(err)[:200]}")
+            assert resp is not None
             if resp.status_code == 401:
                 token = await self._login(client)
                 headers = {"Authorization": f"Bearer {token}"}
-                resp = await client.get(url, headers=headers)
+                resp, err, used = await request_with_retry(
+                    lambda: client.get(url, headers=headers),
+                    attempts=self._retry_attempts,
+                    delay_seconds=self._retry_delay_seconds,
+                )
+                if err:
+                    raise MoviePilotError(f"list sites failed: {type(err).__name__} {str(err)[:200]}")
+                assert resp is not None
             if resp.status_code != 200:
-                raise MoviePilotError(f"list sites failed: {resp.status_code} {resp.text[:200]}")
+                retry_hint = f" (retries={used})" if used > 1 else ""
+                raise MoviePilotError(f"list sites failed: {resp.status_code} {resp.text[:200]}{retry_hint}")
 
             items = resp.json()
             if not isinstance(items, list):

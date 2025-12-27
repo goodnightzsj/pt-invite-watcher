@@ -15,6 +15,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pt_invite_watcher.app_context import AppContext, build_context
 from pt_invite_watcher.config import Settings, load_settings
 from pt_invite_watcher.providers.moviepilot_api import MoviePilotClient
+from pt_invite_watcher.scanner import AlreadyScanningError
 from pt_invite_watcher.providers.moviepilot_sites_cache import (
     MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
     MP_SITES_CACHE_KEY,
@@ -53,6 +54,7 @@ _SCAN_HINT_KEY = "scan_hint"
 app.mount("/assets", StaticFiles(directory=_ASSETS_DIR.as_posix(), check_dir=False), name="assets")
 
 _MAX_ERROR_DETAIL_LEN = 240
+_DEFAULT_REQUEST_RETRY_DELAY_SECONDS = 30
 
 
 def _cfg_str(value: Any) -> str:
@@ -243,6 +245,17 @@ async def health() -> Dict[str, Any]:
 @app.get("/api/dashboard", dependencies=[Depends(require_auth)])
 async def api_dashboard(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     rows = await ctx.store.list_site_states()
+    inflight = set()
+    try:
+        inflight = set(getattr(ctx.scanner, "in_flight_domains")() or [])
+    except Exception:
+        inflight = set()
+    if inflight:
+        for r in rows:
+            try:
+                r["scanning"] = str(r.get("domain") or "").strip().lower() in inflight
+            except Exception:
+                r["scanning"] = False
     scan_status = await ctx.store.get_json("scan_status", default=None)
     scan_hint = await ctx.store.get_json(_SCAN_HINT_KEY, default=None)
     cfg = await _load_app_config(ctx)
@@ -259,8 +272,11 @@ async def api_scan_run(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str
 
 @app.post("/api/scan/run/{domain}", dependencies=[Depends(require_auth)])
 async def api_scan_run_one(domain: str, ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
-    status = await ctx.scanner.run_one(domain)
-    return status
+    try:
+        status = await ctx.scanner.run_one(domain)
+        return status
+    except AlreadyScanningError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @app.post("/api/state/reset", dependencies=[Depends(require_auth)])
@@ -344,6 +360,12 @@ async def api_config_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[s
             MIN_RETRY_INTERVAL_SECONDS,
             MAX_RETRY_INTERVAL_SECONDS,
         ),
+        "request_retry_delay_seconds": _cfg_int(
+            connectivity_cfg.get("request_retry_delay_seconds"),
+            _DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
+            5,
+            24 * 3600,
+        ),
     }
 
     ui = {"allow_state_reset": _cfg_bool(ui_cfg.get("allow_state_reset"), default=True)}
@@ -397,6 +419,13 @@ async def api_config_put(
         retry_default,
         MIN_RETRY_INTERVAL_SECONDS,
         MAX_RETRY_INTERVAL_SECONDS,
+    )
+    request_retry_delay_default = int(connectivity.get("request_retry_delay_seconds") or _DEFAULT_REQUEST_RETRY_DELAY_SECONDS)
+    connectivity["request_retry_delay_seconds"] = _cfg_int(
+        connectivity_in.get("request_retry_delay_seconds"),
+        request_retry_delay_default,
+        5,
+        24 * 3600,
     )
     cfg["connectivity"] = connectivity
 
@@ -697,6 +726,12 @@ async def api_sites_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[st
         MIN_RETRY_INTERVAL_SECONDS,
         MAX_RETRY_INTERVAL_SECONDS,
     )
+    request_retry_delay_seconds = _cfg_int(
+        connectivity_cfg.get("request_retry_delay_seconds"),
+        _DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
+        5,
+        24 * 3600,
+    )
     scan_timeout = _cfg_int(
         scan_cfg.get("timeout_seconds"),
         ctx.settings.scan.timeout_seconds,
@@ -729,6 +764,7 @@ async def api_sites_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[st
                     password=mp_password,
                     otp_password=mp_otp_password or None,
                     timeout_seconds=scan_timeout,
+                    retry_delay_seconds=request_retry_delay_seconds,
                 )
                 mp_sites = await mp_client.list_sites(only_active=True)
                 mp_ok = True

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from pt_invite_watcher.storage.sqlite import SqliteStore
+from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS
 
 
 logger = logging.getLogger("pt_invite_watcher.notify")
@@ -12,7 +13,32 @@ class NotifierManager:
     def __init__(self, store: SqliteStore):
         self._store = store
 
+    @staticmethod
+    def _cfg_int(value, default: int, min_value: int, max_value: int) -> int:
+        if value is None or value == "":
+            return default
+        try:
+            parsed = int(str(value).strip())
+        except Exception:
+            return default
+        return max(min_value, min(max_value, parsed))
+
+    async def _request_retry_delay_seconds(self) -> int:
+        try:
+            cfg = await self._store.get_json("app_config", default={}) or {}
+            connectivity = cfg.get("connectivity") if isinstance(cfg, dict) else None
+            conn_dict = connectivity if isinstance(connectivity, dict) else {}
+            return self._cfg_int(
+                conn_dict.get("request_retry_delay_seconds"),
+                DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
+                5,
+                24 * 3600,
+            )
+        except Exception:
+            return DEFAULT_REQUEST_RETRY_DELAY_SECONDS
+
     async def test(self, channel: str) -> tuple[bool, str]:
+        retry_delay = await self._request_retry_delay_seconds()
         cfg = await self._store.get_json("notifications", default={})
         if channel == "telegram":
             telegram = cfg.get("telegram") or {}
@@ -22,7 +48,12 @@ class NotifierManager:
                 return False, "telegram not configured"
             from pt_invite_watcher.notify.telegram import TelegramNotifier
 
-            ok = await TelegramNotifier(token=telegram["token"], chat_id=telegram["chat_id"]).send(
+            ok = await TelegramNotifier(
+                token=telegram["token"],
+                chat_id=telegram["chat_id"],
+                retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
+                retry_delay_seconds=retry_delay,
+            ).send(
                 "PT Invite Watcher test message"
             )
             return (True, "sent") if ok else (False, "send failed")
@@ -42,6 +73,8 @@ class NotifierManager:
                 to_user=wecom.get("to_user") or "@all",
                 to_party=wecom.get("to_party") or "",
                 to_tag=wecom.get("to_tag") or "",
+                retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
+                retry_delay_seconds=retry_delay,
             ).send("PT Invite Watcher test message")
             return (True, "sent") if ok else (False, "send failed")
 
@@ -49,13 +82,19 @@ class NotifierManager:
 
     async def send(self, title: str, text: str) -> None:
         cfg = await self._store.get_json("notifications", default={})
+        retry_delay = await self._request_retry_delay_seconds()
 
         telegram = cfg.get("telegram") or {}
         if telegram.get("enabled") and telegram.get("token") and telegram.get("chat_id"):
             try:
                 from pt_invite_watcher.notify.telegram import TelegramNotifier
 
-                await TelegramNotifier(token=telegram["token"], chat_id=telegram["chat_id"]).send(f"{title}\n{text}")
+                await TelegramNotifier(
+                    token=telegram["token"],
+                    chat_id=telegram["chat_id"],
+                    retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
+                    retry_delay_seconds=retry_delay,
+                ).send(f"{title}\n{text}")
             except Exception:
                 logger.exception("telegram notify failed")
 
@@ -71,7 +110,8 @@ class NotifierManager:
                     to_user=wecom.get("to_user") or "@all",
                     to_party=wecom.get("to_party") or "",
                     to_tag=wecom.get("to_tag") or "",
+                    retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
+                    retry_delay_seconds=retry_delay,
                 ).send(f"{title}\n{text}")
             except Exception:
                 logger.exception("wecom notify failed")
-
