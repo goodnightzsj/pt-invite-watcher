@@ -133,6 +133,9 @@ class SqliteStore:
         conn = self._require_conn()
         evidence_json = json.dumps(to_jsonable(result), ensure_ascii=False)
         checked_at = result.checked_at.isoformat()
+        changed_at_value = changed_at.strip() if isinstance(changed_at, str) else None
+        if not changed_at_value:
+            changed_at_value = None
 
         await conn.execute(
             """
@@ -165,7 +168,7 @@ class SqliteStore:
                 result.invites.state,
                 result.invites.available,
                 checked_at,
-                changed_at,
+                changed_at_value,
                 evidence_json,
             ),
         )

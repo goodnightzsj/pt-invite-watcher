@@ -13,6 +13,7 @@ const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
 
 const loading = ref(false);
+const dashboardLoading = ref(false);
 const scanRunning = ref(false);
 const rowScanDomain = ref("");
 const rows = ref<SiteRow[]>([]);
@@ -30,6 +31,7 @@ const autoRefreshMinutes = ref<AutoRefreshMinutes>(
 );
 
 let timer: number | undefined;
+let scanPollTimer: number | undefined;
 
 const errorModalOpen = ref(false);
 const errorModalTitle = ref("");
@@ -77,8 +79,28 @@ function formatDateTime(v: string | null | undefined) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(d);
 }
 
-async function refresh(opts: { toast?: boolean } = {}) {
-  loading.value = true;
+function formatChangedAt(row: SiteRow) {
+  if (row.last_changed_at) return formatDateTime(row.last_changed_at);
+  if (row.last_checked_at) return "未变更";
+  return "-";
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function waitForDashboardIdle(timeoutMs = 5000) {
+  const startedAt = Date.now();
+  while (dashboardLoading.value) {
+    if (Date.now() - startedAt > timeoutMs) return;
+    await sleep(50);
+  }
+}
+
+async function refresh(opts: { toast?: boolean; silent?: boolean } = {}) {
+  if (dashboardLoading.value) return;
+  dashboardLoading.value = true;
+  if (!opts.silent) loading.value = true;
   try {
     const data = await api.dashboard();
     rows.value = data.rows || [];
@@ -87,9 +109,10 @@ async function refresh(opts: { toast?: boolean } = {}) {
     allowStateReset.value = (data as any).ui?.allow_state_reset ?? true;
     if (opts.toast) showToast("数据已刷新", "success", 1800);
   } catch (e: any) {
-    showToast(String(e?.message || e || "加载失败"), "error");
+    if (!opts.silent) showToast(String(e?.message || e || "加载失败"), "error");
   } finally {
-    loading.value = false;
+    if (!opts.silent) loading.value = false;
+    dashboardLoading.value = false;
   }
 }
 
@@ -101,10 +124,23 @@ async function refreshManual() {
 
 async function runScan() {
   scanRunning.value = true;
+  if (scanPollTimer) {
+    window.clearInterval(scanPollTimer);
+    scanPollTimer = undefined;
+  }
+  scanPollTimer = window.setInterval(() => {
+    refresh({ silent: true });
+  }, 1000);
+  void refresh({ silent: true });
   try {
     showToast("开始扫描…", "info", 1600);
     const status = await api.scanRun();
     scanStatus.value = status;
+    if (scanPollTimer) {
+      window.clearInterval(scanPollTimer);
+      scanPollTimer = undefined;
+    }
+    await waitForDashboardIdle();
     if (status?.ok) {
       const skipped = Number(status?.skipped_in_flight || 0);
       const scanned = Number(status?.scanned_count ?? -1);
@@ -122,6 +158,10 @@ async function runScan() {
   } catch (e: any) {
     showToast(String(e?.message || e || "扫描失败"), "error");
   } finally {
+    if (scanPollTimer) {
+      window.clearInterval(scanPollTimer);
+      scanPollTimer = undefined;
+    }
     scanRunning.value = false;
   }
 }
@@ -203,7 +243,13 @@ onMounted(async () => {
   await refresh();
   setupTimer();
 });
-onUnmounted(() => clearTimer());
+onUnmounted(() => {
+  clearTimer();
+  if (scanPollTimer) {
+    window.clearInterval(scanPollTimer);
+    scanPollTimer = undefined;
+  }
+});
 
 const hasRows = computed(() => rows.value.length > 0);
 const sortedRows = computed(() => sortedSiteRows(rows.value));
@@ -387,7 +433,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
               <td class="px-6 py-4">
                  <div class="text-xs text-slate-500 dark:text-slate-400">
                    <div>{{ formatDateTime(row.last_checked_at) }}</div>
-                   <div class="scale-90 opacity-60 origin-left mt-0.5">变更: {{ formatDateTime(row.last_changed_at) }}</div>
+                   <div class="scale-90 opacity-60 origin-left mt-0.5">变更: {{ formatChangedAt(row) }}</div>
                  </div>
               </td>
 
