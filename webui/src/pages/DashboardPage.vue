@@ -43,10 +43,22 @@ function toneForState(state: string) {
   return "amber";
 }
 
-function labelForReachability(state: string) {
-  if (state === "up") return "正常";
-  if (state === "down") return "异常";
-  return "未知";
+function parseHttpStatus(note: string | null | undefined): number | null {
+  if (!note) return null;
+  const m = note.match(/HTTP\s+(\d{3})/i);
+  if (!m) return null;
+  const v = Number(m[1]);
+  return Number.isFinite(v) ? v : null;
+}
+
+function reachabilityBadge(row: SiteRow) {
+  if (row.reachability_state === "up") {
+    const status = parseHttpStatus(row.reachability_note);
+    if (status === 403) return { label: "受限", tone: "amber" as const };
+    return { label: "正常", tone: "green" as const };
+  }
+  if (row.reachability_state === "down") return { label: "异常", tone: "red" as const };
+  return { label: "未知", tone: "amber" as const };
 }
 
 function healthScore(row: SiteRow) {
@@ -405,7 +417,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
 
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2">
-                  <Badge class="shrink-0" :label="labelForReachability(row.reachability_state)" :tone="toneForState(row.reachability_state) as any" />
+                  <Badge class="shrink-0" :label="reachabilityBadge(row).label" :tone="reachabilityBadge(row).tone as any" />
                   <span v-if="row.reachability_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400" :title="row.reachability_note">
                     {{ row.reachability_note }}
                   </span>
@@ -414,7 +426,17 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
 
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2">
-                  <Badge class="shrink-0" :label="row.registration_state" :tone="toneForState(row.registration_state) as any" />
+                  <a
+                    v-if="row.registration_state === 'open' && row.registration_url"
+                    :href="row.registration_url"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="shrink-0"
+                    :title="`打开注册页：${row.registration_url}`"
+                  >
+                    <Badge :label="row.registration_state" :tone="toneForState(row.registration_state) as any" />
+                  </a>
+                  <Badge v-else class="shrink-0" :label="row.registration_state" :tone="toneForState(row.registration_state) as any" />
                   <span v-if="row.registration_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400" :title="row.registration_note">
                     {{ row.registration_note }}
                   </span>
@@ -423,7 +445,17 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
 
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2">
-                  <Badge class="shrink-0" :label="row.invites_state" :tone="toneForState(row.invites_state) as any" />
+                  <a
+                    v-if="row.invites_state === 'open' && row.invite_url"
+                    :href="row.invite_url"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="shrink-0"
+                    :title="`打开邀请页：${row.invite_url}`"
+                  >
+                    <Badge :label="row.invites_state" :tone="toneForState(row.invites_state) as any" />
+                  </a>
+                  <Badge v-else class="shrink-0" :label="row.invites_state" :tone="toneForState(row.invites_state) as any" />
                   <span v-if="row.invites_state === 'open' && row.invites_display" class="line-clamp-1 max-w-[120px] text-xs text-slate-400">
                     {{ row.invites_display }}
                   </span>
@@ -432,8 +464,8 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
 
               <td class="px-6 py-4">
                  <div class="text-xs text-slate-500 dark:text-slate-400">
-                   <div>{{ formatDateTime(row.last_checked_at) }}</div>
-                   <div class="scale-90 opacity-60 origin-left mt-0.5">变更: {{ formatChangedAt(row) }}</div>
+                   <div>最新检查：{{ formatDateTime(row.last_checked_at) }}</div>
+                   <div class="mt-0.5 scale-90 origin-left opacity-60">上次变更时间：{{ formatChangedAt(row) }}</div>
                  </div>
               </td>
 

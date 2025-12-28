@@ -244,7 +244,110 @@ async def health() -> Dict[str, Any]:
 
 @app.get("/api/dashboard", dependencies=[Depends(require_auth)])
 async def api_dashboard(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
-    rows = await ctx.store.list_site_states()
+    now = datetime.now(timezone.utc)
+
+    cfg = await _load_app_config(ctx)
+    mp_cfg = _safe_dict(cfg.get("moviepilot"))
+    ui_cfg = _safe_dict(cfg.get("ui"))
+    mp_base_url = _cfg_str(mp_cfg.get("base_url")) or ctx.settings.moviepilot.base_url
+    mp_sites_cache_ttl = _cfg_int(
+        mp_cfg.get("sites_cache_ttl_seconds"),
+        MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
+        MP_SITES_CACHE_MIN_TTL_SECONDS,
+        MP_SITES_CACHE_MAX_TTL_SECONDS,
+    )
+
+    mp_sites = []
+    try:
+        cache = parse_cache(await ctx.store.get_json(MP_SITES_CACHE_KEY, default=None))
+        if cache and not cache_expired(cache, now, mp_sites_cache_ttl, base_url=mp_base_url):
+            mp_sites = cache.sites
+    except Exception:
+        mp_sites = []
+    if not mp_sites:
+        try:
+            snap_at, snap_sites = await ctx.store.load_sites_snapshot()
+            if snap_sites and snap_at and int((now - snap_at).total_seconds()) <= mp_sites_cache_ttl:
+                mp_sites = snap_sites
+        except Exception:
+            mp_sites = []
+
+    sites_cfg = await _load_sites_config(ctx)
+    sites = ctx.scanner._merge_sites(mp_sites, _safe_dict(sites_cfg.get("entries")))
+    current_domains = [_normalize_domain(s.domain) for s in sites if _normalize_domain(s.domain)]
+
+    states = await ctx.store.list_site_states()
+    state_map = {_normalize_domain(r.get("domain") or ""): r for r in states if _normalize_domain(r.get("domain") or "")}
+
+    extras_map: Dict[str, Dict[str, Any]] = {}
+    try:
+        extras_map = await ctx.store.get_sites_extras(current_domains)
+    except Exception:
+        extras_map = {}
+
+    def _infer_engine(domain: str, template: str) -> str:
+        t = (template or "").strip().lower()
+        if not t:
+            if domain.endswith("m-team.cc"):
+                return "mteam"
+            return "nexusphp"
+        return t
+
+    def _default_paths_for_template(template: str) -> tuple[str, str]:
+        t = (template or "").strip().lower()
+        if t == "mteam":
+            return "signup", "invite"
+        return "signup.php", "invite.php"
+
+    rows: list[dict[str, Any]] = []
+    for site in sites:
+        domain = _normalize_domain(site.domain)
+        if not domain:
+            continue
+        row = dict(state_map.get(domain) or {})
+
+        template = _cfg_str(getattr(site, "template", None)).lower()
+        engine = _cfg_str(row.get("engine")) or _infer_engine(domain, template)
+        row["domain"] = domain
+        row["name"] = _cfg_str(getattr(site, "name", None)) or row.get("name") or domain
+        row["url"] = _cfg_str(getattr(site, "url", None)) or row.get("url") or ""
+        row["engine"] = engine
+
+        if "reachability_state" not in row:
+            row["reachability_state"] = "unknown"
+        if "reachability_note" not in row:
+            row["reachability_note"] = ""
+        if "registration_state" not in row:
+            row["registration_state"] = "unknown"
+        if "registration_note" not in row:
+            row["registration_note"] = ""
+        if "invites_state" not in row:
+            row["invites_state"] = "unknown"
+        if "invites_available" not in row:
+            row["invites_available"] = None
+        if "invites_display" not in row:
+            row["invites_display"] = ""
+        if "last_checked_at" not in row:
+            row["last_checked_at"] = ""
+        if "last_changed_at" not in row:
+            row["last_changed_at"] = None
+        if "errors" not in row:
+            row["errors"] = []
+
+        base_url = row["url"]
+        reg_default, inv_default = _default_paths_for_template(template)
+        reg_path = _cfg_str(getattr(site, "registration_path", None)) or (reg_default if template in {"", "nexusphp", "mteam"} else "")
+        inv_path = _cfg_str(getattr(site, "invite_path", None)) or (inv_default if template in {"", "nexusphp", "mteam"} else "")
+
+        invite_uid = _cfg_str((extras_map.get(domain) or {}).get("invite_uid")) if template in {"", "nexusphp"} else ""
+        if invite_uid:
+            inv_path = f"invite.php?id={invite_uid}"
+
+        row["registration_url"] = urljoin(base_url.rstrip("/") + "/", reg_path) if base_url and reg_path else ""
+        row["invite_url"] = urljoin(base_url.rstrip("/") + "/", inv_path) if base_url and inv_path else ""
+
+        rows.append(row)
+
     inflight = set()
     try:
         inflight = set(getattr(ctx.scanner, "in_flight_domains")() or [])
@@ -252,14 +355,12 @@ async def api_dashboard(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[st
         inflight = set()
     if inflight:
         for r in rows:
-            try:
-                r["scanning"] = str(r.get("domain") or "").strip().lower() in inflight
-            except Exception:
-                r["scanning"] = False
+            r["scanning"] = _normalize_domain(r.get("domain") or "") in inflight
+    else:
+        for r in rows:
+            r["scanning"] = False
     scan_status = await ctx.store.get_json("scan_status", default=None)
     scan_hint = await ctx.store.get_json(_SCAN_HINT_KEY, default=None)
-    cfg = await _load_app_config(ctx)
-    ui_cfg = _safe_dict(cfg.get("ui"))
     ui = {"allow_state_reset": _cfg_bool(ui_cfg.get("allow_state_reset"), default=True)}
     return {"rows": rows, "scan_status": scan_status, "scan_hint": scan_hint, "ui": ui}
 

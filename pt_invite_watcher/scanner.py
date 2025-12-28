@@ -882,7 +882,25 @@ class Scanner:
     ) -> None:
         async with self._sem:
             ua = site.ua or default_user_agent or None
-            reachability, engine_hint = await self._probe_reachability(client, site.url, ua, retry_delay_seconds=retry_delay_seconds)
+            cookie_override = (getattr(site, "cookie_override", None) or "").strip()
+            cookie_header_for_invites: Optional[str] = None
+            if cookie_override:
+                cookie_header_for_invites = cookie_override
+            else:
+                try:
+                    cookie_header_for_invites = await cookie_mgr.cookie_header_for(site.url, fallback_cookie=getattr(site, "cookie", None))
+                except Exception:
+                    logger.exception("cookie build failed: %s", site.domain)
+                    cookie_header_for_invites = None
+
+            cookie_header_for_probe = cookie_header_for_invites or (getattr(site, "cookie", None) or "").strip() or None
+            reachability, engine_hint = await self._probe_reachability(
+                client,
+                site.url,
+                ua,
+                cookie_header=cookie_header_for_probe,
+                retry_delay_seconds=retry_delay_seconds,
+            )
             engine = engine_hint or "unknown"
             is_mteam = (site.domain or "").lower().endswith("m-team.cc")
             if is_mteam:
@@ -935,42 +953,21 @@ class Scanner:
                     ),
                 )
 
-            def _get_cookie_override() -> str:
-                return (getattr(site, "cookie_override", None) or "").strip()
-
             try:
                 if is_mteam:
                     api_key = (getattr(site, "did", None) or "").strip()
                     if api_key:
                         invites = await self._mteam.check_invites(client, site, ua, retry_delay_seconds=retry_delay_seconds)
                         if invites.state == "unknown":
-                            cookie_header = None
-                            try:
-                                cookie_override = _get_cookie_override()
-                                if cookie_override:
-                                    cookie_header = cookie_override
-                                else:
-                                    cookie_header = await cookie_mgr.cookie_header_for(site.url, fallback_cookie=getattr(site, "cookie", None))
-                            except Exception:
-                                logger.exception("cookie build failed: %s", site.domain)
-                            if cookie_header:
-                                invites = await self._detector.check_invites(client, site, ua, cookie_header)
+                            if cookie_header_for_invites:
+                                invites = await self._detector.check_invites(client, site, ua, cookie_header_for_invites)
                     else:
-                        cookie_header = None
-                        try:
-                            cookie_override = _get_cookie_override()
-                            if cookie_override:
-                                cookie_header = cookie_override
-                            else:
-                                cookie_header = await cookie_mgr.cookie_header_for(site.url, fallback_cookie=getattr(site, "cookie", None))
-                        except Exception:
-                            logger.exception("cookie build failed: %s", site.domain)
-                        if cookie_header:
+                        if cookie_header_for_invites:
                             invites = await self._detector.check_invites(
                                 client,
                                 site,
                                 ua,
-                                cookie_header,
+                                cookie_header_for_invites,
                                 retry_delay_seconds=retry_delay_seconds,
                             )
                         else:
@@ -984,22 +981,27 @@ class Scanner:
                                 ),
                             )
                 else:
-                    cookie_header = None
-                    try:
-                        cookie_override = _get_cookie_override()
-                        if cookie_override:
-                            cookie_header = cookie_override
-                        else:
-                            cookie_header = await cookie_mgr.cookie_header_for(site.url, fallback_cookie=getattr(site, "cookie", None))
-                    except Exception:
-                        logger.exception("cookie build failed: %s", site.domain)
-                    invites = await self._detector.check_invites(
-                        client,
-                        site,
-                        ua,
-                        cookie_header,
-                        retry_delay_seconds=retry_delay_seconds,
-                    )
+                    if getattr(site, "id", None) is None and not cookie_header_for_invites:
+                        invites = AspectResult(
+                            state="closed",
+                            available=0,
+                            permanent=0,
+                            temporary=0,
+                            evidence=Evidence(
+                                url=urljoin(site.url.rstrip("/") + "/", inv_path),
+                                http_status=None,
+                                reason="manual_no_cookie_skip_invites",
+                                detail="manual site without cookie; skip invites probe",
+                            ),
+                        )
+                    else:
+                        invites = await self._detector.check_invites(
+                            client,
+                            site,
+                            ua,
+                            cookie_header_for_invites,
+                            retry_delay_seconds=retry_delay_seconds,
+                        )
             except Exception as e:
                 logger.exception("invites check failed: %s", site.domain)
                 invites = AspectResult(
@@ -1027,14 +1029,21 @@ class Scanner:
         client: httpx.AsyncClient,
         site_url: str,
         user_agent: Optional[str],
+        cookie_header: Optional[str],
         *,
         retry_delay_seconds: int,
     ) -> tuple[ReachabilityResult, Optional[str]]:
         ua = user_agent or None
         orig_host = urlparse(site_url).hostname or ""
 
+        headers: dict[str, str] = {}
+        if ua:
+            headers["User-Agent"] = ua
+        if cookie_header:
+            headers["Cookie"] = cookie_header
+
         resp, err, used = await request_with_retry(
-            lambda: client.get(site_url, headers={"User-Agent": ua} if ua else None),
+            lambda: client.get(site_url, headers=headers or None),
             attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
             delay_seconds=max(0, int(retry_delay_seconds or 0)),
         )

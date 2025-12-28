@@ -459,12 +459,12 @@ class NexusPhpDetector:
             )
 
         home_text = _extract_text(home_resp)
+        user_id = _extract_user_id_from_html(home_resp.text)
         quota_perm, quota_temp, quota_matched = _parse_home_invite_quota(home_text)
         quota_total: Optional[int] = None
         if quota_perm is not None:
             quota_total = quota_perm + (quota_temp or 0)
             if quota_perm == 0 and (quota_temp or 0) == 0 and quota_matched:
-                user_id = _extract_user_id_from_html(home_resp.text)
                 evidence_url = _join(site.url, f"invite.php?id={user_id}") if user_id else str(home_resp.url)
                 return AspectResult(
                     state="closed",
@@ -479,15 +479,32 @@ class NexusPhpDetector:
                     ),
                 )
         invite_url = _extract_invite_url_from_html(home_resp.text, site.url)
-        if not invite_url:
-            user_id = _extract_user_id_from_html(home_resp.text)
-            if user_id:
-                invite_url = _join(site.url, f"invite.php?id={user_id}")
+        invite_url_with_id = _join(site.url, f"invite.php?id={user_id}") if user_id else None
+        if invite_url and user_id:
+            raw = invite_url.lower()
+            if "invite.php" in raw and "id=" not in raw:
+                invite_url = invite_url_with_id
+        elif not invite_url and invite_url_with_id:
+            invite_url = invite_url_with_id
 
         # Some sites use /invite without .php (e.g. M-Team); keep a small fallback list.
         preferred_invite = (site.invite_path or "").strip()
         preferred_invite_url = _join(site.url, preferred_invite) if preferred_invite else None
-        invite_candidates = [u for u in [preferred_invite_url, invite_url, _join(site.url, "invite.php"), _join(site.url, "invite")] if u]
+        if preferred_invite_url and invite_url_with_id:
+            raw = preferred_invite_url.lower()
+            if "invite.php" in raw and "id=" not in raw:
+                preferred_invite_url = invite_url_with_id
+
+        seen: set[str] = set()
+        invite_candidates: list[str] = []
+        for u in [preferred_invite_url, invite_url_with_id, invite_url, _join(site.url, "invite.php"), _join(site.url, "invite")]:
+            if not u:
+                continue
+            key = str(u).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            invite_candidates.append(key)
         invite_resp: Optional[httpx.Response] = None
         last_err: Optional[Exception] = None
         last_err_url: Optional[str] = None

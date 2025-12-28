@@ -19,6 +19,8 @@ export type SiteRow = {
   name: string;
   url: string;
   engine: string;
+  registration_url?: string;
+  invite_url?: string;
   reachability_state: ReachabilityState;
   reachability_note: string;
   registration_state: State;
