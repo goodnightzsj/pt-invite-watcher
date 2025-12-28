@@ -15,6 +15,7 @@ from pt_invite_watcher.models import Site, SiteCheckResult, to_jsonable
 @dataclass(frozen=True)
 class StoredSiteState:
     domain: str
+    reachability_state: str
     registration_state: str
     invites_state: str
     invites_available: Optional[int]
@@ -111,7 +112,7 @@ class SqliteStore:
         conn = self._require_conn()
         cur = await conn.execute(
             """
-            SELECT domain, registration_state, invites_state, invites_available, last_checked_at, last_changed_at
+            SELECT domain, registration_state, invites_state, invites_available, last_checked_at, last_changed_at, last_evidence
             FROM site_state
             WHERE domain = ?
             """,
@@ -120,8 +121,18 @@ class SqliteStore:
         row = await cur.fetchone()
         if not row:
             return None
+        reachability_state = "unknown"
+        try:
+            payload = json.loads(row["last_evidence"] or "{}")
+            if isinstance(payload, dict):
+                reach = payload.get("reachability")
+                if isinstance(reach, dict):
+                    reachability_state = str(reach.get("state") or "unknown")
+        except Exception:
+            reachability_state = "unknown"
         return StoredSiteState(
             domain=row["domain"],
+            reachability_state=reachability_state,
             registration_state=row["registration_state"],
             invites_state=row["invites_state"],
             invites_available=row["invites_available"],

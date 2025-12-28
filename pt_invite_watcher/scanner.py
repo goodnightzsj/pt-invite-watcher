@@ -1142,6 +1142,25 @@ class Scanner:
 
         changes: list[str] = []
 
+        prev_reach = str(getattr(prev, "reachability_state", "unknown") or "unknown")
+        cur_reach = cur.reachability.state
+        if prev_reach in {"up", "down"} and cur_reach in {"up", "down"} and prev_reach != cur_reach:
+            from_label = "正常" if prev_reach == "up" else "异常"
+            to_label = "正常" if cur_reach == "up" else "异常"
+            ev = cur.reachability.evidence
+            ev_label = ""
+            if ev.http_status is not None:
+                ev_label = f"HTTP {ev.http_status}"
+            else:
+                reason = str(ev.reason or "")
+                if reason.startswith("probe_error:"):
+                    ev_label = reason.split(":", 1)[1]
+                elif reason.startswith("probe_http_"):
+                    ev_label = f"HTTP {reason.split('_', 2)[2]}"
+                else:
+                    ev_label = reason
+            changes.append(f"可访问：{from_label} -> {to_label}" + (f" ({ev_label})" if ev_label else ""))
+
         if cur.registration.state == "open" and prev.registration_state != "open":
             changes.append("开放注册：open")
         elif cur.registration.state == "closed" and prev.registration_state == "open":
