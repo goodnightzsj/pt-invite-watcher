@@ -56,6 +56,15 @@ class NotifierManager:
             ).send(
                 "PT Invite Watcher test message"
             )
+            try:
+                await self._store.add_event(
+                    category="notify",
+                    level="info" if ok else "error",
+                    action="telegram_test",
+                    message="telegram test sent" if ok else "telegram test failed",
+                )
+            except Exception:
+                pass
             return (True, "sent") if ok else (False, "send failed")
 
         if channel == "wecom":
@@ -76,6 +85,15 @@ class NotifierManager:
                 retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
                 retry_delay_seconds=retry_delay,
             ).send("PT Invite Watcher test message")
+            try:
+                await self._store.add_event(
+                    category="notify",
+                    level="info" if ok else "error",
+                    action="wecom_test",
+                    message="wecom test sent" if ok else "wecom test failed",
+                )
+            except Exception:
+                pass
             return (True, "sent") if ok else (False, "send failed")
 
         return False, "unknown channel"
@@ -89,21 +107,34 @@ class NotifierManager:
             try:
                 from pt_invite_watcher.notify.telegram import TelegramNotifier
 
-                await TelegramNotifier(
+                ok = await TelegramNotifier(
                     token=telegram["token"],
                     chat_id=telegram["chat_id"],
                     retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
                     retry_delay_seconds=retry_delay,
                 ).send(f"{title}\n{text}")
+                try:
+                    await self._store.add_event(
+                        category="notify",
+                        level="info" if ok else "error",
+                        action="telegram_send",
+                        message="telegram notify sent" if ok else "telegram notify failed",
+                    )
+                except Exception:
+                    pass
             except Exception:
                 logger.exception("telegram notify failed")
+                try:
+                    await self._store.add_event(category="notify", level="error", action="telegram_send", message="telegram notify exception")
+                except Exception:
+                    pass
 
         wecom = cfg.get("wecom") or {}
         if wecom.get("enabled") and wecom.get("corpid") and wecom.get("app_secret") and wecom.get("agent_id"):
             try:
                 from pt_invite_watcher.notify.wecom import WeComNotifier
 
-                await WeComNotifier(
+                ok = await WeComNotifier(
                     corpid=wecom["corpid"],
                     app_secret=wecom["app_secret"],
                     agent_id=str(wecom["agent_id"]),
@@ -113,5 +144,18 @@ class NotifierManager:
                     retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
                     retry_delay_seconds=retry_delay,
                 ).send(f"{title}\n{text}")
+                try:
+                    await self._store.add_event(
+                        category="notify",
+                        level="info" if ok else "error",
+                        action="wecom_send",
+                        message="wecom notify sent" if ok else "wecom notify failed",
+                    )
+                except Exception:
+                    pass
             except Exception:
                 logger.exception("wecom notify failed")
+                try:
+                    await self._store.add_event(category="notify", level="error", action="wecom_send", message="wecom notify exception")
+                except Exception:
+                    pass

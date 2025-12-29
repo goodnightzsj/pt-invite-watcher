@@ -4,11 +4,13 @@ import DashboardPage from "./pages/DashboardPage.vue";
 import SitesPage from "./pages/SitesPage.vue";
 import ConfigPage from "./pages/ConfigPage.vue";
 import NotificationsPage from "./pages/NotificationsPage.vue";
+import LogsPage from "./pages/LogsPage.vue";
 
 export const routes: RouteRecordRaw[] = [
   { path: "/", component: DashboardPage },
   { path: "/sites", component: SitesPage },
   { path: "/config", component: ConfigPage },
   { path: "/notifications", component: NotificationsPage },
+  { path: "/logs", component: LogsPage },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];

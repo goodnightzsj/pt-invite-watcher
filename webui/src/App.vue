@@ -18,6 +18,7 @@ const nav = [
   { to: "/sites", label: "站点管理" },
   { to: "/config", label: "服务配置" },
   { to: "/notifications", label: "通知设置" },
+  { to: "/logs", label: "日志" },
 ];
 
 function isActive(to: string) {

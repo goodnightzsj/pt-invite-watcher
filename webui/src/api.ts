@@ -41,6 +41,19 @@ export type DashboardResponse = {
   ui?: { allow_state_reset: boolean } | null;
 };
 
+export type LogItem = {
+  id: number;
+  ts: string;
+  category: string;
+  level: string;
+  action: string;
+  domain: string | null;
+  message: string;
+  detail: any | null;
+};
+
+export type LogsResponse = { items: LogItem[] };
+
 export type SiteTemplate = "nexusphp" | "custom" | "mteam";
 
 export type SiteConfigItem = {
@@ -129,7 +142,11 @@ export const api = {
   scanRunOne: (domain: string) => requestJson<ScanStatus>(`/api/scan/run/${encodeURIComponent(domain)}`, { method: "POST" }),
   stateReset: () => requestJson<{ ok: boolean }>("/api/state/reset", { method: "POST" }),
   sitesList: () => requestJson<SitesListResponse>("/api/sites"),
-  sitesUpsert: (payload: unknown) => requestJson<{ ok: boolean }>("/api/sites", { method: "PUT", body: JSON.stringify(payload) }),
+  sitesUpsert: (payload: unknown) =>
+    requestJson<{ ok: boolean; scan_triggered?: boolean; scan_reason?: string }>("/api/sites", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   sitesDelete: (domain: string) => requestJson<{ ok: boolean }>(`/api/sites/${encodeURIComponent(domain)}`, { method: "DELETE" }),
   configGet: () => requestJson<ConfigResponse>("/api/config"),
   configPut: (payload: unknown) => requestJson<{ ok: boolean }>("/api/config", { method: "PUT", body: JSON.stringify(payload) }),
@@ -143,4 +160,13 @@ export const api = {
     requestJson<{ ok: boolean }>("/api/notifications", { method: "PUT", body: JSON.stringify(payload) }),
   notificationsTest: (channel: "telegram" | "wecom") =>
     requestJson<{ ok: boolean; message: string }>(`/api/notifications/test/${channel}`, { method: "POST" }),
+  logsList: (params: { category?: string; keyword?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.category) q.set("category", params.category);
+    if (params.keyword) q.set("keyword", params.keyword);
+    if (params.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return requestJson<LogsResponse>(`/api/logs${qs ? `?${qs}` : ""}`);
+  },
+  logsClear: () => requestJson<{ ok: boolean }>("/api/logs/clear", { method: "POST" }),
 };

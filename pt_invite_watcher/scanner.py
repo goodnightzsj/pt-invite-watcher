@@ -39,6 +39,7 @@ from pt_invite_watcher.providers.moviepilot_sites_cache import (
     cache_expired,
     parse_cache,
 )
+from pt_invite_watcher.site_list import SITE_LIST_SUMMARY_KEY, build_summary, diff_summary, format_diff_lines
 from pt_invite_watcher.storage.sqlite import SqliteStore
 
 
@@ -149,6 +150,65 @@ class Scanner:
             return {"entries": entries}
         except Exception:
             return {"entries": {}}
+
+    async def sync_site_list_summary(
+        self,
+        sites: list[Site],
+        now: datetime,
+        *,
+        notify: bool,
+        reason: str,
+    ) -> None:
+        """
+        Sync the effective site list summary into KV, and optionally notify on changes.
+        Used by scan cycles and by site-config APIs.
+        """
+        async with self._deps_lock:
+            await self._sync_site_list_summary(
+                sites,
+                now,
+                notify=notify,
+                reason=reason,
+            )
+
+    async def _sync_site_list_summary(
+        self,
+        sites: list[Site],
+        now: datetime,
+        *,
+        notify: bool,
+        reason: str,
+    ) -> None:
+        try:
+            prev = await self._store.get_json(SITE_LIST_SUMMARY_KEY, default=None)
+            cur = build_summary(list(sites or []), now=now)
+            diff = diff_summary(prev, cur)
+            await self._store.set_json(SITE_LIST_SUMMARY_KEY, cur)
+
+            if prev is None or diff.empty:
+                return
+
+            lines = format_diff_lines(diff, cur)
+            if notify and lines:
+                title = "PT Invite Watcher: 站点清单变更"
+                text = "\n".join(lines)
+                try:
+                    await self._notifier.send(title=title, text=text)
+                except Exception:
+                    logger.exception("site list notify failed")
+
+            try:
+                await self._store.add_event(
+                    category="site",
+                    level="info",
+                    action="site_list_changed",
+                    message=f"site list changed ({reason})",
+                    detail={"reason": reason, "lines": lines},
+                )
+            except Exception:
+                pass
+        except Exception:
+            logger.exception("failed to sync site list summary")
 
     @staticmethod
     def _merge_sites(mp_sites: list[Site], site_entries: dict[str, Any]) -> list[Site]:
@@ -583,6 +643,10 @@ class Scanner:
         )
 
         sites = self._merge_sites(mp_sites, _safe_dict(sites_cfg.get("entries")))
+        notify_site_list = True
+        if mp_attempted and (not mp_ok) and mp_source == "none" and mp_error:
+            notify_site_list = False
+        await self._sync_site_list_summary(sites, started_at, notify=notify_site_list, reason="scan_context")
 
         meta = {
             "scan_timeout": scan_timeout,
@@ -631,6 +695,10 @@ class Scanner:
                 "last_run_at": started_at.isoformat(),
             }
             await self._store.set_json("scan_status", status)
+            try:
+                await self._store.add_event(category="scan", level="error", action="scan_failed", message=error)
+            except Exception:
+                pass
             return status
 
         to_scan: list[Site] = []
@@ -645,7 +713,7 @@ class Scanner:
             to_scan.append(site)
 
         if not to_scan:
-            return {
+            status = {
                 "ok": True,
                 "site_count": len(sites),
                 "scanned_count": 0,
@@ -660,6 +728,17 @@ class Scanner:
                 "moviepilot_cache_expired": mp_cache_expired,
                 "last_run_at": started_at.isoformat(),
             }
+            try:
+                await self._store.add_event(
+                    category="scan",
+                    level="info",
+                    action="scan_skipped",
+                    message="all sites are scanning",
+                    detail={"skipped_in_flight": skipped_in_flight, "site_count": len(sites)},
+                )
+            except Exception:
+                pass
+            return status
 
         manual_count = sum(1 for s in sites if s.id is None)
         timeout = httpx.Timeout(scan_timeout)
@@ -720,6 +799,22 @@ class Scanner:
                 manual_count,
                 skipped_in_flight,
             )
+            try:
+                await self._store.add_event(
+                    category="scan",
+                    level="info",
+                    action="scan_start",
+                    message="scan started",
+                    detail={
+                        "site_count": len(sites),
+                        "scanned_count": len(tasks),
+                        "manual_count": manual_count,
+                        "skipped_in_flight": skipped_in_flight,
+                        "moviepilot_source": mp_source,
+                    },
+                )
+            except Exception:
+                pass
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             errors = [r for r in results if isinstance(r, Exception)]
@@ -753,6 +848,16 @@ class Scanner:
             "last_run_at": datetime.now(timezone.utc).isoformat(),
         }
         await self._store.set_json("scan_status", status)
+        try:
+            await self._store.add_event(
+                category="scan",
+                level="info",
+                action="scan_done",
+                message="scan done",
+                detail={"site_count": len(sites), "scanned_count": len(tasks), "skipped_in_flight": skipped_in_flight, "warning": warning},
+            )
+        except Exception:
+            pass
         try:
             await self._store.set_json("scan_hint", None)
         except Exception:
@@ -788,6 +893,10 @@ class Scanner:
             hint = ""
             if mp_attempted and mp_error:
                 hint = " (MoviePilot unavailable and no local manual site)"
+            try:
+                await self._store.add_event(category="scan", level="error", action="scan_one_not_found", message=f"site not found: {target}{hint}", domain=target)
+            except Exception:
+                pass
             return {
                 "ok": False,
                 "site_count": 0,
@@ -805,6 +914,10 @@ class Scanner:
             raise AlreadyScanningError(target)
 
         logger.info("single scan start: %s", target)
+        try:
+            await self._store.add_event(category="scan", level="info", action="scan_one_start", message="single scan start", domain=target)
+        except Exception:
+            pass
         task = asyncio.current_task()
         if task is not None:
             self._in_flight[target] = task
@@ -825,6 +938,16 @@ class Scanner:
                 )
         except Exception as e:
             logger.exception("single scan failed: %s", target)
+            try:
+                await self._store.add_event(
+                    category="scan",
+                    level="error",
+                    action="scan_one_failed",
+                    message=_format_error_detail(e),
+                    domain=target,
+                )
+            except Exception:
+                pass
             return {
                 "ok": False,
                 "site_count": 1,
@@ -849,6 +972,17 @@ class Scanner:
                 warning = f"moviepilot_failed: {mp_error} (fallback={mp_source} age={mp_cache_age_seconds}s)"
             else:
                 warning = f"moviepilot_failed: {mp_error}"
+        try:
+            await self._store.add_event(
+                category="scan",
+                level="info",
+                action="scan_one_done",
+                message="single scan done",
+                domain=target,
+                detail={"warning": warning},
+            )
+        except Exception:
+            pass
 
         status = {
             "ok": True,
@@ -1123,6 +1257,18 @@ class Scanner:
         if not changes:
             return
 
+        try:
+            await self._store.add_event(
+                category="site",
+                level="info",
+                action="state_changed",
+                message="; ".join(changes)[:200],
+                domain=_normalize_domain(site.domain),
+                detail={"changes": list(changes), "registration": result.registration.state, "invites": result.invites.state},
+            )
+        except Exception:
+            pass
+
         invite_display = "-"
         if result.invites.permanent is not None:
             invite_display = f"{int(result.invites.permanent)}({int(result.invites.temporary or 0)})"
@@ -1153,8 +1299,8 @@ class Scanner:
 
         prev_reach = str(getattr(prev, "reachability_state", "unknown") or "unknown")
         cur_reach = cur.reachability.state
-        if prev_reach in {"up", "down"} and cur_reach in {"up", "down"} and prev_reach != cur_reach:
-            from_label = "正常" if prev_reach == "up" else "异常"
+        if prev_reach in {"up", "down", "unknown"} and cur_reach in {"up", "down"} and prev_reach != cur_reach:
+            from_label = "正常" if prev_reach == "up" else ("异常" if prev_reach == "down" else "unknown")
             to_label = "正常" if cur_reach == "up" else "异常"
             ev = cur.reachability.evidence
             ev_label = ""
@@ -1174,6 +1320,13 @@ class Scanner:
             changes.append("开放注册：open")
         elif cur.registration.state == "closed" and prev.registration_state == "open":
             changes.append("开放注册：closed")
+        elif cur.registration.state == "closed" and prev.registration_state == "unknown":
+            changes.append("开放注册：unknown -> closed")
+
+        prev_inv_state = str(getattr(prev, "invites_state", "unknown") or "unknown")
+        cur_inv_state = str(cur.invites.state or "unknown")
+        if prev_inv_state == "unknown" and cur_inv_state == "closed":
+            changes.append("可用邀请：unknown -> closed")
 
         if cur.invites.available is not None:
             prev_count = prev.invites_available

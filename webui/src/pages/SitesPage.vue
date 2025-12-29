@@ -199,8 +199,14 @@ async function save() {
       }
     }
 
-    await api.sitesUpsert(payload);
-    showToast("已保存（只写入本服务）", "success");
+    const resp = await api.sitesUpsert(payload);
+    if (resp?.scan_triggered) {
+      showToast("已保存（只写入本服务），已触发单站扫描", "success", 2400);
+    } else if (resp?.scan_reason === "already_scanning") {
+      showToast("已保存（只写入本服务），该站点正在扫描中", "success", 2400);
+    } else {
+      showToast("已保存（只写入本服务）", "success", 2000);
+    }
     modalOpen.value = false;
     await load();
   } catch (e: any) {

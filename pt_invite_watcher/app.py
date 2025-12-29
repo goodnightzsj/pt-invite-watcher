@@ -37,6 +37,8 @@ from pt_invite_watcher.providers.deps_status import (
     update_dep_fail,
     update_dep_ok,
 )
+from pt_invite_watcher.models import Site
+from pt_invite_watcher.site_list import SITE_LIST_SUMMARY_KEY
 
 
 logger = logging.getLogger("pt_invite_watcher")
@@ -391,6 +393,27 @@ async def api_state_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[
     await ctx.store.reset_site_states()
     await ctx.store.set_json("scan_status", None)
     await ctx.store.set_json(_SCAN_HINT_KEY, None)
+    try:
+        await ctx.store.add_event(category="config", level="info", action="state_reset", message="site state reset")
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+@app.get("/api/logs", dependencies=[Depends(require_auth)])
+async def api_logs(
+    ctx: Annotated[AppContext, Depends(get_ctx)],
+    category: str = "all",
+    keyword: str = "",
+    limit: int = 200,
+) -> Dict[str, Any]:
+    items = await ctx.store.list_events(category=category, keyword=keyword, limit=limit)
+    return {"items": items}
+
+
+@app.post("/api/logs/clear", dependencies=[Depends(require_auth)])
+async def api_logs_clear(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
+    await ctx.store.clear_events()
     return {"ok": True}
 
 
@@ -577,12 +600,26 @@ async def api_config_put(
     cfg["ui"] = ui
 
     await ctx.store.set_json("app_config", cfg)
+    try:
+        await ctx.store.add_event(
+            category="config",
+            level="info",
+            action="config_update",
+            message="app config updated",
+            detail={"keys": list(payload.keys())},
+        )
+    except Exception:
+        pass
     return {"ok": True}
 
 
 @app.post("/api/config/reset", dependencies=[Depends(require_auth)])
 async def api_config_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     await ctx.store.set_json("app_config", {})
+    try:
+        await ctx.store.add_event(category="config", level="info", action="config_reset", message="app config reset")
+    except Exception:
+        pass
     return {"ok": True}
 
 def _deep_merge(base: Any, update: Any) -> Any:
@@ -654,6 +691,17 @@ async def api_backup_export(
     if not include:
         data = _redact_backup(data)
 
+    try:
+        await ctx.store.add_event(
+            category="backup",
+            level="info",
+            action="backup_export",
+            message="backup exported",
+            detail={"include_secrets": include},
+        )
+    except Exception:
+        pass
+
     return {
         "version": _BACKUP_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -720,6 +768,17 @@ async def api_backup_import(
             {"reason": "import", "at": datetime.now(timezone.utc).isoformat(), "changed": list(changed)},
         )
         await ctx.store.set_json("scan_status", None)
+
+    try:
+        await ctx.store.add_event(
+            category="backup",
+            level="info",
+            action="backup_import",
+            message="backup imported",
+            detail={"mode": mode, "changed": list(changed), "needs_scan": needs_scan_hint},
+        )
+    except Exception:
+        pass
 
     return {"ok": True, "message": f"imported: {', '.join(changed)}", "changed": list(changed), "needs_scan": needs_scan_hint}
 
@@ -793,6 +852,21 @@ async def api_notifications_put(
         wecom["to_tag"] = _cfg_str(wc_in.get("to_tag"))
 
     await ctx.store.set_json("notifications", {"telegram": telegram, "wecom": wecom})
+    try:
+        await ctx.store.add_event(
+            category="notify",
+            level="info",
+            action="notifications_update",
+            message="notifications updated",
+            detail={
+                "telegram_enabled": bool(telegram.get("enabled")),
+                "telegram_configured": bool(telegram.get("token") and telegram.get("chat_id")),
+                "wecom_enabled": bool(wecom.get("enabled")),
+                "wecom_configured": bool(wecom.get("corpid") and wecom.get("app_secret") and wecom.get("agent_id")),
+            },
+        )
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -801,6 +875,16 @@ async def api_notifications_test(channel: str, ctx: Annotated[AppContext, Depend
     if channel not in {"telegram", "wecom"}:
         raise HTTPException(status_code=404, detail="unknown channel")
     ok, msg = await ctx.notifier.test(channel)
+    try:
+        await ctx.store.add_event(
+            category="notify",
+            level="info" if ok else "error",
+            action="notifications_test",
+            message=f"{channel} test: {'ok' if ok else 'fail'}",
+            detail={"channel": channel, "ok": ok, "message": msg},
+        )
+    except Exception:
+        pass
     return {"ok": bool(ok), "message": str(msg or "")}
 
 
@@ -1088,6 +1172,7 @@ async def api_sites_put(
 
     sites_cfg = await _load_sites_config(ctx)
     entries = _safe_dict(sites_cfg.get("entries"))
+    existed = domain in entries
     entry = _safe_dict(entries.get(domain))
     entry["mode"] = mode
 
@@ -1137,7 +1222,96 @@ async def api_sites_put(
 
     entries[domain] = entry
     await ctx.store.set_json("sites", {"version": 1, "entries": entries})
-    return {"ok": True}
+
+    try:
+        await ctx.store.add_event(
+            category="site",
+            level="info",
+            action="site_upsert",
+            message="site added" if not existed else "site updated",
+            domain=domain,
+            detail={"mode": mode, "template": template},
+        )
+    except Exception:
+        pass
+
+    # Sync site list summary (and notify) using cached MP sites when available.
+    try:
+        now = datetime.now(timezone.utc)
+        app_cfg = await _load_app_config(ctx)
+        mp_cfg = _safe_dict(app_cfg.get("moviepilot"))
+        mp_base_url = _cfg_str(mp_cfg.get("base_url")) or ctx.settings.moviepilot.base_url
+        mp_sites_cache_ttl = _cfg_int(
+            mp_cfg.get("sites_cache_ttl_seconds"),
+            MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
+            MP_SITES_CACHE_MIN_TTL_SECONDS,
+            MP_SITES_CACHE_MAX_TTL_SECONDS,
+        )
+
+        mp_sites: list[Site] = []
+        cache = parse_cache(await ctx.store.get_json(MP_SITES_CACHE_KEY, default=None))
+        if cache and not cache_expired(cache, now, mp_sites_cache_ttl, base_url=mp_base_url):
+            mp_sites = cache.sites
+        if not mp_sites:
+            snap_at, snap_sites = await ctx.store.load_sites_snapshot()
+            if snap_sites and snap_at and int((now - snap_at).total_seconds()) <= mp_sites_cache_ttl:
+                mp_sites = snap_sites
+        if not mp_sites:
+            prev_summary = _safe_dict(await ctx.store.get_json(SITE_LIST_SUMMARY_KEY, default=None))
+            prev_items = _safe_dict(prev_summary.get("items"))
+            for dom, item_any in prev_items.items():
+                item = _safe_dict(item_any)
+                if _cfg_str(item.get("source")) != "moviepilot":
+                    continue
+                url = _cfg_str(item.get("url"))
+                if not url:
+                    continue
+                mp_sites.append(
+                    Site(
+                        id=0,
+                        name=_cfg_str(item.get("name")) or _normalize_domain(dom),
+                        domain=_normalize_domain(dom),
+                        url=url,
+                        ua=None,
+                        cookie=None,
+                        cookie_override=None,
+                        authorization=None,
+                        did=None,
+                        is_active=True,
+                        template=_cfg_str(item.get("template")) or None,
+                        registration_path=_cfg_str(item.get("registration_path")) or None,
+                        invite_path=_cfg_str(item.get("invite_path")) or None,
+                    )
+                )
+
+        sites_for_sync = ctx.scanner._merge_sites(mp_sites, entries)
+        await ctx.scanner.sync_site_list_summary(sites_for_sync, now, notify=True, reason="sites_put")
+    except Exception:
+        logger.exception("failed to sync site list summary after sites put")
+
+    scan_triggered = False
+    scan_reason = ""
+    try:
+        inflight = set(getattr(ctx.scanner, "in_flight_domains")() or [])
+    except Exception:
+        inflight = set()
+    if domain in inflight:
+        scan_triggered = False
+        scan_reason = "already_scanning"
+    else:
+        scan_triggered = True
+
+        async def _kick() -> None:
+            try:
+                await ctx.scanner.run_one(domain)
+            except AlreadyScanningError:
+                return
+            except Exception:
+                logger.exception("auto scan after sites upsert failed: %s", domain)
+
+        asyncio.create_task(_kick())
+
+    return {"ok": True, "scan_triggered": scan_triggered, "scan_reason": scan_reason}
 
 
 @app.delete("/api/sites/{domain}", dependencies=[Depends(require_auth)])
@@ -1145,9 +1319,73 @@ async def api_sites_delete(domain: str, ctx: Annotated[AppContext, Depends(get_c
     dom = _normalize_domain(domain)
     sites_cfg = await _load_sites_config(ctx)
     entries = _safe_dict(sites_cfg.get("entries"))
-    if dom in entries:
+    existed = dom in entries
+    existed_mode = _cfg_str(_safe_dict(entries.get(dom)).get("mode")).lower() if existed else ""
+    if existed:
         entries.pop(dom, None)
         await ctx.store.set_json("sites", {"version": 1, "entries": entries})
+        try:
+            await ctx.store.add_event(
+                category="site",
+                level="info",
+                action="site_delete" if existed_mode == "manual" else "site_override_clear",
+                message="site deleted" if existed_mode == "manual" else "site override cleared",
+                domain=dom,
+            )
+        except Exception:
+            pass
+        try:
+            now = datetime.now(timezone.utc)
+            app_cfg = await _load_app_config(ctx)
+            mp_cfg = _safe_dict(app_cfg.get("moviepilot"))
+            mp_base_url = _cfg_str(mp_cfg.get("base_url")) or ctx.settings.moviepilot.base_url
+            mp_sites_cache_ttl = _cfg_int(
+                mp_cfg.get("sites_cache_ttl_seconds"),
+                MP_SITES_CACHE_DEFAULT_TTL_SECONDS,
+                MP_SITES_CACHE_MIN_TTL_SECONDS,
+                MP_SITES_CACHE_MAX_TTL_SECONDS,
+            )
+
+            mp_sites: list[Site] = []
+            cache = parse_cache(await ctx.store.get_json(MP_SITES_CACHE_KEY, default=None))
+            if cache and not cache_expired(cache, now, mp_sites_cache_ttl, base_url=mp_base_url):
+                mp_sites = cache.sites
+            if not mp_sites:
+                snap_at, snap_sites = await ctx.store.load_sites_snapshot()
+                if snap_sites and snap_at and int((now - snap_at).total_seconds()) <= mp_sites_cache_ttl:
+                    mp_sites = snap_sites
+            if not mp_sites:
+                prev_summary = _safe_dict(await ctx.store.get_json(SITE_LIST_SUMMARY_KEY, default=None))
+                prev_items = _safe_dict(prev_summary.get("items"))
+                for d, item_any in prev_items.items():
+                    item = _safe_dict(item_any)
+                    if _cfg_str(item.get("source")) != "moviepilot":
+                        continue
+                    url = _cfg_str(item.get("url"))
+                    if not url:
+                        continue
+                    mp_sites.append(
+                        Site(
+                            id=0,
+                            name=_cfg_str(item.get("name")) or _normalize_domain(d),
+                            domain=_normalize_domain(d),
+                            url=url,
+                            ua=None,
+                            cookie=None,
+                            cookie_override=None,
+                            authorization=None,
+                            did=None,
+                            is_active=True,
+                            template=_cfg_str(item.get("template")) or None,
+                            registration_path=_cfg_str(item.get("registration_path")) or None,
+                            invite_path=_cfg_str(item.get("invite_path")) or None,
+                        )
+                    )
+
+            sites_for_sync = ctx.scanner._merge_sites(mp_sites, entries)
+            await ctx.scanner.sync_site_list_summary(sites_for_sync, now, notify=True, reason="sites_delete")
+        except Exception:
+            logger.exception("failed to sync site list summary after sites delete")
     return {"ok": True}
 
 

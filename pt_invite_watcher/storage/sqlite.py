@@ -60,11 +60,124 @@ class SqliteStore:
             );
             """
         )
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS event_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ts TEXT NOT NULL,
+              category TEXT NOT NULL,
+              level TEXT NOT NULL,
+              action TEXT NOT NULL,
+              domain TEXT,
+              message TEXT NOT NULL,
+              detail TEXT
+            );
+            """
+        )
         await self._conn.commit()
 
         await self._ensure_default_notifications()
         await self._ensure_default_app_config()
         await self._ensure_default_sites()
+
+    async def add_event(
+        self,
+        *,
+        category: str,
+        level: str,
+        action: str,
+        message: str,
+        domain: Optional[str] = None,
+        detail: Any = None,
+        max_rows: int = 5000,
+    ) -> None:
+        """
+        Append a structured event log row.
+        Keep the latest `max_rows` rows to avoid unbounded growth.
+        """
+        conn = self._require_conn()
+        ts = datetime.now(timezone.utc).isoformat()
+        cat = str(category or "misc").strip().lower() or "misc"
+        lvl = str(level or "info").strip().lower() or "info"
+        act = str(action or "").strip() or "-"
+        dom = (str(domain).strip().lower() if domain is not None else None) or None
+        msg = str(message or "").strip() or "-"
+        det = None
+        if detail is not None:
+            try:
+                det = json.dumps(detail, ensure_ascii=False)
+            except Exception:
+                det = json.dumps({"detail": str(detail)}, ensure_ascii=False)
+
+        await conn.execute(
+            """
+            INSERT INTO event_log(ts, category, level, action, domain, message, detail)
+            VALUES(?, ?, ?, ?, ?, ?, ?)
+            """,
+            (ts, cat, lvl, act, dom, msg, det),
+        )
+
+        keep = max(100, int(max_rows or 0))
+        # Keep only the latest `keep` rows (delete oldest if needed).
+        await conn.execute(
+            """
+            DELETE FROM event_log
+            WHERE id <= (
+              SELECT id FROM event_log ORDER BY id DESC LIMIT 1 OFFSET ?
+            )
+            """,
+            (keep,),
+        )
+        await conn.commit()
+
+    async def list_events(
+        self,
+        *,
+        category: Optional[str] = None,
+        keyword: Optional[str] = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        conn = self._require_conn()
+        cat = (str(category or "").strip().lower() or "").strip()
+        kw = (str(keyword or "").strip() or "").strip()
+        lim = max(1, min(1000, int(limit or 0)))
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if cat and cat != "all":
+            clauses.append("category = ?")
+            params.append(cat)
+        if kw:
+            pattern = f"%{kw}%"
+            clauses.append("(message LIKE ? OR domain LIKE ? OR action LIKE ? OR category LIKE ?)")
+            params.extend([pattern, pattern, pattern, pattern])
+
+        sql = "SELECT id, ts, category, level, action, domain, message, detail FROM event_log"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(lim)
+
+        cur = await conn.execute(sql, tuple(params))
+        rows = await cur.fetchall()
+        items: list[dict[str, Any]] = []
+        for r in rows:
+            item = dict(r)
+            detail = item.get("detail")
+            if detail:
+                try:
+                    item["detail"] = json.loads(detail)
+                except Exception:
+                    item["detail"] = str(detail)
+            else:
+                item["detail"] = None
+            items.append(item)
+        return items
+
+    async def clear_events(self) -> None:
+        conn = self._require_conn()
+        await conn.execute("DELETE FROM event_log")
+        await conn.commit()
 
     async def close(self) -> None:
         if self._conn:
