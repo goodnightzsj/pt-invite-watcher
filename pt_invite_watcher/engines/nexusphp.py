@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 
+from pt_invite_watcher.engines.nexusphp_sites import NexusPhpSiteAdapter, get_nexusphp_site_adapter
 from pt_invite_watcher.models import AspectResult, Evidence, Site
 from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS, request_with_retry
 
@@ -197,8 +198,45 @@ def _parse_home_invite_quota(text: str) -> tuple[Optional[int], Optional[int], O
 
 
 def _extract_user_id_from_html(html: str) -> Optional[str]:
-    m = re.search(r"userdetails\.php\?id=(\d{1,10})", html or "", flags=re.I)
-    return m.group(1) if m else None
+    raw = html or ""
+    m = re.search(r"userdetails\.php\?id=(\d{1,10})", raw, flags=re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"\bUID\s*=\s*(\d{1,10})\b", raw, flags=re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"\buser(?:id|_id)\s*=\s*(\d{1,10})\b", raw, flags=re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"\buid\s*=\s*(\d{1,10})\b", raw, flags=re.I)
+    if m:
+        return m.group(1)
+    return None
+
+
+async def _probe_user_id_from_usercp(
+    client: httpx.AsyncClient,
+    site_url: str,
+    ua: str,
+    cookie_header: str,
+    adapter: Optional[NexusPhpSiteAdapter] = None,
+    *,
+    retry_delay_seconds: int,
+) -> Optional[str]:
+    url = _join(site_url, "usercp.php")
+    resp, err, _ = await _get_with_retry(client, url, headers={"User-Agent": ua, "Cookie": cookie_header}, delay_seconds=retry_delay_seconds)
+    if err or resp is None:
+        return None
+    if resp.status_code == 404 or resp.status_code >= 500:
+        return None
+    if _looks_like_login(resp):
+        return None
+    raw_html = resp.text or ""
+    if adapter:
+        uid = adapter.extract_uid(raw_html)
+        if uid:
+            return uid
+    return _extract_user_id_from_html(raw_html)
 
 
 def _extract_invite_url_from_html(html: str, base_url: str) -> Optional[str]:
@@ -232,7 +270,11 @@ def _extract_invite_url_from_html(html: str, base_url: str) -> Optional[str]:
 
 def _invite_permission_denied(text: str) -> Optional[str]:
     patterns = [
+        r"对不起[,，]?\s*.+?(?:这里|返回)",
         r"(?:或以上|及以上).{0,80}(?:才可(?:以)?|才能).{0,20}(?:发送|發送).{0,10}(?:邀请|邀請)",
+        r"只有.{0,80}(?:才可(?:以)?|才能).{0,20}(?:发送|發送).{0,10}(?:邀请|邀請)",
+        r"(?:贵宾|VIP).{0,40}(?:或以上|及以上).{0,80}(?:才可(?:以)?|才能).{0,20}(?:发送|發送).{0,10}(?:邀请|邀請)",
+        r"(?:当前)?账户上限|上限数已到|已达到最大邀请数|已达上限|达到上限|当前邀请注册人数已达上限",
         r"(?:你|您).{0,30}(?:没有|無).{0,30}(?:邀请|邀請).{0,20}(?:权限|權限)",
         r"(?:not\s+allowed\s+to\s+invite|invites?\s+are\s+disabled)",
     ]
@@ -244,6 +286,67 @@ def _invite_permission_denied(text: str) -> Optional[str]:
 
 def _invite_permission_denied_any(text: str, raw_html: str) -> Optional[str]:
     return _invite_permission_denied(text) or _invite_permission_denied(raw_html or "")
+
+
+def _clean_invite_reason(text: str) -> str:
+    s = _normalize_text(text or "")
+    if not s:
+        return ""
+    s = re.sub(r"\s*这里.*返回。?$", "", s)
+    s = re.sub(r"\s*这里.*$", "", s)
+    return s.strip(" ,，。;；")
+
+
+def _extract_invite_permission_reason(text: str) -> Optional[str]:
+    """
+    Extract a human-readable "permission denied" reason from the invite page text.
+    This is best-effort and should stay short for Evidence.detail.
+    """
+    t = _normalize_text(text or "")
+    if not t:
+        return None
+
+    if "对不起" in t:
+        m = re.search(r"对不起[,，]?\s*(.*)", t)
+        reason = _clean_invite_reason(m.group(1) if m else t)
+        return reason or "对不起"
+    if "sorry" in t.lower():
+        m = re.search(r"sorry[,\\s]*([^\\n\\r]+)", t, flags=re.I)
+        reason = _clean_invite_reason(m.group(1) if m else t)
+        return reason or "Sorry"
+
+    patterns = [
+        r"只有.{0,120}(?:才可(?:以)?|才能).{0,30}(?:发送|發送).{0,20}(?:邀请|邀請)",
+        r"(?:或以上|及以上).{0,120}(?:才可(?:以)?|才能).{0,30}(?:发送|發送).{0,20}(?:邀请|邀請)",
+        r"(?:贵宾|VIP).{0,120}(?:才可(?:以)?|才能).{0,30}(?:发送|發送).{0,20}(?:邀请|邀請)",
+        r"(?:当前)?账户上限.*",
+        r"(?:上限数已到|已达到最大邀请数|已达上限|达到上限|当前邀请注册人数已达上限)",
+        r"(?:你|您).{0,60}(?:没有|無).{0,60}(?:邀请|邀請).{0,20}(?:权限|權限)",
+    ]
+    for pat in patterns:
+        m = re.search(pat, t, flags=re.I)
+        if not m:
+            continue
+        reason = _clean_invite_reason(m.group(0))
+        if reason:
+            return reason
+    return None
+
+
+def _extract_invite_quota_insufficient(text: str) -> Optional[str]:
+    t = _normalize_text(text or "")
+    if not t:
+        return None
+    patterns = [
+        r"邀请数量不足",
+        r"邀请名额不足",
+        r"没有剩余邀请",
+        r"没有足够的邀请",
+    ]
+    for pat in patterns:
+        if re.search(pat, t, flags=re.I):
+            return pat
+    return None
 
 
 def _extract_action_label(tag: Any) -> str:
@@ -423,6 +526,8 @@ class NexusPhpDetector:
                 evidence=Evidence(url=_join(site.url, "invite.php"), http_status=None, reason="missing_cookie"),
             )
 
+        adapter = get_nexusphp_site_adapter(site)
+
         # Many NexusPHP sites expose the invite quota in the top nav on homepage:
         # "邀请[发送]: 12(0)" (M-Team may show Traditional).
         home_resp, err, used = await _get_with_retry(
@@ -459,7 +564,19 @@ class NexusPhpDetector:
             )
 
         home_text = _extract_text(home_resp)
-        user_id = _extract_user_id_from_html(home_resp.text)
+        user_id = await _probe_user_id_from_usercp(
+            client,
+            site.url,
+            ua,
+            cookie_header,
+            adapter,
+            retry_delay_seconds=retry_delay_seconds,
+        )
+        if not user_id:
+            if adapter:
+                user_id = adapter.extract_uid(home_resp.text or "") or None
+            if not user_id:
+                user_id = _extract_user_id_from_html(home_resp.text)
         quota_perm, quota_temp, quota_matched = _parse_home_invite_quota(home_text)
         quota_total: Optional[int] = None
         if quota_perm is not None:
@@ -587,10 +704,17 @@ class NexusPhpDetector:
                 ),
             )
 
+        count_reason: Optional[str] = None
         count = quota_total
         matched = quota_matched
         if count is None:
             count, matched = _parse_invite_count(invite_text)
+            if count is None:
+                quota_insufficient = _extract_invite_quota_insufficient(invite_text)
+                if quota_insufficient:
+                    count = 0
+                    matched = quota_insufficient
+                    count_reason = "invite_quota_insufficient"
 
         action_status, action_matched = _invite_send_action_status(invite_resp.text)
         if action_status is False:
@@ -608,8 +732,18 @@ class NexusPhpDetector:
                 ),
             )
 
+        permission_reason: Optional[str] = None
+        if adapter:
+            try:
+                permission_reason = adapter.invite_permission_reason(invite_text, invite_resp.text or "")
+            except Exception:
+                permission_reason = None
+        permission_reason = permission_reason or _extract_invite_permission_reason(invite_text)
         denied_pat = _invite_permission_denied_any(invite_text, invite_resp.text)
-        if denied_pat:
+        if denied_pat or permission_reason:
+            detail = _truncate_detail(permission_reason) if permission_reason else None
+            if not detail and count is not None:
+                detail = f"quota_total={count}"
             return AspectResult(
                 state="closed",
                 available=0,
@@ -620,7 +754,7 @@ class NexusPhpDetector:
                     http_status=invite_resp.status_code,
                     reason="invite_permission_denied",
                     matched=denied_pat,
-                    detail=f"quota_total={count}" if count is not None else None,
+                    detail=detail,
                 ),
             )
 
@@ -658,7 +792,7 @@ class NexusPhpDetector:
             evidence=Evidence(
                 url=str(invite_resp.url),
                 http_status=invite_resp.status_code,
-                reason="invite_count_parsed" if quota_total is None else "invite_quota_home_header",
+                reason=count_reason or ("invite_count_parsed" if quota_total is None else "invite_quota_home_header"),
                 matched=action_matched or matched,
             ),
         )
