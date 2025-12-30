@@ -32,6 +32,7 @@ const autoRefreshMinutes = ref<AutoRefreshMinutes>(
 
 let timer: number | undefined;
 let scanPollTimer: number | undefined;
+let inflightPollTimer: number | undefined;
 
 const errorModalOpen = ref(false);
 const errorModalTitle = ref("");
@@ -227,6 +228,21 @@ function clearTimer() {
   }
 }
 
+function clearInflightPoll() {
+  if (inflightPollTimer) {
+    window.clearInterval(inflightPollTimer);
+    inflightPollTimer = undefined;
+  }
+}
+
+function startInflightPoll() {
+  if (inflightPollTimer) return;
+  void refresh({ silent: true });
+  inflightPollTimer = window.setInterval(() => {
+    refresh({ silent: true });
+  }, 2000);
+}
+
 function setupTimer() {
   clearTimer();
   if (!autoRefreshEnabled.value) return;
@@ -251,12 +267,23 @@ watch(autoRefreshMinutes, (v) => {
   showToast(`自动刷新间隔已更新：${formatAutoRefreshInterval(v)}`, "info", 2400);
 });
 
+const hasInflightScan = computed(() => rows.value.some((row) => !!row.scanning));
+watch([hasInflightScan, scanRunning], ([hasInflight, running]) => {
+  if (running) {
+    clearInflightPoll();
+    return;
+  }
+  if (hasInflight) startInflightPoll();
+  else clearInflightPoll();
+});
+
 onMounted(async () => {
   await refresh();
   setupTimer();
 });
 onUnmounted(() => {
   clearTimer();
+  clearInflightPoll();
   if (scanPollTimer) {
     window.clearInterval(scanPollTimer);
     scanPollTimer = undefined;
