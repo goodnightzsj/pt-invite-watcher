@@ -75,7 +75,7 @@ class NotifierManager:
                 return False, "wecom not configured"
             from pt_invite_watcher.notify.wecom import WeComNotifier
 
-            ok = await WeComNotifier(
+            ok, msg, detail = await WeComNotifier(
                 corpid=wecom["corpid"],
                 app_secret=wecom["app_secret"],
                 agent_id=str(wecom["agent_id"]),
@@ -84,17 +84,18 @@ class NotifierManager:
                 to_tag=wecom.get("to_tag") or "",
                 retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
                 retry_delay_seconds=retry_delay,
-            ).send("PT Invite Watcher test message")
+            ).send_detail("PT Invite Watcher test message")
             try:
                 await self._store.add_event(
                     category="notify",
                     level="info" if ok else "error",
                     action="wecom_test",
                     message="wecom test sent" if ok else "wecom test failed",
+                    detail={"ok": ok, "message": msg, "detail": detail},
                 )
             except Exception:
                 pass
-            return (True, "sent") if ok else (False, "send failed")
+            return bool(ok), str(msg or "")
 
         return False, "unknown channel"
 
@@ -134,7 +135,7 @@ class NotifierManager:
             try:
                 from pt_invite_watcher.notify.wecom import WeComNotifier
 
-                ok = await WeComNotifier(
+                ok, msg, detail = await WeComNotifier(
                     corpid=wecom["corpid"],
                     app_secret=wecom["app_secret"],
                     agent_id=str(wecom["agent_id"]),
@@ -143,13 +144,14 @@ class NotifierManager:
                     to_tag=wecom.get("to_tag") or "",
                     retry_attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
                     retry_delay_seconds=retry_delay,
-                ).send(f"{title}\n{text}")
+                ).send_detail(f"{title}\n{text}")
                 try:
                     await self._store.add_event(
                         category="notify",
                         level="info" if ok else "error",
                         action="wecom_send",
                         message="wecom notify sent" if ok else "wecom notify failed",
+                        detail={"ok": ok, "message": msg, "detail": detail},
                     )
                 except Exception:
                     pass
