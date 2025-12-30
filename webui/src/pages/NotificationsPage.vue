@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
 import Badge from "../components/Badge.vue";
 import Toggle from "../components/Toggle.vue";
@@ -15,14 +15,45 @@ const view = ref<NotificationsResponse | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref<"" | "telegram" | "wecom">("");
+const baselineJson = ref<string>("");
 
 const model = reactive<Model>({
   telegram: { enabled: false, token: "", chat_id: "" },
   wecom: { enabled: false, corpid: "", app_secret: "", agent_id: "", to_user: "@all", to_party: "", to_tag: "" },
 });
 
+function _normStr(v: string) {
+  return (v || "").trim();
+}
+
+function normalizedModelForCompare(m: Model) {
+  return {
+    telegram: {
+      enabled: Boolean(m.telegram.enabled),
+      token: _normStr(m.telegram.token),
+      chat_id: _normStr(m.telegram.chat_id),
+    },
+    wecom: {
+      enabled: Boolean(m.wecom.enabled),
+      corpid: _normStr(m.wecom.corpid),
+      app_secret: _normStr(m.wecom.app_secret),
+      agent_id: _normStr(m.wecom.agent_id),
+      to_user: _normStr(m.wecom.to_user),
+      to_party: _normStr(m.wecom.to_party),
+      to_tag: _normStr(m.wecom.to_tag),
+    },
+  };
+}
+
+const isDirty = computed(() => {
+  if (!baselineJson.value) return false;
+  const current = JSON.stringify(normalizedModelForCompare(model));
+  return current !== baselineJson.value;
+});
+
 async function load(opts: { toast?: boolean } = {}) {
   loading.value = true;
+  baselineJson.value = "";
   try {
     const data = await api.notificationsGet();
     view.value = data;
@@ -37,6 +68,7 @@ async function load(opts: { toast?: boolean } = {}) {
     model.wecom.to_user = data.wecom.to_user || "@all";
     model.wecom.to_party = data.wecom.to_party || "";
     model.wecom.to_tag = data.wecom.to_tag || "";
+    baselineJson.value = JSON.stringify(normalizedModelForCompare(model));
     if (opts.toast) showToast("已重新加载", "success", 1800);
   } catch (e: any) {
     showToast(String(e?.message || e || "加载失败"), "error");
@@ -52,6 +84,7 @@ async function reload() {
 }
 
 async function save() {
+  if (!isDirty.value) return;
   saving.value = true;
   try {
     showToast("正在保存…", "info", 1600);
@@ -116,7 +149,7 @@ onMounted(() => load());
           </button>
           <button
             class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-            :disabled="saving"
+            :disabled="saving || !isDirty"
             @click="save"
           >
             保存
