@@ -14,7 +14,7 @@ const emit = defineEmits<{
     <button
       type="button"
       class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-      :class="props.modelValue ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'"
+      :class="props.modelValue ? 'bg-success-500' : 'bg-slate-300 dark:bg-slate-700'"
       @click="emit('update:modelValue', !props.modelValue)"
       aria-label="toggle"
     >

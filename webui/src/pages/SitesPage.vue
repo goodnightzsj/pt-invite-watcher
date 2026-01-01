@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import Badge from "../components/Badge.vue";
+import Button from "../components/Button.vue";
 import Modal from "../components/Modal.vue";
 import { api, type SiteConfigItem, type SiteTemplate } from "../api";
 import { showToast } from "../toast";
@@ -242,30 +243,23 @@ onMounted(() => load());
       <div class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
            <div class="flex items-center gap-2">
-             <div class="h-2 w-2 rounded-full bg-indigo-500 ring-2 ring-indigo-100 dark:ring-indigo-900"></div>
+             <div class="h-2 w-2 rounded-full bg-brand-500 ring-2 ring-brand-100 dark:ring-brand-900"></div>
              <h2 class="text-lg font-bold text-slate-900 dark:text-white">站点管理</h2>
           </div>
           <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
             手动新增/覆盖只写入本服务 SQLite，不会覆盖 MoviePilot。
           </div>
-          <div v-if="moviepilotError" class="mt-2 text-xs font-medium text-rose-600 dark:text-rose-300">
+          <div v-if="moviepilotError" class="mt-2 text-xs font-medium text-danger-600 dark:text-danger-300">
             MoviePilot：{{ moviepilotOk ? "ok" : "fail" }} · {{ moviepilotError }}
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-3">
-          <button
-            class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            :disabled="loading"
-            @click="reload"
-          >
+          <Button :disabled="loading" @click="reload">
             刷新列表
-          </button>
-          <button
-            class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:translate-y-[-1px] hover:shadow-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60 dark:shadow-none"
-            @click="openAdd"
-          >
+          </Button>
+          <Button variant="primary" @click="openAdd">
             新增站点
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -299,14 +293,14 @@ onMounted(() => load());
               </td>
               <td class="px-6 py-4">
                 <a
-                  class="text-xs text-indigo-500 underline decoration-indigo-200 underline-offset-4 hover:decoration-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:decoration-indigo-900 dark:hover:decoration-indigo-400 dark:hover:text-indigo-300"
+                  class="text-xs text-brand-500 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-500 hover:text-brand-600 dark:text-brand-400 dark:decoration-brand-900 dark:hover:decoration-brand-400 dark:hover:text-brand-300"
                   :href="item.url"
                   target="_blank"
                   rel="noreferrer"
                 >
                   {{ item.domain }}
                 </a>
-                <div v-if="item.has_local_config && item.source === 'moviepilot'" class="mt-1 inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-900/40 dark:text-amber-300">
+                <div v-if="item.has_local_config && item.source === 'moviepilot'" class="mt-1 inline-flex items-center rounded bg-warning-50 px-1.5 py-0.5 text-[10px] font-medium text-warning-700 ring-1 ring-inset ring-warning-600/20 dark:bg-warning-900/40 dark:text-warning-300">
                   本地覆盖
                 </div>
               </td>
@@ -322,7 +316,7 @@ onMounted(() => load());
               <td class="px-6 py-4">
                 <a
                   v-if="item.registration_url"
-                  class="text-xs text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400"
+                  class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
                   :href="item.registration_url"
                   target="_blank"
                   rel="noreferrer"
@@ -334,7 +328,7 @@ onMounted(() => load());
               <td class="px-6 py-4">
                 <a
                   v-if="item.invite_url"
-                  class="text-xs text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400"
+                  class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
                   :href="item.invite_url"
                   target="_blank"
                   rel="noreferrer"
@@ -353,7 +347,7 @@ onMounted(() => load());
                   </button>
                   <button
                     v-if="item.source === 'manual' || item.has_local_config"
-                    class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 shadow-sm hover:bg-rose-100 hover:text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-900/50"
+                    class="rounded-lg border border-danger-200 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 shadow-sm hover:bg-danger-100 hover:text-danger-900 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-400 dark:hover:bg-danger-900/50"
                     @click="remove(item)"
                   >
                     {{ item.source === "manual" ? "删除" : "清除覆盖" }}

@@ -2,7 +2,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 import Badge from "../components/Badge.vue";
+import Button from "../components/Button.vue";
 import Modal from "../components/Modal.vue";
+import TableSkeleton from "../components/TableSkeleton.vue";
 import Toggle from "../components/Toggle.vue";
 import { api, type SiteRow } from "../api";
 import { showToast } from "../toast";
@@ -302,7 +304,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
       <div class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div class="flex items-center gap-2">
-             <div class="h-2 w-2 rounded-full bg-indigo-500 ring-2 ring-indigo-100 dark:ring-indigo-900"></div>
+             <div class="h-2 w-2 rounded-full bg-brand-500 ring-2 ring-brand-100 dark:ring-brand-900"></div>
              <h2 class="text-lg font-bold text-slate-900 dark:text-white">站点状态</h2>
           </div>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -331,29 +333,21 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
             </select>
           </div>
           <div class="flex items-center gap-2">
-            <button
-              class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:translate-y-[-1px] hover:shadow-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60 dark:shadow-none"
-              :disabled="scanRunning"
-              @click="runScan"
-            >
+            <Button variant="primary" :disabled="scanRunning" :loading="scanRunning" @click="runScan">
               {{ scanRunning ? "扫描中…" : "立即扫描" }}
-            </button>
-            <button
-              class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-              :disabled="loading"
-              @click="refreshManual"
-            >
+            </Button>
+            <Button :disabled="loading" @click="refreshManual">
               刷新数据
-            </button>
-            <button
+            </Button>
+            <Button
               v-if="allowStateReset"
-              class="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-5 py-2.5 text-sm font-semibold text-rose-800 shadow-sm transition-all hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-950/60"
+              variant="danger"
               :disabled="scanRunning || loading || !!rowScanDomain"
-              @click="resetState"
               title="清空扫描结果（不影响站点配置）"
+              @click="resetState"
             >
               重置状态
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -361,22 +355,18 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
 
     <div
       v-if="scanHint"
-      class="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm dark:border-indigo-900 dark:bg-indigo-950/40"
+      class="rounded-2xl border border-brand-200 bg-brand-50 p-5 shadow-sm dark:border-brand-900 dark:bg-brand-950/40"
     >
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div class="text-base font-semibold text-indigo-900 dark:text-indigo-100">提示</div>
-          <div class="mt-1 text-sm text-indigo-800/80 dark:text-indigo-200/80">
+          <div class="text-base font-semibold text-brand-900 dark:text-brand-100">提示</div>
+          <div class="mt-1 text-sm text-brand-800/80 dark:text-brand-200/80">
             检测到配置已导入/更新。站点状态需要扫描后生成/刷新。
           </div>
         </div>
-        <button
-          class="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="scanRunning"
-          @click="runScan"
-        >
+        <Button variant="primary" :disabled="scanRunning" :loading="scanRunning" @click="runScan">
           {{ scanRunning ? "扫描中…" : "立即扫描" }}
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -393,13 +383,13 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
         </div>
         <Badge :label="scanStatus.ok ? 'ok' : 'fail'" :tone="scanStatus.ok ? 'green' : 'red'" />
       </div>
-      <div v-if="!scanStatus.ok" class="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+      <div v-if="!scanStatus.ok" class="mt-3 rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm text-danger-800 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200">
         失败：{{ scanStatus.error || "unknown" }}
-        <div class="mt-1 text-rose-700/80 dark:text-rose-200/80">请检查站点配置与网络连通性；导入/新增站点后需先点击“立即扫描”。</div>
+        <div class="mt-1 text-danger-700/80 dark:text-danger-200/80">请检查站点配置与网络连通性；导入/新增站点后需先点击“立即扫描”。</div>
       </div>
       <div
         v-else-if="scanStatus.warning"
-        class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+        class="mt-3 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900 dark:border-warning-900 dark:bg-warning-950/40 dark:text-warning-200"
       >
         警告：{{ scanStatus.warning }}
       </div>
@@ -409,20 +399,34 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
       class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
       <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-        <span v-if="hasRows">共 {{ rows.length }} 个站点</span>
+        <span v-if="loading && !hasRows">加载中…</span>
+        <span v-else-if="hasRows">共 {{ rows.length }} 个站点</span>
         <span v-else>暂无扫描数据：请先在“站点管理”配置/导入站点，然后点击“立即扫描”。</span>
       </div>
 
-      <div class="overflow-x-auto">
+      <!-- Scanning progress bar -->
+      <div
+        v-if="scanRunning || hasInflightScan"
+        class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800"
+      >
+        <div class="h-full w-full animate-scan-progress bg-gradient-to-r from-brand-500 via-purple-500 to-brand-500" />
+      </div>
+
+      <!-- Skeleton loading -->
+      <div v-if="loading && !hasRows" class="overflow-x-auto">
+        <TableSkeleton :rows="5" :cols="7" />
+      </div>
+
+      <div v-if="hasRows || (!loading && !hasRows)" class="overflow-x-auto max-h-[calc(100vh-300px)]">
         <table class="min-w-full text-left text-sm">
-          <thead class="bg-slate-50 border-b border-slate-200/70 text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
+          <thead class="sticky top-0 z-10 bg-slate-50 border-b border-slate-200/70 text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
             <tr>
-              <th class="px-6 py-4 font-semibold">站点 / 域名</th>
-              <th class="px-6 py-4 font-semibold">引擎</th>
-              <th class="px-6 py-4 font-semibold">可访问</th>
-              <th class="px-6 py-4 font-semibold">开放注册</th>
-              <th class="px-6 py-4 font-semibold">可用邀请</th>
-              <th class="px-6 py-4 font-semibold">最后检查</th>
+              <th class="px-6 py-4 font-semibold min-w-[180px] max-w-[280px]">站点 / 域名</th>
+              <th class="hidden md:table-cell px-6 py-4 font-semibold w-24">引擎</th>
+              <th class="px-6 py-4 font-semibold w-32">可访问</th>
+              <th class="px-6 py-4 font-semibold w-32">开放注册</th>
+              <th class="px-6 py-4 font-semibold w-32">可用邀请</th>
+              <th class="hidden lg:table-cell px-6 py-4 font-semibold min-w-[160px]">最后检查</th>
               <th class="px-6 py-4 font-semibold text-right">操作</th>
             </tr>
           </thead>
@@ -431,14 +435,14 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
               <!-- Site & Domain Combined -->
               <td class="px-6 py-4">
                 <div class="flex flex-col">
-                  <span class="font-semibold text-slate-700 group-hover:text-amber-600 dark:text-slate-200 dark:group-hover:text-amber-400 transition-colors">{{ row.name || "-" }}</span>
-                  <a class="mt-0.5 text-xs text-indigo-500 hover:text-indigo-600 hover:underline dark:text-indigo-400 dark:hover:text-indigo-300" :href="row.url" target="_blank" rel="noreferrer">
+                  <span class="font-semibold text-slate-700 group-hover:text-warning-600 dark:text-slate-200 dark:group-hover:text-warning-400 transition-colors">{{ row.name || "-" }}</span>
+                  <a class="mt-0.5 text-xs text-brand-500 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300" :href="row.url" target="_blank" rel="noreferrer">
                     {{ row.domain }}
                   </a>
                 </div>
               </td>
               
-              <td class="px-6 py-4">
+              <td class="hidden md:table-cell px-6 py-4">
                 <Badge :label="row.engine || 'unknown'" tone="slate" class="rounded-md px-2 py-1 text-[10px]" />
               </td>
 
@@ -489,7 +493,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
                 </div>
               </td>
 
-              <td class="px-6 py-4">
+              <td class="hidden lg:table-cell px-6 py-4">
                  <div class="text-xs text-slate-500 dark:text-slate-400">
                    <div>最新检查：{{ formatDateTime(row.last_checked_at) }}</div>
                    <div class="mt-0.5 scale-90 origin-left opacity-60">上次变更时间：{{ formatChangedAt(row) }}</div>
@@ -499,7 +503,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
               <td class="px-6 py-4 text-right">
                 <div class="flex items-center justify-end gap-2">
                   <button
-                    class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                    class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-brand-500/10 dark:hover:text-brand-300"
                     :disabled="scanRunning || loading || rowScanDomain === row.domain || row.scanning"
                     @click="runRowScan(row)"
                     title="扫描此站"
@@ -509,7 +513,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
                   </button>
                   <button
                      v-if="row.errors && row.errors.length"
-                     class="rounded-lg p-2 text-rose-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/20"
+                     class="rounded-lg p-2 text-danger-500 transition-colors hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-900/20"
                      @click="openErrors(row)"
                      :title="`查看错误 (${row.errors.length})`"
                   >
@@ -529,7 +533,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
         <li
           v-for="(err, i) in errorModalErrors"
           :key="i"
-          class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
+          class="rounded-xl border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-800 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200"
         >
           {{ err }}
         </li>

@@ -350,17 +350,17 @@ onMounted(() => load());
 
       <div
         v-if="importScanPrompt"
-        class="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"
+        class="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-100"
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div class="font-semibold">下一步</div>
-            <div class="mt-1 text-indigo-800/80 dark:text-indigo-200/80">
+            <div class="mt-1 text-brand-800/80 dark:text-brand-200/80">
               导入只恢复站点/通知/服务配置，不包含扫描结果；请点击“立即扫描”生成站点状态。站点管理/通知设置页需要点“重新加载”查看导入结果。
             </div>
           </div>
           <button
-            class="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            class="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="scanNowRunning"
             @click="runScanNow"
           >
@@ -397,7 +397,7 @@ onMounted(() => load());
             保存
           </button>
           <button
-            class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-950/60"
+            class="rounded-xl border border-danger-200 bg-danger-50 px-4 py-2 text-sm font-semibold text-danger-800 hover:bg-danger-100 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200 dark:hover:bg-danger-950/60"
             @click="resetAll"
           >
             重置

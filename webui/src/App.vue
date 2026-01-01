@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { computed } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 
-import Badge from "./components/Badge.vue";
-import { getThemeMode, setThemeMode, type ThemeMode } from "./theme";
-import { toast } from "./toast";
+import ThemeToggle from "./components/ThemeToggle.vue";
+import { toasts, removeToast, type ToastKind } from "./toast";
+
+function toastClasses(kind: ToastKind): string {
+  if (kind === 'success') {
+    return 'border-success-200 bg-success-50 text-success-800 dark:border-success-900 dark:bg-success-950/40 dark:text-success-200';
+  } else if (kind === 'error') {
+    return 'border-danger-200 bg-danger-50 text-danger-800 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200';
+  }
+  return 'border-slate-200 bg-white text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+}
 
 const route = useRoute();
-
-const theme = computed({
-  get: () => getThemeMode(),
-  set: (v: ThemeMode) => setThemeMode(v),
-});
 
 const nav = [
   { to: "/", label: "站点状态" },
@@ -31,7 +33,7 @@ function isActive(to: string) {
     <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/70 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 dark:border-slate-800/80 dark:bg-slate-950/70 dark:supports-[backdrop-filter]:bg-slate-950/60">
       <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/20 ring-1 ring-white/20">
+          <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 text-white shadow-md shadow-brand-500/20 ring-1 ring-white/20">
             <span class="font-bold">PT</span>
           </div>
           <div>
@@ -52,7 +54,7 @@ function isActive(to: string) {
             class="rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200"
             :class="
               isActive(item.to)
-                ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20'
+                ? 'bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-200 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
             "
           >
@@ -86,14 +88,7 @@ function isActive(to: string) {
         </nav>
 
         <div class="flex items-center gap-3">
-          <select
-            v-model="theme"
-            class="cursor-pointer rounded-lg border-none bg-slate-100 py-1.5 pl-3 pr-8 text-sm font-medium text-slate-700 transition hover:bg-slate-200 focus:ring-2 focus:ring-indigo-500/20 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            <option value="system">跟随系统</option>
-            <option value="light">浅色模式</option>
-            <option value="dark">深色模式</option>
-          </select>
+          <ThemeToggle />
         </div>
       </div>
     </header>
@@ -106,34 +101,33 @@ function isActive(to: string) {
       </RouterView>
     </main>
 
-    <transition name="fade">
-      <div
-        v-if="toast.open"
-        class="fixed bottom-5 right-5 z-50 max-w-sm rounded-2xl border px-4 py-3 text-sm shadow-lg"
-        :class="
-          toast.kind === 'success'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
-            : toast.kind === 'error'
-            ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200'
-            : 'border-slate-200 bg-white text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100'
-        "
-      >
-        {{ toast.message }}
-      </div>
-    </transition>
+    <!-- Toast Queue -->
+    <div class="fixed bottom-5 right-5 z-50 flex flex-col-reverse gap-2">
+      <transition-group name="fade">
+        <div
+          v-for="t in toasts"
+          :key="t.id"
+          class="max-w-sm rounded-2xl border px-4 py-3 text-sm shadow-lg cursor-pointer"
+          :class="toastClasses(t.kind)"
+          @click="removeToast(t.id)"
+        >
+          {{ t.message }}
+        </div>
+      </transition-group>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateX(40px);
 }
 
 .fade-page-enter-active,

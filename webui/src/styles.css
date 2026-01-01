@@ -38,3 +38,42 @@ html.dark {
     @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm focus:border-slate-300 focus:ring-2 focus:ring-slate-200/60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-700 dark:focus:ring-slate-800/60;
   }
 }
+
+/* Global button click feedback */
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+button {
+  transition: transform 0.1s ease;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.slate.300') transparent;
+}
+
+.dark * {
+  scrollbar-color: theme('colors.slate.700') transparent;
+}
+
+/* Scan progress bar animation */
+@keyframes scan-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  50% {
+    transform: translateX(0%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-scan-progress {
+  animation: scan-progress 1.5s ease-in-out infinite;
+  background-size: 200% 100%;
+}
