@@ -754,7 +754,7 @@ class Scanner:
                     category="scan",
                     level="info",
                     action="scan_skipped",
-                    message="all sites are scanning",
+                    message="所有站点正在扫描中",
                     detail={"skipped_in_flight": skipped_in_flight, "site_count": len(sites)},
                 )
             except Exception:
@@ -825,7 +825,7 @@ class Scanner:
                     category="scan",
                     level="info",
                     action="scan_start",
-                    message="scan started",
+                    message="开始扫描",
                     detail={
                         "site_count": len(sites),
                         "scanned_count": len(tasks),
@@ -874,7 +874,7 @@ class Scanner:
                 category="scan",
                 level="info",
                 action="scan_done",
-                message="scan done",
+                message="扫描完成",
                 detail={"site_count": len(sites), "scanned_count": len(tasks), "skipped_in_flight": skipped_in_flight, "warning": warning},
             )
         except Exception:
@@ -934,9 +934,9 @@ class Scanner:
         if target in self._in_flight:
             raise AlreadyScanningError(target)
 
-        logger.info("single scan start: %s", target)
+            logger.info("single scan start: %s", target)
         try:
-            await self._store.add_event(category="scan", level="info", action="scan_one_start", message="single scan start", domain=target)
+            await self._store.add_event(category="scan", level="info", action="scan_one_start", message="开始单独扫描", domain=target)
         except Exception:
             pass
         task = asyncio.current_task()
@@ -998,7 +998,7 @@ class Scanner:
                 category="scan",
                 level="info",
                 action="scan_one_done",
-                message="single scan done",
+                message="单独扫描完成",
                 domain=target,
                 detail={"warning": warning},
             )
@@ -1025,6 +1025,26 @@ class Scanner:
             pass
         return status
 
+    async def _log_step(
+        self,
+        site: Site,
+        page_kind: str,
+        action: str,
+        message: str,
+    ) -> None:
+        try:
+            await self._store.add_event(
+                category="scan",
+                level="info",
+                action=action,
+                message=message,
+                domain=_normalize_domain(site.domain),
+                detail={"page": {"kind": page_kind}, "site_name": site.name},
+                max_rows=5000,
+            )
+        except Exception:
+            pass
+
     async def _check_one(
         self,
         client: httpx.AsyncClient,
@@ -1036,6 +1056,7 @@ class Scanner:
         retry_delay_seconds: int,
     ) -> None:
         async with self._sem:
+            await self._log_step(site, "home", "check_reachability", f"正在检测连通性: {site.url}")
             ua = site.ua or default_user_agent or None
             cookie_override = (getattr(site, "cookie_override", None) or "").strip()
             cookie_header_for_invites: Optional[str] = None
@@ -1065,6 +1086,7 @@ class Scanner:
             inv_path = (getattr(site, "invite_path", None) or "").strip() or "invite.php"
 
             if reachability.state != "up":
+                await self._log_step(site, "home", "site_unreachable", f"站点无法访问: {reachability.evidence.reason}")
                 registration = AspectResult(
                     state="unknown",
                     evidence=Evidence(
@@ -1095,6 +1117,7 @@ class Scanner:
                 return
 
             try:
+                await self._log_step(site, "signup", "check_registration", "正在检测注册状态")
                 registration = await self._detector.check_registration(client, site, ua, retry_delay_seconds=retry_delay_seconds)
             except Exception as e:
                 logger.exception("registration check failed: %s", site.domain)
@@ -1110,6 +1133,7 @@ class Scanner:
 
             try:
                 if is_mteam:
+                    await self._log_step(site, "invite", "check_invites", "正在检测邀请 (M-Team)")
                     api_key = (getattr(site, "did", None) or "").strip()
                     if api_key:
                         invites = await self._mteam.check_invites(client, site, ua, retry_delay_seconds=retry_delay_seconds)
@@ -1137,11 +1161,20 @@ class Scanner:
                             )
                 else:
                     if getattr(site, "id", None) is None and not cookie_header_for_invites:
+                        # Manual site, no cookie -> Explicitly SKIP invites check
+                        await self._store.add_event(
+                            category="scan",
+                            level="warn",
+                            action="skip_invites",
+                            message="跳过邀请检测 (手动站点无Cookie)",
+                            domain=_normalize_domain(site.domain),
+                            detail={"site_name": site.name},
+                        )
                         invites = AspectResult(
-                            state="closed",
-                            available=0,
-                            permanent=0,
-                            temporary=0,
+                            state="unknown",
+                            available=None,
+                            permanent=None,
+                            temporary=None,
                             evidence=Evidence(
                                 url=urljoin(site.url.rstrip("/") + "/", inv_path),
                                 http_status=None,
@@ -1150,6 +1183,7 @@ class Scanner:
                             ),
                         )
                     else:
+                        await self._log_step(site, "invite", "check_invites", "正在检测邀请/个人中心")
                         invites = await self._detector.check_invites(
                             client,
                             site,

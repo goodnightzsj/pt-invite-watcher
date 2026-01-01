@@ -165,9 +165,9 @@ export const api = {
     if (params.category) q.set("category", params.category);
     if (params.domain) q.set("domain", params.domain);
     if (params.keyword) q.set("keyword", params.keyword);
-    if (params.limit) q.set("limit", String(params.limit));
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
     const qs = q.toString();
     return requestJson<LogsResponse>(`/api/logs${qs ? `?${qs}` : ""}`);
   },
-  logsClear: () => requestJson<{ ok: boolean }>("/api/logs/clear", { method: "POST" }),
+  logsDomains: () => requestJson<{ domains: string[] }>("/api/logs/domains"),
 };

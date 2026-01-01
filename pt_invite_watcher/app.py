@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Annotated, Any, Dict, Optional
 from urllib.parse import urljoin, urlparse
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from contextlib import asynccontextmanager
 import json
 
 from pt_invite_watcher.app_context import AppContext, build_context
@@ -44,7 +45,59 @@ from pt_invite_watcher.site_list import SITE_LIST_SUMMARY_KEY
 
 logger = logging.getLogger("pt_invite_watcher")
 
-app = FastAPI(title="PT Invite Watcher", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = load_settings()
+    logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO))
+    ctx = await build_context(settings)
+    app.state.ctx = ctx
+
+    # Wire up logs to WebSocket
+    def _on_log_event(event: Dict[str, Any]) -> None:
+        asyncio.create_task(ws_broadcaster.broadcast({"type": "logs_append", "data": event}))
+
+    ctx.store.on_event(_on_log_event)
+
+    async def _loop() -> None:
+        try:
+            probe_status = await ctx.scanner.probe_dependencies()
+            logger.info("deps probe: %s", probe_status)
+        except Exception:
+            logger.exception("deps probe failed")
+
+        try:
+            while True:
+                try:
+                    status = await ctx.scanner.run_once()
+                    logger.info("scan status: %s", status)
+                except Exception:
+                    logger.exception("scan cycle failed")
+
+                interval = ctx.settings.scan.interval_seconds
+                try:
+                    cfg = await ctx.store.get_json("app_config", default={}) or {}
+                    scan_cfg = cfg.get("scan") if isinstance(cfg, dict) else None
+                    if isinstance(scan_cfg, dict) and scan_cfg.get("interval_seconds") is not None:
+                        interval = int(scan_cfg.get("interval_seconds") or interval)
+                except Exception:
+                    pass
+                await asyncio.sleep(max(30, int(interval or 600)))
+        except asyncio.CancelledError:
+            logger.info("scan loop cancelled")
+            raise
+
+    scan_task = asyncio.create_task(_loop())
+    yield
+    scan_task.cancel()
+    try:
+        await scan_task
+    except asyncio.CancelledError:
+        pass
+    await ctx.store.close()
+
+
+app = FastAPI(title="PT Invite Watcher", version="0.1.0", lifespan=lifespan)
 
 basic_security = HTTPBasic(auto_error=False)
 
@@ -60,29 +113,28 @@ _MAX_ERROR_DETAIL_LEN = 240
 _DEFAULT_REQUEST_RETRY_DELAY_SECONDS = 30
 
 
-# SSE Broadcaster for real-time updates
-class SSEBroadcaster:
+# WebSocket Broadcaster for real-time updates
+class WebSocketBroadcaster:
     def __init__(self):
-        self._clients: list[asyncio.Queue] = []
-    
-    async def subscribe(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
-        self._clients.append(queue)
-        return queue
-    
-    def unsubscribe(self, queue: asyncio.Queue):
-        if queue in self._clients:
-            self._clients.remove(queue)
-    
-    async def broadcast(self, event_type: str, data: Any = None):
-        msg = {"type": event_type, "data": data}
-        for queue in self._clients:
-            try:
-                queue.put_nowait(msg)
-            except asyncio.QueueFull:
-                pass  # Drop message if queue is full
+        self._clients: list[WebSocket] = []
 
-sse_broadcaster = SSEBroadcaster()
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self._clients.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self._clients:
+            self._clients.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for client in self._clients:
+            try:
+                await client.send_json(message)
+            except Exception:
+                # If sending fails, assume disconnected and remove
+                self.disconnect(client)
+
+ws_broadcaster = WebSocketBroadcaster()
 
 
 def _cfg_str(value: Any) -> str:
@@ -222,47 +274,7 @@ async def require_auth(
     _maybe_require_auth(request, credentials, ctx.settings)
 
 
-@app.on_event("startup")
-async def _startup() -> None:
-    settings = load_settings()
-    logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO))
-    app.state.ctx = await build_context(settings)
-
-    async def _loop() -> None:
-        try:
-            probe_status = await app.state.ctx.scanner.probe_dependencies()
-            logger.info("deps probe: %s", probe_status)
-        except Exception:
-            logger.exception("deps probe failed")
-
-        while True:
-            try:
-                status = await app.state.ctx.scanner.run_once()
-                logger.info("scan status: %s", status)
-            except Exception:
-                logger.exception("scan cycle failed")
-
-            interval = app.state.ctx.settings.scan.interval_seconds
-            try:
-                cfg = await app.state.ctx.store.get_json("app_config", default={}) or {}
-                scan_cfg = cfg.get("scan") if isinstance(cfg, dict) else None
-                if isinstance(scan_cfg, dict) and scan_cfg.get("interval_seconds") is not None:
-                    interval = int(scan_cfg.get("interval_seconds") or interval)
-            except Exception:
-                pass
-            await asyncio.sleep(max(30, int(interval or 600)))
-
-    app.state.scan_task = asyncio.create_task(_loop())
-
-
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    task: Optional[asyncio.Task] = getattr(app.state, "scan_task", None)
-    if task:
-        task.cancel()
-    ctx: Optional[AppContext] = getattr(app.state, "ctx", None)
-    if ctx:
-        await ctx.store.close()
+# Startup/Shutdown handlers removed (replaced by lifespan)
 
 
 @app.get("/health")
@@ -396,17 +408,28 @@ async def api_dashboard(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[st
 @app.post("/api/scan/run", dependencies=[Depends(require_auth)])
 async def api_scan_run(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     status = await ctx.scanner.run_once()
-    await sse_broadcaster.broadcast("dashboard_update")
-    await sse_broadcaster.broadcast("logs_update")
+    await ws_broadcaster.broadcast({"type": "dashboard_update"})
+    await ws_broadcaster.broadcast({"type": "logs_update"})
     return status
+
+
+@app.post("/api/scan/manual", dependencies=[Depends(require_auth)])
+async def api_scan_manual(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
+    try:
+        status = await ctx.scanner.run_once(force=True)
+        await ws_broadcaster.broadcast({"type": "dashboard_update"})
+        await ws_broadcaster.broadcast({"type": "logs_update"})
+        return status
+    except AlreadyScanningError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @app.post("/api/scan/run/{domain}", dependencies=[Depends(require_auth)])
 async def api_scan_run_one(domain: str, ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     try:
         status = await ctx.scanner.run_one(domain)
-        await sse_broadcaster.broadcast("dashboard_update")
-        await sse_broadcaster.broadcast("logs_update")
+        await ws_broadcaster.broadcast({"type": "dashboard_update"})
+        await ws_broadcaster.broadcast({"type": "logs_update"})
         return status
     except AlreadyScanningError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -427,8 +450,8 @@ async def api_state_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[
         await ctx.store.add_event(category="config", level="info", action="state_reset", message="site state reset")
     except Exception:
         pass
-    await sse_broadcaster.broadcast("dashboard_update")
-    await sse_broadcaster.broadcast("logs_update")
+    await ws_broadcaster.broadcast({"type": "dashboard_update"})
+    await ws_broadcaster.broadcast({"type": "logs_update"})
     return {"ok": True}
 
 
@@ -444,42 +467,21 @@ async def api_logs(
     return {"items": items}
 
 
-@app.post("/api/logs/clear", dependencies=[Depends(require_auth)])
-async def api_logs_clear(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
-    await ctx.store.clear_events()
-    await sse_broadcaster.broadcast("logs_update")
-    return {"ok": True}
+@app.get("/api/logs/domains", dependencies=[Depends(require_auth)])
+async def api_logs_domains(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
+    domains = await ctx.store.get_log_domains()
+    return {"domains": domains}
 
 
-@app.get("/api/events")
-async def api_sse_events():
-    """SSE endpoint for real-time updates"""
-    async def event_generator():
-        queue = await sse_broadcaster.subscribe()
-        try:
-            # Send initial ping
-            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
-            while True:
-                try:
-                    msg = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"data: {json.dumps(msg)}\n\n"
-                except asyncio.TimeoutError:
-                    # Send keepalive ping
-                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-        except asyncio.CancelledError:
-            pass
-        finally:
-            sse_broadcaster.unsubscribe(queue)
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
+@app.websocket("/ws/events")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_broadcaster.connect(websocket)
+    try:
+        await websocket.send_json({"type": "connected"})
+        while True:
+            await websocket.receive_text()  # Keep alive / receive pings
+    except WebSocketDisconnect:
+        ws_broadcaster.disconnect(websocket)
 
 
 @app.get("/api/config", dependencies=[Depends(require_auth)])
@@ -1464,6 +1466,11 @@ def _spa_file_response() -> HTMLResponse:
         )
         return HTMLResponse(detail, status_code=503)
     return HTMLResponse(index_path.read_text(encoding="utf-8"), status_code=200)
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+async def favicon() -> FileResponse:
+    return FileResponse(_DIST_DIR / "favicon.svg")
 
 
 @app.get("/", response_class=HTMLResponse, dependencies=[Depends(require_auth)])

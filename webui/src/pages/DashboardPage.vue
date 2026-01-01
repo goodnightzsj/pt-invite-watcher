@@ -260,9 +260,9 @@ onUnmounted(() => {
   }
 });
 
-// SSE real-time updates
-import { useSSE } from "../sse";
-useSSE("dashboard_update", () => {
+// WS real-time updates
+import { useWS } from "../ws";
+useWS("dashboard_update", () => {
   refresh({ silent: true });
 });
 

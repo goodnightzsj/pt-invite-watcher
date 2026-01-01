@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Dict, Optional, Tuple, Union
+from urllib.parse import urlparse
 
 import aiosqlite
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
 
 from pt_invite_watcher.models import Site, SiteCheckResult, to_jsonable
 
@@ -23,10 +26,94 @@ class StoredSiteState:
     last_changed_at: Optional[str]
 
 
+def _page_kind_from_url(url: str) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        parsed = urlparse(str(url))
+        path = (parsed.path or "/").strip("/").lower()
+    except Exception:
+        return None
+
+    if not path:
+        return "home"
+    if path.startswith("usercp"):
+        return "usercp"
+    if path.startswith("signup"):
+        return "signup"
+    if path.startswith("userdetails"):
+        return "userdetail"
+    if path.startswith("invite"):
+        return "invite"
+    if path.startswith("login"):
+        return "login"
+    return path.split("/", 1)[0] or "other"
+
+
+def _infer_page_from_action(action: str, detail: dict[str, Any]) -> Optional[str]:
+    act = str(action or "").strip().lower()
+    if not act:
+        return None
+
+    if act.startswith("inv_"):
+        if "home" in act:
+            return "home"
+        if "usercp" in act:
+            return "usercp"
+        if "userdetail" in act or "userdetails" in act:
+            return "userdetail"
+        return "invite"
+
+    if act.startswith("reg_"):
+        return "signup"
+
+    src = str(detail.get("source") or "").strip().lower()
+    if src in {"home", "usercp", "userdetail", "invite", "signup"}:
+        return src
+
+    return None
+
+
+def _extract_url_from_detail(detail: dict[str, Any]) -> str:
+    direct = str(detail.get("url") or "").strip()
+    if direct:
+        return direct
+    ev = detail.get("evidence")
+    if isinstance(ev, dict):
+        u = str(ev.get("url") or "").strip()
+        if u:
+            return u
+    return ""
+
+
+def _enrich_event_page(item: dict[str, Any]) -> None:
+    """
+    Best-effort: attach a normalized site page kind (home/usercp/signup/userdetail/invite) into event detail.
+    This is derived from `detail.url`/`detail.evidence.url`, or inferred from `action`.
+    """
+    detail = item.get("detail")
+    if not isinstance(detail, dict):
+        return
+    if "page" in detail and isinstance(detail.get("page"), dict):
+        return
+
+    url = _extract_url_from_detail(detail)
+    kind = _page_kind_from_url(url) or _infer_page_from_action(str(item.get("action") or ""), detail)
+    if not kind:
+        return
+
+    detail["page"] = {"kind": kind, "url": url} if url else {"kind": kind}
+
+
+
 class SqliteStore:
     def __init__(self, path: Path):
         self._path = path
         self._conn: Optional[aiosqlite.Connection] = None
+        self._event_hooks: list[Callable[[dict[str, Any]], Any]] = []
+
+    def on_event(self, hook: Callable[[dict[str, Any]], Any]) -> None:
+        self._event_hooks.append(hook)
 
     async def init(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,13 +196,15 @@ class SqliteStore:
             except Exception:
                 det = json.dumps({"detail": str(detail)}, ensure_ascii=False)
 
-        await conn.execute(
+        cursor = await conn.execute(
             """
             INSERT INTO event_log(ts, category, level, action, domain, message, detail)
             VALUES(?, ?, ?, ?, ?, ?, ?)
             """,
             (ts, cat, lvl, act, dom, msg, det),
         )
+        row_id = cursor.lastrowid
+        await cursor.close()
 
         keep = max(100, int(max_rows or 0))
         # Keep only the latest `keep` rows (delete oldest if needed).
@@ -130,6 +219,30 @@ class SqliteStore:
         )
         await conn.commit()
 
+        # Fire hooks
+        if self._event_hooks:
+            evt = {
+                "id": row_id,
+                "ts": ts,
+                "category": cat,
+                "level": lvl,
+                "action": act,
+                "domain": dom,
+                "message": msg,
+                "detail": detail,
+            }
+            # Calculate detail page kind if possible
+            if detail and isinstance(detail, dict):
+                _enrich_event_page(evt)
+            
+            for hook in self._event_hooks:
+                try:
+                    res = hook(evt)
+                    if asyncio.iscoroutine(res):
+                        asyncio.create_task(res)
+                except Exception:
+                    logging.getLogger("pt_invite_watcher.storage").exception("event hook failed")
+
     async def list_events(
         self,
         *,
@@ -139,10 +252,12 @@ class SqliteStore:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         conn = self._require_conn()
-        cat = (str(category or "").strip().lower() or "").strip()
+        cat = (str(category or "all").strip().lower() or "all")
         dom = (str(domain or "").strip().lower() or "").strip()
         kw = (str(keyword or "").strip() or "").strip()
-        lim = max(1, min(1000, int(limit or 0)))
+        lim = int(limit or 0)  # 0 means unlimited
+        if lim < 0:
+            lim = 0
 
         clauses: list[str] = []
         params: list[Any] = []
@@ -160,8 +275,10 @@ class SqliteStore:
         sql = "SELECT id, ts, category, level, action, domain, message, detail FROM event_log"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY id DESC LIMIT ?"
-        params.append(lim)
+        sql += " ORDER BY id DESC"
+        if lim > 0:
+             sql += " LIMIT ?"
+             params.append(lim)
 
         cur = await conn.execute(sql, tuple(params))
         rows = await cur.fetchall()
@@ -176,6 +293,11 @@ class SqliteStore:
                     item["detail"] = str(detail)
             else:
                 item["detail"] = None
+
+            try:
+                _enrich_event_page(item)
+            except Exception:
+                pass
             items.append(item)
         return items
 
@@ -183,6 +305,14 @@ class SqliteStore:
         conn = self._require_conn()
         await conn.execute("DELETE FROM event_log")
         await conn.commit()
+
+    async def get_log_domains(self) -> list[str]:
+        conn = self._require_conn()
+        cur = await conn.execute("SELECT DISTINCT domain FROM event_log WHERE domain IS NOT NULL AND domain != '' ORDER BY domain")
+        rows = await cur.fetchall()
+        return [str(r[0]) for r in rows if r[0]]
+
+
 
     async def close(self) -> None:
         if self._conn:
