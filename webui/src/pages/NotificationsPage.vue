@@ -3,6 +3,8 @@ import { computed, onMounted, reactive, ref } from "vue";
 
 import Badge from "../components/Badge.vue";
 import Toggle from "../components/Toggle.vue";
+import Card from "../components/Card.vue";
+import Button from "../components/Button.vue";
 import { api, type NotificationsResponse } from "../api";
 import { showToast } from "../toast";
 
@@ -133,33 +135,21 @@ onMounted(() => load());
 
 <template>
   <div class="space-y-5">
-    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <Card>
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div class="text-base font-semibold">通知设置</div>
           <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">敏感信息会存储在本服务的 SQLite；建议为 Web UI 配置 BasicAuth 或放到内网。</div>
         </div>
         <div class="flex items-center gap-3">
-          <button
-            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-            :disabled="loading"
-            @click="reload"
-          >
-            重新加载
-          </button>
-          <button
-            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-            :disabled="saving || !isDirty"
-            @click="save"
-          >
-            保存
-          </button>
+          <Button :disabled="loading" :loading="loading" @click="reload">重新加载</Button>
+          <Button variant="primary" :disabled="saving || !isDirty" :loading="saving" @click="save">保存</Button>
         </div>
       </div>
-    </div>
+    </Card>
 
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <Card>
         <div class="mb-4 flex items-center justify-between">
           <div class="text-sm font-semibold">Telegram</div>
           <Badge v-if="view" :label="view.telegram.configured ? '已配置' : '未配置'" :tone="view.telegram.configured ? 'green' : 'amber'" />
@@ -177,17 +167,18 @@ onMounted(() => load());
             <label class="block text-sm font-medium">Chat ID</label>
             <input v-model="model.telegram.chat_id" type="text" class="mt-1 ui-input" placeholder="123456789" />
           </div>
-          <button
-            class="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+          <Button
+            class="w-full"
             :disabled="testing !== ''"
+            :loading="testing === 'telegram'"
             @click="test('telegram')"
           >
-            {{ testing === 'telegram' ? '测试中…' : '测试 Telegram' }}
-          </button>
+            测试 Telegram
+          </Button>
         </div>
-      </div>
+      </Card>
 
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <Card>
         <div class="mb-4 flex items-center justify-between">
           <div class="text-sm font-semibold">企业微信（企业应用）</div>
           <Badge v-if="view" :label="view.wecom.configured ? '已配置' : '未配置'" :tone="view.wecom.configured ? 'green' : 'amber'" />
@@ -223,15 +214,16 @@ onMounted(() => load());
               <input v-model="model.wecom.to_tag" type="text" class="mt-1 ui-input" placeholder="" />
             </div>
           </div>
-          <button
-            class="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+          <Button
+            class="w-full"
             :disabled="testing !== ''"
+            :loading="testing === 'wecom'"
             @click="test('wecom')"
           >
-            {{ testing === 'wecom' ? '测试中…' : '测试 企业微信' }}
-          </button>
+            测试 企业微信
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   </div>
 </template>

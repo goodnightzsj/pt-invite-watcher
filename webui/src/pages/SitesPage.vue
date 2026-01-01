@@ -3,9 +3,12 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import Badge from "../components/Badge.vue";
 import SiteIcon from "../components/SiteIcon.vue";
+import PageHeader from "../components/PageHeader.vue";
 import Button from "../components/Button.vue";
 import Modal from "../components/Modal.vue";
 import EmptyState from "../components/EmptyState.vue";
+import FormInput from "../components/FormInput.vue";
+import SiteCard from "../components/SiteCard.vue";
 import { api, type SiteConfigItem, type SiteTemplate } from "../api";
 import { showToast } from "../toast";
 
@@ -221,9 +224,11 @@ async function save() {
   }
 }
 
+import { confirm } from "../confirm";
+
 async function remove(item: SiteConfigItem) {
   const label = item.source === "manual" ? "删除站点" : "清除覆盖";
-  if (!confirm(`确认${label}：${item.name || item.domain} (${item.domain}) 吗？`)) return;
+  if (!(await confirm(`确认${label}：${item.name || item.domain} (${item.domain}) 吗？`))) return;
 
   try {
     await api.sitesDelete(item.domain);
@@ -243,30 +248,27 @@ onMounted(() => load());
 
 <template>
   <div class="space-y-5">
-    <div class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-sm shadow-slate-200/50 transition-shadow hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/50 dark:shadow-none">
-      <div class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-           <div class="flex items-center gap-2">
-             <div class="h-2 w-2 rounded-full bg-brand-500 ring-2 ring-brand-100 dark:ring-brand-900"></div>
-             <h2 class="text-lg font-bold text-slate-900 dark:text-white">站点管理</h2>
-          </div>
-          <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            手动新增/覆盖只写入本服务 SQLite，不会覆盖 MoviePilot。
-          </div>
-          <div v-if="moviepilotError" class="mt-2 text-xs font-medium text-danger-600 dark:text-danger-300">
-            MoviePilot：{{ moviepilotOk ? "ok" : "fail" }} · {{ moviepilotError }}
-          </div>
+    <PageHeader title="站点管理">
+      <template #description>
+        <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          手动新增/覆盖只写入本服务 SQLite，不会覆盖 MoviePilot。
         </div>
-        <div class="flex gap-2">
-          <Button :disabled="loading" @click="reload" class="flex-1 sm:flex-none">
-            刷新列表
-          </Button>
-          <Button variant="primary" @click="openAdd" class="flex-1 sm:flex-none">
-            新增站点
-          </Button>
+        <div v-if="moviepilotError" class="mt-2 text-xs font-medium text-danger-600 dark:text-danger-300">
+           MoviePilot：{{ moviepilotOk ? "ok" : "fail" }} · {{ moviepilotError }}
         </div>
-      </div>
-    </div>
+      </template>
+
+      <template #actions>
+          <div class="flex gap-2">
+            <Button :disabled="loading" @click="reload" class="flex-1 sm:flex-none">
+              刷新列表
+            </Button>
+            <Button variant="primary" @click="openAdd" class="flex-1 sm:flex-none">
+              新增站点
+            </Button>
+          </div>
+      </template>
+    </PageHeader>
 
     <EmptyState v-if="items.length === 0 && !loading" title="暂无站点" description="请检查 MoviePilot 连接配置或手动添加站点" actionText="新增站点" @action="openAdd" />
     <EmptyState v-else-if="loading && items.length === 0" title="加载中" description="正在同步站点列表..." >
@@ -275,7 +277,43 @@ onMounted(() => load());
       </template>
     </EmptyState>
 
-    <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <template v-else>
+    <!-- Mobile Card View -->
+    <div class="space-y-4 sm:hidden">
+      <div v-for="(site, i) in items"
+        :key="site.name"
+        class="relative overflow-hidden rounded-xl bg-white p-4 shadow-sm transition-all active:scale-[0.98] dark:bg-slate-900/50 glass border border-slate-100 dark:border-slate-800"
+      >
+        <div class="flex items-start justify-between">
+           <div class="flex items-center gap-3">
+             <div class="h-10 w-10">
+                <SiteIcon :url="site.url" :name="site.name || site.domain" />
+             </div>
+             <div>
+                <div class="font-semibold text-slate-800 dark:text-slate-100">{{ site.name || site.domain }}</div>
+                <div class="text-xs text-slate-400">{{ site.domain }}</div>
+             </div>
+           </div>
+        </div>
+
+        <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <div>
+               <span class="opacity-60">来源:</span> {{ site.source }}
+            </div>
+             <div>
+               <span class="opacity-60">模板:</span> {{ site.template }}
+            </div>
+        </div>
+
+        <div class="mt-3 flex items-center justify-end gap-2 border-t border-slate-50 pt-3 dark:border-slate-800/50">
+           <Button v-if="site.source === 'manual' || site.has_local_config" variant="danger" size="sm" @click="remove(site)">删除</Button>
+           <Button size="sm" @click="openEdit(site)">编辑</Button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Desktop Table View -->
+    <div class="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:block">
       <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
         共 {{ items.length }} 个站点（MoviePilot + 手动/覆盖）
       </div>
@@ -378,37 +416,32 @@ onMounted(() => load());
         </table>
       </div>
     </div>
+    </template>
 
     <Modal :open="modalOpen" :title="modalTitle" @close="modalOpen = false">
       <div class="space-y-4">
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <FormInput label="Mode（模式）" :model-value="form.mode" disabled />
           <div>
-            <label class="block text-sm font-medium">Mode（模式）</label>
-            <input class="mt-1 ui-input" :value="form.mode" disabled />
-          </div>
-          <div>
-            <label class="block text-sm font-medium">Domain（域名，唯一键）</label>
-            <input class="mt-1 ui-input" :value="computedDomain || '-'" disabled />
-            <div v-if="form.mode === 'manual'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              手动站点：domain 默认从 URL 自动解析。
-            </div>
+            <FormInput label="Domain（域名，唯一键）" :model-value="computedDomain || '-'" disabled>
+                <template #help>
+                    <div v-if="form.mode === 'manual'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      手动站点：domain 默认从 URL 自动解析。
+                    </div>
+                </template>
+            </FormInput>
           </div>
         </div>
 
         <div v-if="form.mode === 'manual'">
-          <label class="block text-sm font-medium">Site URL（站点地址）</label>
-          <input v-model="form.url" class="mt-1 ui-input" placeholder="https://example.com" />
+          <FormInput label="Site URL（站点地址）" v-model="form.url" placeholder="https://example.com" />
         </div>
         <div v-else>
-          <label class="block text-sm font-medium">Site URL（来自 MoviePilot，只读）</label>
-          <input class="mt-1 ui-input" :value="form.url" disabled />
+           <FormInput label="Site URL（来自 MoviePilot，只读）" :model-value="form.url" disabled />
         </div>
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label class="block text-sm font-medium">Name（站点名）</label>
-            <input v-model="form.name" class="mt-1 ui-input" placeholder="可选" />
-          </div>
+          <FormInput label="Name（站点名）" v-model="form.name" placeholder="可选" />
           <div>
             <label class="block text-sm font-medium">Template（模板）</label>
             <select v-model="form.template" class="mt-1 ui-select">
@@ -422,14 +455,8 @@ onMounted(() => load());
         <div v-if="isCustom" class="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
           <div class="mb-3 text-sm font-semibold">Custom URLs（用于解析 path）</div>
           <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-medium">Registration URL（注册页链接）</label>
-              <input v-model="form.registration_url" class="mt-1 ui-input" placeholder="https://kp.m-team.cc/signup" />
-            </div>
-            <div>
-              <label class="block text-sm font-medium">Invite URL（邀请页链接）</label>
-              <input v-model="form.invite_url" class="mt-1 ui-input" placeholder="https://kp.m-team.cc/invite" />
-            </div>
+            <FormInput label="Registration URL（注册页链接）" v-model="form.registration_url" placeholder="https://kp.m-team.cc/signup" />
+            <FormInput label="Invite URL（邀请页链接）" v-model="form.invite_url" placeholder="https://kp.m-team.cc/invite" />
             <div class="text-xs text-slate-500 dark:text-slate-400">
               将从 URL 中解析出页面路径（保留 query），用于后续检测。
             </div>
@@ -442,15 +469,13 @@ onMounted(() => load());
             <Badge :label="form.cookie_configured ? '已配置' : '未配置'" :tone="form.cookie_configured ? 'green' : 'amber'" />
           </div>
           <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-medium">Cookie Header（留空不修改）</label>
-              <textarea
-                v-model="form.cookie"
-                class="mt-1 ui-input min-h-[90px]"
-                placeholder="uid=...; pass=...; ..."
-                :disabled="form.clear_cookie"
-              />
-            </div>
+            <FormInput
+              label="Cookie Header（留空不修改）"
+              v-model="form.cookie"
+              type="textarea"
+              placeholder="uid=...; pass=...; ..."
+              :disabled="form.clear_cookie"
+            />
             <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
               <input v-model="form.clear_cookie" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-700 dark:bg-slate-950" />
               清空 cookie（回退到 cookie.source）
@@ -470,15 +495,14 @@ onMounted(() => load());
             </div>
           </div>
           <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-medium">Authorization（留空不修改）</label>
-              <textarea
-                v-model="form.authorization"
-                class="mt-1 ui-input min-h-[90px]"
-                placeholder="eyJhbGciOiJIUzUxMiJ9..."
-                :disabled="form.clear_authorization"
-              />
-            </div>
+
+            <FormInput
+              label="Authorization（留空不修改）"
+              v-model="form.authorization"
+              type="textarea"
+              placeholder="eyJhbGciOiJIUzUxMiJ9..."
+              :disabled="form.clear_authorization"
+            />
             <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
               <input
                 v-model="form.clear_authorization"
@@ -488,10 +512,7 @@ onMounted(() => load());
               清空 Authorization
             </label>
 
-            <div>
-              <label class="block text-sm font-medium">API Key（did，留空不修改）</label>
-              <input v-model="form.did" class="mt-1 ui-input" placeholder="63788714-a1fa-..." :disabled="form.clear_did" />
-            </div>
+            <FormInput label="API Key（did，留空不修改）" v-model="form.did" placeholder="63788714-a1fa-..." :disabled="form.clear_did" />
             <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
               <input v-model="form.clear_did" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-700 dark:bg-slate-950" />
               清空 API Key

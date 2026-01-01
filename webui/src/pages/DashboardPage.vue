@@ -4,6 +4,7 @@ import { Globe, UserPlus, Ticket, AlertTriangle, RefreshCw, AlertCircle, Loader2
 
 import Badge from "../components/Badge.vue";
 import Button from "../components/Button.vue";
+import PageHeader from "../components/PageHeader.vue";
 import Modal from "../components/Modal.vue";
 import SiteDetailModal from "../components/SiteDetailModal.vue";
 import SiteCard from "../components/SiteCard.vue";
@@ -13,11 +14,6 @@ import TableSkeleton from "../components/TableSkeleton.vue";
 import Toggle from "../components/Toggle.vue";
 import { api, type SiteRow } from "../api";
 import { showToast } from "../toast";
-
-type AutoRefreshMinutes = 1 | 5 | 10 | 30 | 60 | 120 | 360 | 720 | 1440;
-
-const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
-const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
 
 const loading = ref(false);
 const dashboardLoading = ref(false);
@@ -31,14 +27,6 @@ const allowStateReset = ref(true);
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-const autoRefreshEnabled = ref(localStorage.getItem(STORAGE_REFRESH_ENABLED) === "1");
-const autoRefreshMinutes = ref<AutoRefreshMinutes>(
-  ([1, 5, 10, 30, 60, 120, 360, 720, 1440] as const).includes(Number(localStorage.getItem(STORAGE_REFRESH_MINUTES)) as any)
-    ? (Number(localStorage.getItem(STORAGE_REFRESH_MINUTES)) as AutoRefreshMinutes)
-    : 10
-);
-
-let timer: number | undefined;
 let scanPollTimer: number | undefined;
 let inflightPollTimer: number | undefined;
 
@@ -215,9 +203,11 @@ async function runRowScan(row: SiteRow) {
   }
 }
 
+import { confirm } from "../confirm";
+
 async function resetState() {
   if (scanRunning.value || loading.value || scanningDomains.value.size > 0) return;
-  if (!confirm("确认清空所有站点的扫描结果吗？（不会删除站点配置）")) return;
+  if (!(await confirm("确认清空所有站点的扫描结果吗？（不会删除站点配置）"))) return;
   try {
     showToast("正在重置站点状态…", "info", 1600);
     await api.stateReset();
@@ -232,13 +222,6 @@ function openErrors(row: SiteRow) {
   errorModalTitle.value = `${row.name || "-"} · ${row.domain}`;
   errorModalErrors.value = row.errors || [];
   errorModalOpen.value = true;
-}
-
-function clearTimer() {
-  if (timer) {
-    window.clearInterval(timer);
-    timer = undefined;
-  }
 }
 
 function clearInflightPoll() {
@@ -256,30 +239,6 @@ function startInflightPoll() {
   }, 2000);
 }
 
-function setupTimer() {
-  clearTimer();
-  if (!autoRefreshEnabled.value) return;
-  timer = window.setInterval(() => {
-    refresh();
-  }, autoRefreshMinutes.value * 60 * 1000);
-}
-
-function formatAutoRefreshInterval(minutes: number) {
-  if (minutes > 60) return `${Math.round(minutes / 60)} 小时`;
-  return `${minutes} 分钟`;
-}
-
-watch(autoRefreshEnabled, (v) => {
-  localStorage.setItem(STORAGE_REFRESH_ENABLED, v ? "1" : "0");
-  setupTimer();
-  showToast(v ? `自动刷新已开启：每 ${formatAutoRefreshInterval(autoRefreshMinutes.value)}` : "自动刷新已关闭", "info", 2400);
-});
-watch(autoRefreshMinutes, (v) => {
-  localStorage.setItem(STORAGE_REFRESH_MINUTES, String(v));
-  setupTimer();
-  showToast(`自动刷新间隔已更新：${formatAutoRefreshInterval(v)}`, "info", 2400);
-});
-
 const hasInflightScan = computed(() => rows.value.some((row) => !!row.scanning));
 watch([hasInflightScan, scanRunning], ([hasInflight, running]) => {
   if (running) {
@@ -292,15 +251,19 @@ watch([hasInflightScan, scanRunning], ([hasInflight, running]) => {
 
 onMounted(async () => {
   await refresh();
-  setupTimer();
 });
 onUnmounted(() => {
-  clearTimer();
   clearInflightPoll();
   if (scanPollTimer) {
     window.clearInterval(scanPollTimer);
     scanPollTimer = undefined;
   }
+});
+
+// SSE real-time updates
+import { useSSE } from "../sse";
+useSSE("dashboard_update", () => {
+  refresh({ silent: true });
 });
 
 const hasRows = computed(() => rows.value.length > 0);
@@ -319,46 +282,11 @@ const stats = computed(() => {
 
 <template>
   <div class="space-y-5">
-    <div
-      class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-sm shadow-slate-200/50 transition-shadow hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/50 dark:shadow-none"
-    >
-      <div class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div class="flex items-center gap-2">
-             <div class="h-2 w-2 rounded-full bg-brand-500 ring-2 ring-brand-100 dark:ring-brand-900"></div>
-             <h2 class="text-lg font-bold text-slate-900 dark:text-white">站点状态</h2>
-          </div>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            管理站点扫描任务与自动更新策略
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-4">
-          <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900/50">
-            <Toggle v-model="autoRefreshEnabled" />
-            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">自动刷新</span>
-            <div class="mx-2 h-4 w-px bg-slate-200 dark:bg-slate-700"></div>
-            <select
-              v-model.number="autoRefreshMinutes"
-              class="w-auto cursor-pointer border-none bg-transparent py-0 pl-1 pr-7 text-sm font-medium text-slate-900 focus:ring-0 disabled:cursor-not-allowed disabled:opacity-100 disabled:text-slate-500 dark:text-slate-100 dark:disabled:text-slate-300"
-              :disabled="!autoRefreshEnabled"
-            >
-              <option :value="1">1 分钟</option>
-              <option :value="5">5 分钟</option>
-              <option :value="10">10 分钟</option>
-              <option :value="30">30 分钟</option>
-              <option :value="60">60 分钟</option>
-              <option :value="120">2 小时</option>
-              <option :value="360">6 小时</option>
-              <option :value="720">12 小时</option>
-              <option :value="1440">24 小时</option>
-            </select>
-          </div>
+    <PageHeader title="站点状态" description="管理站点扫描任务">
+      <template #actions>
           <div class="flex gap-2">
             <Button variant="primary" :disabled="scanRunning" :loading="scanRunning" @click="runScan" class="flex-1 sm:flex-none">
               {{ scanRunning ? "扫描中…" : "立即扫描" }}
-            </Button>
-            <Button :disabled="loading" @click="refreshManual" class="flex-1 sm:flex-none">
-              刷新数据
             </Button>
             <Button
               v-if="allowStateReset"
@@ -371,9 +299,8 @@ const stats = computed(() => {
               重置状态
             </Button>
           </div>
-        </div>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Stat Grid -->
     <div v-if="hasRows || loading" class="grid grid-cols-2 gap-4 lg:grid-cols-4">

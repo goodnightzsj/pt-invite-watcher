@@ -176,8 +176,10 @@ async function save() {
   }
 }
 
+import { confirm } from "../confirm";
+
 async function resetAll() {
-  if (!confirm("确认清空 Web UI 配置并回退到 config.yaml/env 吗？")) return;
+  if (!(await confirm("确认清空 Web UI 配置并回退到 config.yaml/env 吗？"))) return;
   try {
     showToast("正在重置…", "info", 1600);
     await api.configReset();

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from "vue";
+import { X } from "lucide-vue-next";
+
 const props = defineProps<{
   open: boolean;
   title: string;
@@ -7,6 +10,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "close"): void;
 }>();
+
+function onKeydown(e: KeyboardEvent) {
+  if (props.open && e.key === "Escape") {
+    emit("close");
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
@@ -28,12 +40,13 @@ const emit = defineEmits<{
           class="pointer-events-auto relative w-full max-w-2xl overflow-hidden rounded-2xl glass border-slate-200 bg-white/80 shadow-2xl dark:border-slate-800 dark:bg-slate-900/80 sm:rounded-2xl max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:max-h-[85vh]"
         >
           <div class="flex items-center justify-between border-b border-slate-200/50 px-5 py-4 dark:border-slate-700/50">
-            <div class="text-base font-semibold">{{ props.title }}</div>
+            <div class="text-base font-semibold text-slate-900 dark:text-slate-100">{{ props.title }}</div>
             <button
-              class="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              class="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
               @click="emit('close')"
+              title="Close (Esc)"
             >
-              关闭
+              <X class="h-5 w-5" />
             </button>
           </div>
           <div class="max-h-[70vh] overflow-auto px-5 py-4">

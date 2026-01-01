@@ -30,7 +30,8 @@ const regState = computed(() => {
 
 const inviteState = computed(() => {
     if (props.site.invites_state === 'open') return { label: '开放邀请', tone: 'brand' };
-    return null;
+    if (props.site.invites_state === 'closed') return { label: '关闭邀请', tone: 'red' };
+    return { label: '邀请未知', tone: 'amber' };
 });
 
 </script>
@@ -60,7 +61,7 @@ const inviteState = computed(() => {
     <div class="mt-4 flex flex-wrap gap-2">
          <Badge :label="reachability.label" :tone="reachability.tone as any" />
          <Badge :label="regState.label" :tone="regState.tone as any" />
-         <Badge v-if="inviteState" :label="inviteState.label" :tone="inviteState.tone as any" />
+         <Badge :label="inviteState.label" :tone="inviteState.tone as any" />
     </div>
     
     <!-- Footer: Time -->

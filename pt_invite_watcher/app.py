@@ -8,9 +8,10 @@ from typing import Annotated, Any, Dict, Optional
 from urllib.parse import urljoin, urlparse
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import json
 
 from pt_invite_watcher.app_context import AppContext, build_context
 from pt_invite_watcher.config import Settings, load_settings
@@ -57,6 +58,31 @@ app.mount("/assets", StaticFiles(directory=_ASSETS_DIR.as_posix(), check_dir=Fal
 
 _MAX_ERROR_DETAIL_LEN = 240
 _DEFAULT_REQUEST_RETRY_DELAY_SECONDS = 30
+
+
+# SSE Broadcaster for real-time updates
+class SSEBroadcaster:
+    def __init__(self):
+        self._clients: list[asyncio.Queue] = []
+    
+    async def subscribe(self) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue()
+        self._clients.append(queue)
+        return queue
+    
+    def unsubscribe(self, queue: asyncio.Queue):
+        if queue in self._clients:
+            self._clients.remove(queue)
+    
+    async def broadcast(self, event_type: str, data: Any = None):
+        msg = {"type": event_type, "data": data}
+        for queue in self._clients:
+            try:
+                queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                pass  # Drop message if queue is full
+
+sse_broadcaster = SSEBroadcaster()
 
 
 def _cfg_str(value: Any) -> str:
@@ -370,6 +396,8 @@ async def api_dashboard(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[st
 @app.post("/api/scan/run", dependencies=[Depends(require_auth)])
 async def api_scan_run(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     status = await ctx.scanner.run_once()
+    await sse_broadcaster.broadcast("dashboard_update")
+    await sse_broadcaster.broadcast("logs_update")
     return status
 
 
@@ -377,6 +405,8 @@ async def api_scan_run(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str
 async def api_scan_run_one(domain: str, ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     try:
         status = await ctx.scanner.run_one(domain)
+        await sse_broadcaster.broadcast("dashboard_update")
+        await sse_broadcaster.broadcast("logs_update")
         return status
     except AlreadyScanningError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -397,6 +427,8 @@ async def api_state_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[
         await ctx.store.add_event(category="config", level="info", action="state_reset", message="site state reset")
     except Exception:
         pass
+    await sse_broadcaster.broadcast("dashboard_update")
+    await sse_broadcaster.broadcast("logs_update")
     return {"ok": True}
 
 
@@ -414,7 +446,39 @@ async def api_logs(
 @app.post("/api/logs/clear", dependencies=[Depends(require_auth)])
 async def api_logs_clear(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, Any]:
     await ctx.store.clear_events()
+    await sse_broadcaster.broadcast("logs_update")
     return {"ok": True}
+
+
+@app.get("/api/events")
+async def api_sse_events():
+    """SSE endpoint for real-time updates"""
+    async def event_generator():
+        queue = await sse_broadcaster.subscribe()
+        try:
+            # Send initial ping
+            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive ping
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            sse_broadcaster.unsubscribe(queue)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.get("/api/config", dependencies=[Depends(require_auth)])

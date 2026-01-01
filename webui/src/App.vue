@@ -2,27 +2,20 @@
 import { RouterLink, RouterView, useRoute } from "vue-router";
 
 import ThemeToggle from "./components/ThemeToggle.vue";
-import { toasts, removeToast, type ToastKind } from "./toast";
-
-function toastClasses(kind: ToastKind): string {
-  if (kind === 'success') {
-    return 'border-success-200 bg-success-50 text-success-800 dark:border-success-900 dark:bg-success-950/40 dark:text-success-200';
-  } else if (kind === 'error') {
-    return 'border-danger-200 bg-danger-50 text-danger-800 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200';
-  }
-  return 'border-slate-200 bg-white text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
-}
-
-const route = useRoute();
+import Toast from "./components/Toast.vue";
+import MobileNav from "./components/MobileNav.vue";
+import ConfirmDialog from "./components/ConfirmDialog.vue";
+import { toasts, removeToast } from "./toast";
 
 import { 
   Activity, 
   Globe, 
   Settings, 
   Bell, 
-  FileText, 
-  Github 
+  FileText
 } from "lucide-vue-next";
+
+const route = useRoute();
 
 const nav = [
   { to: "/", label: "站点状态", icon: Activity },
@@ -31,10 +24,6 @@ const nav = [
   { to: "/notifications", label: "通知设置", icon: Bell },
   { to: "/logs", label: "日志", icon: FileText },
 ];
-
-function isActive(to: string) {
-  return route.path === to;
-}
 </script>
 
 <template>
@@ -83,37 +72,24 @@ function isActive(to: string) {
   </main>
   
     <!-- Cloud Bottom Nav (Mobile) -->
-    <nav class="fixed bottom-0 z-40 flex w-full justify-around border-t border-slate-200/80 bg-white/80 px-2 py-2 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 dark:border-slate-800/80 dark:bg-slate-950/80 dark:supports-[backdrop-filter]:bg-slate-950/60 sm:hidden">
-      <RouterLink
-        v-for="item in nav"
-        :key="item.to"
-        :to="item.to"
-        class="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[10px] font-medium transition-colors active:scale-95"
-        :class="
-          isActive(item.to)
-            ? 'text-brand-600 dark:text-brand-400'
-            : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/50'
-        "
-      >
-        <component :is="item.icon" class="h-6 w-6" :stroke-width="isActive(item.to) ? 2.5 : 2" />
-        <span>{{ item.label }}</span>
-      </RouterLink>
-    </nav>
+    <!-- Cloud Bottom Nav (Mobile) -->
+    <MobileNav :items="nav" />
 
     <!-- Toast Queue -->
     <div class="fixed bottom-24 right-5 z-50 flex flex-col-reverse gap-2 sm:bottom-5">
       <transition-group name="fade">
-        <div
+        <Toast
           v-for="t in toasts"
           :key="t.id"
-          class="max-w-sm rounded-2xl border px-4 py-3 text-sm shadow-lg cursor-pointer"
-          :class="toastClasses(t.kind)"
-          @click="removeToast(t.id)"
+          :kind="t.kind"
+          @close="removeToast(t.id)"
         >
           {{ t.message }}
-        </div>
+        </Toast>
       </transition-group>
-    </div>
+      <!-- Global Confirm Dialog -->
+    <ConfirmDialog />
+  </div>
   </div>
 </template>
 

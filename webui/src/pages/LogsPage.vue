@@ -75,9 +75,11 @@ async function reload() {
   await load({ toast: true });
 }
 
+import { confirm } from "../confirm";
+
 async function clear() {
   if (loading.value) return;
-  if (!confirm("确认清空日志吗？")) return;
+  if (!(await confirm("确认清空日志吗？"))) return;
   loading.value = true;
   try {
     await api.logsClear();
@@ -124,6 +126,12 @@ function resetPage() {
 }
 
 onMounted(() => load());
+
+// SSE real-time updates
+import { useSSE } from "../sse";
+useSSE("logs_update", () => {
+  load();
+});
 </script>
 
 <template>
@@ -147,7 +155,6 @@ onMounted(() => load());
               <option value="config">配置相关</option>
               <option value="backup">导入导出</option>
             </select>
-            <Button :disabled="loading" @click="reload">刷新</Button>
             <Button variant="danger" :disabled="loading" @click="clear">清空</Button>
           </div>
           <input
