@@ -17,7 +17,7 @@ const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
 const loading = ref(false);
 const dashboardLoading = ref(false);
 const scanRunning = ref(false);
-const rowScanDomain = ref("");
+const scanningDomains = ref<Set<string>>(new Set());
 const rows = ref<SiteRow[]>([]);
 const scanStatus = ref<any>(null);
 const scanHint = ref<any>(null);
@@ -186,8 +186,11 @@ async function runRowScan(row: SiteRow) {
     showToast("该站点正在扫描中，请稍后再试", "info", 2400);
     return;
   }
-  if (rowScanDomain.value) return;
-  rowScanDomain.value = row.domain;
+  if (scanningDomains.value.has(row.domain)) {
+    showToast("该站点正在扫描中", "info", 2400);
+    return;
+  }
+  scanningDomains.value.add(row.domain);
   showToast(`开始扫描：${row.name || row.domain}`, "info", 1600);
   try {
     const status = await api.scanRunOne(row.domain);
@@ -200,12 +203,12 @@ async function runRowScan(row: SiteRow) {
   } catch (e: any) {
     showToast(String(e?.message || e || "扫描失败"), "error", 4500);
   } finally {
-    rowScanDomain.value = "";
+    scanningDomains.value.delete(row.domain);
   }
 }
 
 async function resetState() {
-  if (scanRunning.value || loading.value || rowScanDomain.value) return;
+  if (scanRunning.value || loading.value || scanningDomains.value.size > 0) return;
   if (!confirm("确认清空所有站点的扫描结果吗？（不会删除站点配置）")) return;
   try {
     showToast("正在重置站点状态…", "info", 1600);
@@ -342,7 +345,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
             <Button
               v-if="allowStateReset"
               variant="danger"
-              :disabled="scanRunning || loading || !!rowScanDomain"
+              :disabled="scanRunning || loading || scanningDomains.size > 0"
               title="清空扫描结果（不影响站点配置）"
               @click="resetState"
             >
@@ -504,11 +507,11 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
                 <div class="flex items-center justify-end gap-2">
                   <button
                     class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-brand-500/10 dark:hover:text-brand-300"
-                    :disabled="scanRunning || loading || rowScanDomain === row.domain || row.scanning"
+                    :disabled="scanRunning || loading || scanningDomains.has(row.domain) || row.scanning"
                     @click="runRowScan(row)"
                     title="扫描此站"
                   >
-                     <svg v-if="rowScanDomain === row.domain || row.scanning" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                     <svg v-if="scanningDomains.has(row.domain) || row.scanning" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                      <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-refresh-cw"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
                   </button>
                   <button
