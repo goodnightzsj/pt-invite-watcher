@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { Globe, UserPlus, Ticket, AlertTriangle, RefreshCw, AlertCircle, Loader2 } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
 import Button from "../components/Button.vue";
 import Modal from "../components/Modal.vue";
+import SiteDetailModal from "../components/SiteDetailModal.vue";
+import SiteCard from "../components/SiteCard.vue";
+import SiteIcon from "../components/SiteIcon.vue";
+import EmptyState from "../components/EmptyState.vue";
 import TableSkeleton from "../components/TableSkeleton.vue";
 import Toggle from "../components/Toggle.vue";
 import { api, type SiteRow } from "../api";
@@ -19,8 +24,9 @@ const dashboardLoading = ref(false);
 const scanRunning = ref(false);
 const scanningDomains = ref<Set<string>>(new Set());
 const rows = ref<SiteRow[]>([]);
-const scanStatus = ref<any>(null);
-const scanHint = ref<any>(null);
+const scanStatus = ref<ScanStatus | null>(null);
+const scanHint = ref<{ reason: string; at: string; changed?: string[] } | null>(null);
+const selectedSite = ref<SiteRow | null>(null);
 const allowStateReset = ref(true);
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -99,6 +105,8 @@ function formatChangedAt(row: SiteRow) {
   if (row.last_checked_at) return "未变更";
   return "-";
 }
+
+
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -297,6 +305,16 @@ onUnmounted(() => {
 
 const hasRows = computed(() => rows.value.length > 0);
 const sortedRows = computed(() => sortedSiteRows(rows.value));
+
+const stats = computed(() => {
+  const r = rows.value;
+  return {
+    total: r.length,
+    openReg: r.filter((x) => x.registration_state === "open").length,
+    openInvite: r.filter((x) => x.invites_state === "open").length,
+    unreachable: r.filter((x) => x.reachability_state === "down").length,
+  };
+});
 </script>
 
 <template>
@@ -335,11 +353,11 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
               <option :value="1440">24 小时</option>
             </select>
           </div>
-          <div class="flex items-center gap-2">
-            <Button variant="primary" :disabled="scanRunning" :loading="scanRunning" @click="runScan">
+          <div class="flex gap-2">
+            <Button variant="primary" :disabled="scanRunning" :loading="scanRunning" @click="runScan" class="flex-1 sm:flex-none">
               {{ scanRunning ? "扫描中…" : "立即扫描" }}
             </Button>
-            <Button :disabled="loading" @click="refreshManual">
+            <Button :disabled="loading" @click="refreshManual" class="flex-1 sm:flex-none">
               刷新数据
             </Button>
             <Button
@@ -348,11 +366,36 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
               :disabled="scanRunning || loading || scanningDomains.size > 0"
               title="清空扫描结果（不影响站点配置）"
               @click="resetState"
+              class="flex-1 sm:flex-none"
             >
               重置状态
             </Button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Stat Grid -->
+    <div v-if="hasRows || loading" class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">总站点</div>
+        <div class="relative z-10 mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ stats.total }}</div>
+        <Globe class="absolute -bottom-3 -right-3 h-16 w-16 text-slate-400 opacity-10 dark:text-slate-200 dark:opacity-10" />
+      </div>
+      <div class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">开放注册</div>
+        <div class="relative z-10 mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">{{ stats.openReg }}</div>
+        <UserPlus class="absolute -bottom-3 -right-3 h-16 w-16 text-emerald-500 opacity-10 dark:text-emerald-400 dark:opacity-10" />
+      </div>
+      <div class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">开放邀请</div>
+        <div class="relative z-10 mt-2 text-3xl font-bold text-blue-600 dark:text-blue-400">{{ stats.openInvite }}</div>
+        <Ticket class="absolute -bottom-3 -right-3 h-16 w-16 text-blue-500 opacity-10 dark:text-blue-400 dark:opacity-10" />
+      </div>
+      <div class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">异常站点</div>
+        <div class="relative z-10 mt-2 text-3xl font-bold text-rose-600 dark:text-rose-400">{{ stats.unreachable }}</div>
+        <AlertTriangle class="absolute -bottom-3 -right-3 h-16 w-16 text-rose-500 opacity-10 dark:text-rose-400 dark:opacity-10" />
       </div>
     </div>
 
@@ -398,13 +441,15 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
       </div>
     </div>
 
+    <EmptyState v-if="!loading && !hasRows" title="暂无扫描数据" description="请先在“站点管理”配置或导入站点，然后点击“立即扫描”。" actionText="去配置站点" @action="$router.push('/sites')" />
+
     <div
+      v-else
       class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
       <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
         <span v-if="loading && !hasRows">加载中…</span>
-        <span v-else-if="hasRows">共 {{ rows.length }} 个站点</span>
-        <span v-else>暂无扫描数据：请先在“站点管理”配置/导入站点，然后点击“立即扫描”。</span>
+        <span v-else>共 {{ rows.length }} 个站点</span>
       </div>
 
       <!-- Scanning progress bar -->
@@ -420,7 +465,21 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
         <TableSkeleton :rows="5" :cols="7" />
       </div>
 
-      <div v-if="hasRows || (!loading && !hasRows)" class="overflow-x-auto max-h-[calc(100vh-300px)]">
+      <!-- Mobile: Card View -->
+      <div v-if="hasRows" class="md:hidden space-y-3">
+          <TransitionGroup name="list">
+             <SiteCard 
+               v-for="(row, index) in sortedRows" 
+               :key="row.domain" 
+               :site="row" 
+               :style="{ '--i': index }"
+               @click="selectedSite = row"
+             />
+          </TransitionGroup>
+      </div>
+
+      <!-- Desktop: Table View -->
+      <div v-if="hasRows || (!loading && !hasRows)" class="hidden md:block overflow-x-auto max-h-[calc(100vh-300px)]">
         <table class="min-w-full text-left text-sm">
           <thead class="sticky top-0 z-10 bg-slate-50 border-b border-slate-200/70 text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
             <tr>
@@ -434,14 +493,23 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
-            <tr v-for="row in sortedRows" :key="row.domain" class="group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
+             <TransitionGroup name="list" appear>
+              <tr v-for="(row, index) in sortedRows" :key="row.domain" :style="{ '--i': index }" class="group table-row-hover transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
               <!-- Site & Domain Combined -->
               <td class="px-6 py-4">
-                <div class="flex flex-col">
-                  <span class="font-semibold text-slate-700 group-hover:text-warning-600 dark:text-slate-200 dark:group-hover:text-warning-400 transition-colors">{{ row.name || "-" }}</span>
-                  <a class="mt-0.5 text-xs text-brand-500 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300" :href="row.url" target="_blank" rel="noreferrer">
-                    {{ row.domain }}
-                  </a>
+                <div class="flex items-center gap-3">
+                  <div class="h-10 w-10">
+                    <SiteIcon :url="row.url" :name="row.name || '-'" />
+                  </div>
+                  <div class="flex flex-col">
+                    <span 
+                      class="cursor-pointer font-semibold text-slate-700 transition-colors hover:text-brand-600 dark:text-slate-200 dark:hover:text-brand-400"
+                      @click="selectedSite = row"
+                    >{{ row.name || "-" }}</span>
+                    <a class="mt-0.5 text-xs text-brand-500 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300" :href="row.url" target="_blank" rel="noreferrer" @click.stop>
+                      {{ row.domain }}
+                    </a>
+                  </div>
                 </div>
               </td>
               
@@ -500,7 +568,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
                  <div class="text-xs text-slate-500 dark:text-slate-400">
                    <div>最新检查：{{ formatDateTime(row.last_checked_at) }}</div>
                    <div class="mt-0.5 scale-90 origin-left opacity-60">上次变更时间：{{ formatChangedAt(row) }}</div>
-                 </div>
+                  </div>
               </td>
 
               <td class="px-6 py-4 text-right">
@@ -511,8 +579,8 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
                     @click="runRowScan(row)"
                     title="扫描此站"
                   >
-                     <svg v-if="scanningDomains.has(row.domain) || row.scanning" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                     <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-refresh-cw"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                     <Loader2 v-if="scanningDomains.has(row.domain) || row.scanning" class="h-4 w-4 animate-spin opacity-50" />
+                     <RefreshCw v-else class="h-4 w-4" />
                   </button>
                   <button
                      v-if="row.errors && row.errors.length"
@@ -520,15 +588,33 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
                      @click="openErrors(row)"
                      :title="`查看错误 (${row.errors.length})`"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-circle"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                    <AlertCircle class="h-4 w-4" />
                   </button>
                 </div>
               </td>
             </tr>
+            </TransitionGroup>
           </tbody>
         </table>
       </div>
     </div>
+
+    <!-- Modals -->
+    <Modal :open="showResetConfirm" title="确认重置状态？" @close="showResetConfirm = false">
+      <div class="space-y-4">
+        <p class="text-sm text-slate-600 dark:text-slate-300">这将清空所有站点的扫描状态（Last Checked, Reachability, Registration/Invite State）。站点配置和 Cookie 将保留。</p>
+        <div class="flex justify-end gap-3">
+          <Button @click="showResetConfirm = false">取消</Button>
+          <Button variant="danger" :loading="resetting" @click="confirmReset">确认重置</Button>
+        </div>
+      </div>
+    </Modal>
+
+    <SiteDetailModal 
+      :open="!!selectedSite" 
+      :site="selectedSite" 
+      @close="selectedSite = null" 
+    />
 
     <Modal :open="errorModalOpen" :title="errorModalTitle" @close="errorModalOpen = false">
       <div v-if="!errorModalErrors.length" class="text-sm text-slate-500 dark:text-slate-400">无异常</div>
@@ -542,5 +628,7 @@ const sortedRows = computed(() => sortedSiteRows(rows.value));
         </li>
       </ul>
     </Modal>
+
+
   </div>
 </template>

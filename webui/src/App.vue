@@ -15,12 +15,21 @@ function toastClasses(kind: ToastKind): string {
 
 const route = useRoute();
 
+import { 
+  Activity, 
+  Globe, 
+  Settings, 
+  Bell, 
+  FileText, 
+  Github 
+} from "lucide-vue-next";
+
 const nav = [
-  { to: "/", label: "站点状态" },
-  { to: "/sites", label: "站点管理" },
-  { to: "/config", label: "服务配置" },
-  { to: "/notifications", label: "通知设置" },
-  { to: "/logs", label: "日志" },
+  { to: "/", label: "站点状态", icon: Activity },
+  { to: "/sites", label: "站点管理", icon: Globe },
+  { to: "/config", label: "服务配置", icon: Settings },
+  { to: "/notifications", label: "通知设置", icon: Bell },
+  { to: "/logs", label: "日志", icon: FileText },
 ];
 
 function isActive(to: string) {
@@ -30,79 +39,69 @@ function isActive(to: string) {
 
 <template>
   <div class="min-h-screen">
-    <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/70 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 dark:border-slate-800/80 dark:bg-slate-950/70 dark:supports-[backdrop-filter]:bg-slate-950/60">
-      <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4">
-        <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 text-white shadow-md shadow-brand-500/20 ring-1 ring-white/20">
-            <span class="font-bold">PT</span>
-          </div>
-          <div>
-            <div class="bg-gradient-to-r from-slate-900 to-slate-600 bg-clip-text text-base font-bold text-transparent dark:from-white dark:to-slate-400">
-              PT Invite Watcher
-            </div>
-            <div class="text-xs font-medium text-slate-500 dark:text-slate-500">
-              MoviePilot 站点来源 · NexusPHP 探测
-            </div>
-          </div>
-        </div>
 
-        <nav class="flex flex-wrap items-center gap-1">
+    <header class="sticky top-0 z-50 w-full border-b border-slate-200/50 glass dark:border-slate-800/50">
+      <div class="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
+        <!-- Logo -->
+        <RouterLink to="/" class="flex items-center gap-2 transition-opacity hover:opacity-80">
+          <Activity class="h-6 w-6 text-brand-600 dark:text-brand-400" />
+          <h1 class="text-xl font-bold tracking-tight text-slate-800 dark:text-white">
+            PT Invite Watcher
+          </h1>
+        </RouterLink>
+
+        <!-- Desktop Nav -->
+        <nav class="hidden flex-1 items-center justify-end gap-1 md:flex">
           <RouterLink
             v-for="item in nav"
             :key="item.to"
             :to="item.to"
-            class="rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200"
-            :class="
-              isActive(item.to)
-                ? 'bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-200 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
-            "
+            class="group flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 active:scale-95 dark:text-slate-300 dark:hover:bg-slate-800/50 dark:hover:text-white"
+            active-class="bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300"
           >
+            <component
+              :is="item.icon"
+              class="h-4 w-4 transition-transform group-hover:scale-110 group-active:scale-95"
+            />
             {{ item.label }}
           </RouterLink>
-          <div class="mx-2 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
-          <a
-            href="/docs"
-            target="_blank"
-            rel="noreferrer"
-            class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          >
-            API Docs
-          </a>
-          <a
-            href="https://github.com/goodnightzsj/pt-invite-watcher"
-            target="_blank"
-            rel="noreferrer"
-            class="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-            title="GitHub"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                clip-rule="evenodd"
-                d="M12 2C6.477 2 2 6.486 2 12.021c0 4.427 2.865 8.182 6.839 9.504.5.092.682-.217.682-.483 0-.237-.009-.868-.014-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.907-.62.069-.608.069-.608 1.003.071 1.531 1.033 1.531 1.033.892 1.53 2.341 1.088 2.91.832.091-.647.35-1.089.636-1.339-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.271.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.748-1.026 2.748-1.026.546 1.379.203 2.397.1 2.65.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.852 0 1.337-.012 2.417-.012 2.747 0 .268.18.579.688.481A10.02 10.02 0 0 0 22 12.021C22 6.486 17.523 2 12 2Z"
-              />
-            </svg>
-            GitHub
-          </a>
+          
+           <!-- Theme Picker & Toggle -->
+           <div class="ml-4 flex items-center gap-2 border-l border-slate-200 pl-4 dark:border-slate-700">
+              <ThemeToggle />
+           </div>
         </nav>
-
-        <div class="flex items-center gap-3">
-          <ThemeToggle />
-        </div>
       </div>
     </header>
 
-    <main class="mx-auto max-w-7xl px-4 py-8">
-      <RouterView v-slot="{ Component }">
-        <transition name="fade-page" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </RouterView>
-    </main>
+    <main class="container mx-auto max-w-7xl flex-1 px-4 py-8 pb-24 md:pb-8">
+     <RouterView v-slot="{ Component }">
+      <Transition name="fade-slide" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
+  </main>
+  
+    <!-- Cloud Bottom Nav (Mobile) -->
+    <nav class="fixed bottom-0 z-40 flex w-full justify-around border-t border-slate-200/80 bg-white/80 px-2 py-2 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 dark:border-slate-800/80 dark:bg-slate-950/80 dark:supports-[backdrop-filter]:bg-slate-950/60 sm:hidden">
+      <RouterLink
+        v-for="item in nav"
+        :key="item.to"
+        :to="item.to"
+        class="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[10px] font-medium transition-colors active:scale-95"
+        :class="
+          isActive(item.to)
+            ? 'text-brand-600 dark:text-brand-400'
+            : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/50'
+        "
+      >
+        <component :is="item.icon" class="h-6 w-6" :stroke-width="isActive(item.to) ? 2.5 : 2" />
+        <span>{{ item.label }}</span>
+      </RouterLink>
+    </nav>
 
     <!-- Toast Queue -->
-    <div class="fixed bottom-5 right-5 z-50 flex flex-col-reverse gap-2">
+    <div class="fixed bottom-24 right-5 z-50 flex flex-col-reverse gap-2 sm:bottom-5">
       <transition-group name="fade">
         <div
           v-for="t in toasts"

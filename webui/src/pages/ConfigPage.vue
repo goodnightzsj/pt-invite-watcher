@@ -2,9 +2,12 @@
 import { computed, onMounted, reactive, ref } from "vue";
 
 import Badge from "../components/Badge.vue";
+import Card from "../components/Card.vue";
+import Button from "../components/Button.vue";
 import Toggle from "../components/Toggle.vue";
 import { api, type ConfigResponse } from "../api";
 import { showToast } from "../toast";
+import { type AccentColor, getAccentColor, setAccentColor, PALETTES } from "../theme";
 
 const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
@@ -24,6 +27,13 @@ const scanNowRunning = ref(false);
 const importScanPrompt = ref(false);
 const view = ref<ConfigResponse | null>(null);
 const baselineJson = ref<string>("");
+const accent = ref<AccentColor>(getAccentColor());
+
+function updateAccent(color: AccentColor) {
+  accent.value = color;
+  setAccentColor(color);
+}
+
 const model = reactive<Model>({
   moviepilot: { base_url: "", username: "", password: "", otp_password: "", sites_cache_ttl_seconds: 86400 },
   connectivity: { retry_interval_seconds: 3600, request_retry_delay_seconds: 30 },
@@ -290,124 +300,85 @@ onMounted(() => load());
 </script>
 
 <template>
-  <div class="space-y-5">
-    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div class="text-base font-semibold">导入 / 导出</div>
-          <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            备份本服务 SQLite 中的运行时配置（服务配置 / 通知设置 / 站点管理）；不包含扫描结果与历史。
+  <div class="space-y-6">
+    <!-- Header Actions -->
+    <div class="sticky top-[4rem] z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/90 max-sm:top-[7rem]">
+      <div>
+        <h2 class="text-base font-bold text-slate-900 dark:text-white">配置管理</h2>
+        <div class="mt-0.5 flex gap-2 text-xs">
+          <span v-if="isDirty" class="text-amber-600 dark:text-amber-400">● 有未保存修改</span>
+          <span class="text-slate-500 dark:text-slate-400">修改后需保存生效</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <Button :disabled="loading" @click="reload">重载</Button>
+        <Button variant="primary" :disabled="saving || !isDirty" @click="save">保存</Button>
+        <Button variant="danger" title="重置 webui 配置" @click="resetAll">重置</Button>
+      </div>
+    </div>
+
+    <Card title="配置备份与恢复">
+      <div class="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        备份本服务 SQLite 中的运行时配置（服务配置 / 通知设置 / 站点管理）；不包含扫描结果与历史。
+      </div>
+
+      <div class="flex flex-wrap gap-3">
+        <Button :disabled="backupBusy" @click="exportBackup(false)">导出（脱敏）</Button>
+        <Button variant="primary" :disabled="backupBusy" @click="exportBackup(true)">导出（含敏感信息）</Button>
+      </div>
+
+      <div class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium">导入 JSON 文件</label>
+            <input
+              type="file"
+              accept="application/json"
+              class="mt-2 block w-full text-sm text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800 dark:text-slate-200 dark:file:bg-slate-100 dark:file:text-slate-900 dark:hover:file:bg-white"
+              @change="onPickFile"
+            />
+            <div v-if="importFile" class="mt-1 text-xs text-slate-500 dark:text-slate-400">已选择：{{ importFile.name }}</div>
           </div>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <button
-            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-            :disabled="backupBusy"
-            @click="exportBackup(false)"
-          >
-            导出（脱敏）
-          </button>
-          <button
-            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-            :disabled="backupBusy"
-            @click="exportBackup(true)"
-          >
-            导出（含敏感信息）
-          </button>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium">导入模式</label>
+            <div class="mt-2 flex gap-2">
+              <select v-model="importMode" class="ui-select flex-1">
+                <option value="merge">merge（合并，保留本地敏感字段）</option>
+                <option value="replace">replace（覆盖，按备份为准）</option>
+              </select>
+              <Button :disabled="backupBusy || !importFile" @click="importBackup">导入</Button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium">导入 JSON 文件</label>
-          <input
-            type="file"
-            accept="application/json"
-            class="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800 dark:text-slate-200 dark:file:bg-slate-100 dark:file:text-slate-900 dark:hover:file:bg-white"
-            @change="onPickFile"
-          />
-          <div v-if="importFile" class="mt-1 text-xs text-slate-500 dark:text-slate-400">已选择：{{ importFile.name }}</div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium">导入模式</label>
-          <select v-model="importMode" class="mt-1 ui-select">
-            <option value="merge">merge（合并，保留本地敏感字段）</option>
-            <option value="replace">replace（覆盖，按备份为准）</option>
-          </select>
-          <button
-            class="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-            :disabled="backupBusy || !importFile"
-            @click="importBackup"
-          >
-            导入
-          </button>
-        </div>
-      </div>
-
-      <div class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+      <div class="mt-4 text-xs text-slate-500 dark:text-slate-400">
         备份文件会额外包含浏览器本地的“自动刷新开关/间隔”设置；导入后会写入当前浏览器 localStorage。
       </div>
 
       <div
         v-if="importScanPrompt"
-        class="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-100"
+        class="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-100"
       >
-        <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div class="font-semibold">下一步</div>
             <div class="mt-1 text-brand-800/80 dark:text-brand-200/80">
-              导入只恢复站点/通知/服务配置，不包含扫描结果；请点击“立即扫描”生成站点状态。站点管理/通知设置页需要点“重新加载”查看导入结果。
+              导入只恢复配置，不包含扫描结果；建议立即扫描。
             </div>
           </div>
-          <button
-            class="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="scanNowRunning"
-            @click="runScanNow"
-          >
+          <Button variant="primary" :disabled="scanNowRunning" :loading="scanNowRunning" @click="runScanNow">
             {{ scanNowRunning ? "扫描中…" : "立即扫描" }}
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
-
-    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div class="text-base font-semibold">服务配置</div>
-          <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            配置保存在本服务 SQLite，并在下一轮扫描生效。
-          </div>
-          <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            敏感信息会存储在本服务的 SQLite；建议为 Web UI 配置 BasicAuth 或仅在内网使用。
-          </div>
-        </div>
-        <div class="flex items-center gap-3">
-          <button
-            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-            :disabled="loading"
-            @click="reload"
-          >
-            重新加载
-          </button>
-          <button
-            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-            :disabled="saving || !isDirty"
-            @click="save"
-          >
-            保存
-          </button>
-          <button
-            class="rounded-xl border border-danger-200 bg-danger-50 px-4 py-2 text-sm font-semibold text-danger-800 hover:bg-danger-100 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200 dark:hover:bg-danger-950/60"
-            @click="resetAll"
-          >
-            重置
-          </button>
-        </div>
-      </div>
-    </div>
+    </Card>
 
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <Card>
         <div class="mb-4 flex items-center justify-between">
           <div class="text-sm font-semibold">MoviePilot</div>
           <Badge
@@ -456,9 +427,9 @@ onMounted(() => load());
             <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">MoviePilot 拉取失败时，未过期缓存可用于继续扫描。</div>
           </div>
         </div>
-      </div>
+      </Card>
 
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <Card>
         <div class="mb-4 flex items-center justify-between">
           <div class="text-sm font-semibold">Cookie</div>
           <Badge :label="model.cookie.source" tone="slate" />
@@ -506,12 +477,12 @@ onMounted(() => load());
             </div>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
 
-    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <Card>
       <div class="mb-4 flex items-center justify-between">
-        <div class="text-sm font-semibold">扫描</div>
+        <div class="text-sm font-semibold">扫描策略</div>
         <Badge :label="`interval=${model.scan.interval_seconds}s`" tone="slate" />
       </div>
 
@@ -572,17 +543,40 @@ onMounted(() => load());
           </div>
         </div>
       </div>
-    </div>
+    </Card>
 
-    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="mb-4 flex items-center justify-between">
-        <div class="text-sm font-semibold">UI</div>
+    <Card title="界面设置">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium">主题强调色 (Accent Color)</label>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              v-for="color in ['indigo', 'emerald', 'rose', 'amber', 'violet']"
+              :key="color"
+              class="group relative flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 transition-transform active:scale-95 dark:border-slate-700"
+              :class="{ 'ring-2 ring-slate-400 dark:ring-slate-500': accent === color }"
+              :style="{ backgroundColor: `rgb(${PALETTES[color as AccentColor][500]})` }" 
+              @click="updateAccent(color as any)"
+              :title="color"
+            >
+              <!-- We use the semantic classes for preview buttons to avoid circular dependency on brand var for non-active ones?
+                   Actually we defined brand vars. But for 'emerald' button we want it green even if brand is indigo.
+                   So we need hardcoded preview colors or style override.
+                   Wait, I didn't define --color-emerald-500 globally. I only set --color-brand-* to the chosen palette.
+                   So I need hardcoded colors for the picker buttons.
+              -->
+              <span v-if="accent === color" class="h-2.5 w-2.5 rounded-full bg-white shadow-sm" />
+            </button>
+          </div>
+          <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">选择您喜欢的品牌色调，即时生效。</div>
+        </div>
+        
+        <div class="flex items-center gap-3">
+          <Toggle v-model="model.ui.allow_state_reset" />
+          <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>
+        </div>
+        <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
       </div>
-      <div class="flex items-center gap-3">
-        <Toggle v-model="model.ui.allow_state_reset" />
-        <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>
-      </div>
-      <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
-    </div>
+    </Card>
   </div>
 </template>

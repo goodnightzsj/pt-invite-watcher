@@ -2,8 +2,10 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import Badge from "../components/Badge.vue";
+import SiteIcon from "../components/SiteIcon.vue";
 import Button from "../components/Button.vue";
 import Modal from "../components/Modal.vue";
+import EmptyState from "../components/EmptyState.vue";
 import { api, type SiteConfigItem, type SiteTemplate } from "../api";
 import { showToast } from "../toast";
 
@@ -84,6 +86,8 @@ function parseDomainFromUrl(url: string) {
     return "";
   }
 }
+
+
 
 const computedDomain = computed(() => (form.domain || parseDomainFromUrl(form.url)).trim().toLowerCase());
 const isCustom = computed(() => form.template === "custom");
@@ -253,18 +257,25 @@ onMounted(() => load());
             MoviePilot：{{ moviepilotOk ? "ok" : "fail" }} · {{ moviepilotError }}
           </div>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <Button :disabled="loading" @click="reload">
+        <div class="flex gap-2">
+          <Button :disabled="loading" @click="reload" class="flex-1 sm:flex-none">
             刷新列表
           </Button>
-          <Button variant="primary" @click="openAdd">
+          <Button variant="primary" @click="openAdd" class="flex-1 sm:flex-none">
             新增站点
           </Button>
         </div>
       </div>
     </div>
 
-    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <EmptyState v-if="items.length === 0 && !loading" title="暂无站点" description="请检查 MoviePilot 连接配置或手动添加站点" actionText="新增站点" @action="openAdd" />
+    <EmptyState v-else-if="loading && items.length === 0" title="加载中" description="正在同步站点列表..." >
+       <template #icon>
+        <div class="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-brand-500 dark:border-slate-800 dark:border-t-brand-500" />
+      </template>
+    </EmptyState>
+
+    <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
         共 {{ items.length }} 个站点（MoviePilot + 手动/覆盖）
       </div>
@@ -284,78 +295,85 @@ onMounted(() => load());
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
-            <tr v-for="item in items" :key="item.domain" class="group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
-              <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
-                <div class="flex items-center gap-2">
-                  <span>{{ item.name || "-" }}</span>
-                  <Badge v-if="item.reachability_state === 'down'" label="异常" tone="red" />
-                </div>
-              </td>
-              <td class="px-6 py-4">
-                <a
-                  class="text-xs text-brand-500 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-500 hover:text-brand-600 dark:text-brand-400 dark:decoration-brand-900 dark:hover:decoration-brand-400 dark:hover:text-brand-300"
-                  :href="item.url"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {{ item.domain }}
-                </a>
-                <div v-if="item.has_local_config && item.source === 'moviepilot'" class="mt-1 inline-flex items-center rounded bg-warning-50 px-1.5 py-0.5 text-[10px] font-medium text-warning-700 ring-1 ring-inset ring-warning-600/20 dark:bg-warning-900/40 dark:text-warning-300">
-                  本地覆盖
-                </div>
-              </td>
-              <td class="px-6 py-4">
-                <Badge :label="badgeForSource(item.source).label" :tone="badgeForSource(item.source).tone as any" />
-              </td>
-              <td class="px-6 py-4">
-                <Badge :label="item.template" tone="slate" />
-              </td>
-              <td class="px-6 py-4">
-                <Badge :label="item.cookie_configured ? 'configured' : 'none'" :tone="item.cookie_configured ? 'green' : 'slate'" />
-              </td>
-              <td class="px-6 py-4">
-                <a
-                  v-if="item.registration_url"
-                  class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
-                  :href="item.registration_url"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {{ displayPath(item.registration_url) }}
-                </a>
-                <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
-              </td>
-              <td class="px-6 py-4">
-                <a
-                  v-if="item.invite_url"
-                  class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
-                  :href="item.invite_url"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {{ displayInvitePath(item) }}
-                </a>
-                <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
-              </td>
-              <td class="px-6 py-4 text-right">
-                <div class="flex items-center justify-end gap-2">
-                  <button
-                    class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                    @click="openEdit(item)"
+             <TransitionGroup name="list" appear>
+              <tr v-for="(item, index) in items" :key="item.domain" :style="{ '--i': index }" class="table-row-hover group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
+                <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
+                  <div class="flex items-center gap-3">
+                     <div class="h-8 w-8">
+                        <SiteIcon :url="item.url" :name="item.name || '-'" />
+                     </div>
+                    <div class="flex flex-col">
+                      <span>{{ item.name || "-" }}</span>
+                      <Badge v-if="item.reachability_state === 'down'" label="异常" tone="red" />
+                    </div>
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <a
+                    class="text-xs text-brand-500 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-500 hover:text-brand-600 dark:text-brand-400 dark:decoration-brand-900 dark:hover:decoration-brand-400 dark:hover:text-brand-300"
+                    :href="item.url"
+                    target="_blank"
+                    rel="noreferrer"
                   >
-                    编辑
-                  </button>
-                  <button
-                    v-if="item.source === 'manual' || item.has_local_config"
-                    class="rounded-lg border border-danger-200 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 shadow-sm hover:bg-danger-100 hover:text-danger-900 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-400 dark:hover:bg-danger-900/50"
-                    @click="remove(item)"
+                    {{ item.domain }}
+                  </a>
+                  <div v-if="item.has_local_config && item.source === 'moviepilot'" class="mt-1 inline-flex items-center rounded bg-warning-50 px-1.5 py-0.5 text-[10px] font-medium text-warning-700 ring-1 ring-inset ring-warning-600/20 dark:bg-warning-900/40 dark:text-warning-300">
+                    本地覆盖
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <Badge :label="badgeForSource(item.source).label" :tone="badgeForSource(item.source).tone as any" />
+                </td>
+                <td class="px-6 py-4">
+                  <Badge :label="item.template" tone="slate" />
+                </td>
+                <td class="px-6 py-4">
+                  <Badge :label="item.cookie_configured ? 'configured' : 'none'" :tone="item.cookie_configured ? 'green' : 'slate'" />
+                </td>
+                <td class="px-6 py-4">
+                  <a
+                    v-if="item.registration_url"
+                    class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
+                    :href="item.registration_url"
+                    target="_blank"
+                    rel="noreferrer"
                   >
-                    {{ item.source === "manual" ? "删除" : "清除覆盖" }}
-                  </button>
+                    {{ displayPath(item.registration_url) }}
+                  </a>
                   <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
-                </div>
-              </td>
-            </tr>
+                </td>
+                <td class="px-6 py-4">
+                  <a
+                    v-if="item.invite_url"
+                    class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
+                    :href="item.invite_url"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {{ displayInvitePath(item) }}
+                  </a>
+                  <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
+                </td>
+                <td class="px-6 py-4 text-right">
+                  <div class="flex items-center justify-end gap-2">
+                    <button
+                      class="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                      @click="openEdit(item)"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      v-if="item.source === 'manual' || item.has_local_config"
+                      class="whitespace-nowrap rounded-lg border border-danger-200 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 shadow-sm hover:bg-danger-100 hover:text-danger-900 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-400 dark:hover:bg-danger-900/50"
+                      @click="remove(item)"
+                    >
+                      {{ item.source === "manual" ? "删除" : "清除覆盖" }}
+                    </button>
+                    <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
+                  </div>
+                </td>
+              </tr>
+            </TransitionGroup>
           </tbody>
         </table>
       </div>
@@ -482,20 +500,8 @@ onMounted(() => load());
         </div>
 
         <div class="flex flex-wrap justify-end gap-3">
-          <button
-            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-            :disabled="saving"
-            @click="modalOpen = false"
-          >
-            取消
-          </button>
-          <button
-            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-            :disabled="saving"
-            @click="save"
-          >
-            保存
-          </button>
+          <Button :disabled="saving" @click="modalOpen = false">取消</Button>
+          <Button variant="primary" :disabled="saving" @click="save">保存</Button>
         </div>
       </div>
     </Modal>

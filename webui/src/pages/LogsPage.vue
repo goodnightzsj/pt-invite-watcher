@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from "vue";
 
 import Badge from "../components/Badge.vue";
 import Modal from "../components/Modal.vue";
+import Button from "../components/Button.vue";
+import EmptyState from "../components/EmptyState.vue";
+import Card from "../components/Card.vue";
 import { api, type LogItem } from "../api";
 import { showToast } from "../toast";
 
@@ -12,6 +15,18 @@ const items = ref<LogItem[]>([]);
 const category = ref("all");
 const keyword = ref("");
 const limit = ref(200);
+
+// Pagination
+const STORAGE_PAGE_SIZE = "ptiw_logs_page_size";
+const pageSizeOptions = [10, 20, 50, 100];
+const pageSize = ref(parseInt(localStorage.getItem(STORAGE_PAGE_SIZE) || "20", 10));
+const currentPage = ref(1);
+
+function setPageSize(size: number) {
+  pageSize.value = size;
+  localStorage.setItem(STORAGE_PAGE_SIZE, String(size));
+  resetPage();
+}
 
 const modalOpen = ref(false);
 const modalTitle = ref("");
@@ -45,6 +60,7 @@ async function load(opts: { toast?: boolean } = {}) {
   try {
     const resp = await api.logsList({ category: category.value, keyword: keyword.value, limit: limit.value });
     items.value = resp.items || [];
+    resetPage();
     if (opts.toast) showToast("日志已刷新", "success", 1800);
   } catch (e: any) {
     showToast(String(e?.message || e || "加载失败"), "error", 4500);
@@ -90,13 +106,30 @@ function domainLabel(item: LogItem) {
 
 const hasItems = computed(() => items.value.length > 0);
 
+// Pagination computed
+const totalPages = computed(() => Math.ceil(items.value.length / pageSize.value) || 1);
+const paginatedItems = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return items.value.slice(start, start + pageSize.value);
+});
+
+function prevPage() {
+  if (currentPage.value > 1) currentPage.value--;
+}
+function nextPage() {
+  if (currentPage.value < totalPages.value) currentPage.value++;
+}
+function resetPage() {
+  currentPage.value = 1;
+}
+
 onMounted(() => load());
 </script>
 
 <template>
   <div class="space-y-5">
     <div class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-sm shadow-slate-200/50 dark:border-slate-800/60 dark:bg-slate-900/50 dark:shadow-none">
-      <div class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div class="flex items-center gap-2">
             <div class="h-2 w-2 rounded-full bg-brand-500 ring-2 ring-brand-100 dark:ring-brand-900"></div>
@@ -104,43 +137,36 @@ onMounted(() => load());
           </div>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">查看扫描、站点、通知、配置等关键事件</p>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <select v-model="category" class="ui-select w-auto" :disabled="loading" @change="load()">
-            <option value="all">全部</option>
-            <option value="scan">扫描相关</option>
-            <option value="site">站点相关</option>
-            <option value="notify">通知相关</option>
-            <option value="config">配置相关</option>
-            <option value="backup">导入导出</option>
-          </select>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div class="flex w-full gap-2 sm:w-auto">
+            <select v-model="category" class="ui-select w-full min-w-[110px] sm:w-auto" :disabled="loading" @change="load()">
+              <option value="all">全部</option>
+              <option value="scan">扫描相关</option>
+              <option value="site">站点相关</option>
+              <option value="notify">通知相关</option>
+              <option value="config">配置相关</option>
+              <option value="backup">导入导出</option>
+            </select>
+            <Button :disabled="loading" @click="reload">刷新</Button>
+            <Button variant="danger" :disabled="loading" @click="clear">清空</Button>
+          </div>
           <input
             v-model="keyword"
-            class="ui-input w-56"
-            placeholder="搜索关键字/域名"
+            class="ui-input w-full sm:w-60"
+            placeholder="搜索..."
             :disabled="loading"
             @keyup.enter="load({ toast: true })"
           />
-          <button
-            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-            :disabled="loading"
-            @click="reload"
-          >
-            刷新
-          </button>
-          <button
-            class="rounded-xl border border-danger-200 bg-danger-50 px-4 py-2 text-sm font-semibold text-danger-700 hover:bg-danger-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-300 dark:hover:bg-danger-900/50"
-            :disabled="loading"
-            @click="clear"
-          >
-            清空
-          </button>
         </div>
       </div>
     </div>
 
-    <div v-if="!hasItems" class="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-      暂无日志
-    </div>
+    <EmptyState v-if="!hasItems && !loading" title="暂无日志" description="当前没有符合查询条件的日志记录" actionText="刷新" @action="reload" />
+    <EmptyState v-else-if="loading && !hasItems" title="加载中" description="正在获取日志数据..." >
+      <template #icon>
+        <div class="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-brand-500 dark:border-slate-800 dark:border-t-brand-500" />
+      </template>
+    </EmptyState>
 
     <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="overflow-x-auto">
@@ -155,34 +181,63 @@ onMounted(() => load());
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
-            <tr
-              v-for="item in items"
-              :key="item.id"
-              class="group cursor-pointer transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30"
-              @click="openDetail(item)"
-              :title="item.detail ? '点击查看详情' : ''"
-            >
-              <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{{ formatDateTime(item.ts) }}</td>
-              <td class="px-6 py-4">
-                <Badge :label="item.category" :tone="toneForCategory(item.category) as any" />
-              </td>
-              <td class="px-6 py-4">
-                <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
-              </td>
-              <td class="px-6 py-4 text-xs text-slate-600 dark:text-slate-300">
-                {{ domainLabel(item) }}
-              </td>
-              <td class="px-6 py-4">
-                <div class="text-sm font-medium text-slate-800 dark:text-slate-100">
-                  {{ item.message }}
-                </div>
-                <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  {{ item.action }}
-                </div>
-              </td>
-            </tr>
+             <TransitionGroup name="list">
+              <tr
+                v-for="item in paginatedItems"
+                :key="item.id"
+                class="table-row-hover group cursor-pointer transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30"
+                @click="openDetail(item)"
+                :title="item.detail ? '点击查看详情' : ''"
+              >
+                <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-400 font-mono">{{ formatDateTime(item.ts) }}</td>
+                <td class="px-6 py-4">
+                  <Badge :label="item.category" :tone="toneForCategory(item.category) as any" />
+                </td>
+                <td class="px-6 py-4">
+                  <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
+                </td>
+                <td class="px-6 py-4 text-xs text-slate-600 dark:text-slate-300">
+                  {{ domainLabel(item) }}
+                </td>
+                <td class="px-6 py-4">
+                  <div class="text-sm font-medium text-slate-800 dark:text-slate-100">
+                    {{ item.message }}
+                  </div>
+                  <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    {{ item.action }}
+                  </div>
+                </td>
+              </tr>
+            </TransitionGroup>
           </tbody>
         </table>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="totalPages > 1 || items.length > 10" class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+        <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <span>每页</span>
+          <select v-model.number="pageSize" class="ui-select w-auto py-1 text-sm" @change="setPageSize(pageSize)">
+            <option v-for="opt in pageSizeOptions" :key="opt" :value="opt">{{ opt }}</option>
+          </select>
+          <span>条，第 {{ currentPage }}/{{ totalPages }} 页，共 {{ items.length }} 条</span>
+        </div>
+        <div class="flex gap-2">
+          <button
+            class="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            :disabled="currentPage <= 1"
+            @click="prevPage"
+          >
+            上一页
+          </button>
+          <button
+            class="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            :disabled="currentPage >= totalPages"
+            @click="nextPage"
+          >
+            下一页
+          </button>
+        </div>
       </div>
     </div>
 

@@ -1,6 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  /* Default Brand: Indigo */
+  --color-brand-50: 238 242 255;
+  --color-brand-100: 224 231 255;
+  --color-brand-200: 199 210 254;
+  --color-brand-300: 165 180 252;
+  --color-brand-400: 129 140 248;
+  --color-brand-500: 99 102 241;
+  --color-brand-600: 79 70 229;
+  --color-brand-700: 67 56 202;
+  --color-brand-800: 55 48 163;
+  --color-brand-900: 49 46 129;
+  --color-brand-950: 30 27 75;
+  /* Glassmorphism utilities */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(226, 232, 240, 0.6);
+  --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+
+  --glass-bg-dark: rgba(15, 23, 42, 0.7);
+  --glass-border-dark: rgba(30, 41, 59, 0.6);
+}
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+}
+
+.dark .glass {
+  background: var(--glass-bg-dark);
+  border: 1px solid var(--glass-border-dark);
+}
 
 html {
   color-scheme: light;
@@ -13,8 +48,8 @@ html.dark {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -22,20 +57,16 @@ html.dark {
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-slate-200 dark:bg-slate-800;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-300 dark:bg-slate-700;
+  @apply rounded-full bg-slate-200/80 transition-colors hover:bg-slate-300 dark:bg-slate-700/80 dark:hover:bg-slate-600;
 }
 
 @layer components {
   .ui-input {
-    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-200/60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-700 dark:focus:ring-slate-800/60;
+    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-brand-500 dark:focus:ring-brand-500/10;
   }
 
   .ui-select {
-    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm focus:border-slate-300 focus:ring-2 focus:ring-slate-200/60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-700 dark:focus:ring-slate-800/60;
+    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-brand-500 dark:focus:ring-brand-500/10;
   }
 }
 
@@ -76,4 +107,59 @@ button {
 .animate-scan-progress {
   animation: scan-progress 1.5s ease-in-out infinite;
   background-size: 200% 100%;
+}
+
+/* Hide scrollbar for mobile nav */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Table row hover animation */
+.table-row-hover:hover {
+  transform: translateX(2px);
+  transition: transform 0.15s ease;
+}
+
+/* List Transitions */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
+  transition-delay: calc(var(--i, 0) * 0.03s);
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.list-move {
+  transition: transform 0.3s ease;
+}
+
+/* Mobile Nav Fade Mask */
+.fade-mask-r {
+  -webkit-mask-image: linear-gradient(to right, black 90%, transparent 100%);
+  mask-image: linear-gradient(to right, black 90%, transparent 100%);
+}
+
+/* Page Transitions */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
 }
