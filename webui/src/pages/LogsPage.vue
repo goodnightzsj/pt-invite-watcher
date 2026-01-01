@@ -84,6 +84,12 @@ function formatDateTime(v: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(d);
 }
 
+function formatTime(v: string) {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { timeStyle: "medium" }).format(d);
+}
+
 // Action localization map
 const actionMap: Record<string, string> = {
   "check_reachability": "检测连通性",
@@ -108,34 +114,28 @@ function getLocalizedAction(action: string) {
   return actionMap[action] || action;
 }
 
-// Flush pending logs every 300ms to prevent UI stuttering
+// Throttle logs: Process one log every 500ms to create a stream/typewriter effect
 setInterval(() => {
   if (pendingLogs.value.length > 0) {
-    // Determine strict filtering active state (consistent with useWS logic)
-    // Note: We already filter before pushing to pendingLogs, so just dump here.
-    // However, if filters CHANGED while logs were pending, we might show wrong logs.
-    // But 300ms is short, accept minor race or re-filter?
-    // Let's filtered push to pending, so here we just unshift.
+    // Take the OLDEST pending log (FIFO from the pending queue)
+    // Wait, pendingLogs.push adds to end. So pendingLogs[0] is the oldest.
+    // If we want to show the NEWEST log at the top of the UI list (items is LIFO display),
+    // we normally receive logs in chronological order.
+    // If we process one by one, we should process them in order of arrival?
+    // Actually, if a burst happens, we have [Log1, Log2, Log3].
+    // If we pick Log1, put at top. Then Log2, put at top.
+    // Result UI: Log2, Log1. Correct.
+    const item = pendingLogs.value.shift();
+    if (item) {
+      items.value.unshift(item);
 
-    // Reverse to keep order: we want newest at top. 
-    // WebSocket gives us streaming events. We pushed them to pendingLogs as they came (End or Start?).
-    // Usually we unshift to top. So later events should be at index 0 of table.
-    // If pendingLogs has [OldestPending, ..., NewestPending], we should reverse insert?
-    // Actually standard appending: pendingLogs.push(evt).
-    // So pendingLogs[0] is OldestPending.
-    // We want items = [NewestPending, ..., OldestPending, ...OldItems]
-    // So we need to reverse pendingLogs and unshift.
-
-    const batch = [...pendingLogs.value].reverse();
-    items.value.unshift(...batch);
-    pendingLogs.value = [];
-
-    // Safety cap 10k
-    if (items.value.length > 10000) {
-      items.value.splice(10000);
+      // Safety cap 10k
+      if (items.value.length > 10000) {
+        items.value.pop(); // Remove from end
+      }
     }
   }
-}, 300);
+}, 500);
 
 async function load(opts: { toast?: boolean } = {}) {
   loading.value = true;
@@ -286,8 +286,40 @@ useWS("logs_append", (evt: any) => {
 
     <div v-else
       class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="overflow-y-auto overflow-x-auto h-[calc(100vh-250px)] relative">
-        <table class="min-w-full text-left text-sm relative border-collapse">
+      <div class="overflow-y-auto overflow-x-auto h-[calc(100vh-250px)] relative scroll-smooth">
+        <!-- Mobile View -->
+        <div class="md:hidden p-4 space-y-3">
+          <div v-for="item in paginatedItems" :key="item.id"
+            class="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 active:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/30 dark:active:bg-slate-800"
+            @click="openDetail(item)">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
+                  <span class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ formatTime(item.ts) }}</span>
+                </div>
+                <div class="text-sm font-medium text-slate-800 dark:text-slate-100 break-all line-clamp-2">
+                  {{ item.message }}
+                </div>
+              </div>
+            </div>
+
+            <div
+              class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
+              <span class="text-slate-500">{{ getLocalizedAction(item.action) }}</span>
+              <div class="h-3 w-px bg-slate-200 dark:bg-slate-700"></div>
+              <span v-if="domainLabel(item) !== '-'" class="text-slate-600 dark:text-slate-300">{{ domainLabel(item)
+              }}</span>
+              <span v-if="pageLabel(item)"
+                class="rounded bg-slate-200/50 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-400">{{
+                  pageLabel(item) }}</span>
+              <Badge :label="item.category" :tone="toneForCategory(item.category) as any" class="ml-auto" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Desktop View -->
+        <table class="hidden md:table min-w-full text-left text-sm relative border-collapse">
           <thead
             class="sticky top-0 z-10 border-b border-slate-200/70 bg-slate-50 text-xs uppercase tracking-wider text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
             <tr>

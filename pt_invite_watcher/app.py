@@ -16,6 +16,7 @@ import json
 
 from pt_invite_watcher.app_context import AppContext, build_context
 from pt_invite_watcher.config import Settings, load_settings
+from pt_invite_watcher import __version__
 from pt_invite_watcher.providers.moviepilot_api import MoviePilotClient
 from pt_invite_watcher.scanner import AlreadyScanningError
 from pt_invite_watcher.providers.moviepilot_sites_cache import (
@@ -97,7 +98,7 @@ async def lifespan(app: FastAPI):
     await ctx.store.close()
 
 
-app = FastAPI(title="PT Invite Watcher", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="PT Invite Watcher", version=__version__, lifespan=lifespan)
 
 basic_security = HTTPBasic(auto_error=False)
 
@@ -280,6 +281,11 @@ async def require_auth(
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     return {"ok": True}
+
+
+@app.get("/api/version")
+async def api_version(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[str, str]:
+    return {"version": __version__}
 
 
 @app.get("/api/dashboard", dependencies=[Depends(require_auth)])

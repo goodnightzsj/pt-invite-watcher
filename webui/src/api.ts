@@ -170,4 +170,5 @@ export const api = {
     return requestJson<LogsResponse>(`/api/logs${qs ? `?${qs}` : ""}`);
   },
   logsDomains: () => requestJson<{ domains: string[] }>("/api/logs/domains"),
+  version: () => requestJson<{ version: string }>("/api/version"),
 };
