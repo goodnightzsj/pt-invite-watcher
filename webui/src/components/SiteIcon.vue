@@ -8,6 +8,46 @@ const props = defineProps<{
   class?: string;
 }>();
 
+// Icon cache: { [domain]: { src: string, fetchedAt: number } | null }
+// null means all sources failed (will retry on next session)
+const CACHE_KEY = "ptiw_icon_cache";
+const CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function getCache(): Record<string, { src: string; fetchedAt: number } | null> {
+  try {
+    return JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setCache(domain: string, src: string | null) {
+  const cache = getCache();
+  if (src) {
+    cache[domain] = { src, fetchedAt: Date.now() };
+  } else {
+    cache[domain] = null; // Mark as failed
+  }
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // localStorage full, ignore
+  }
+}
+
+function getCachedIcon(domain: string): string | null | undefined {
+  const cache = getCache();
+  const entry = cache[domain];
+  if (entry === null) {
+    // Failed before, can retry
+    return undefined;
+  }
+  if (entry && Date.now() - entry.fetchedAt < CACHE_MAX_AGE) {
+    return entry.src;
+  }
+  return undefined;
+}
+
 const domain = computed(() => {
   if (!props.url) return "";
   try {
@@ -26,59 +66,69 @@ const origin = computed(() => {
   }
 });
 
-// Priority list:
-// 1. Direct /favicon.ico (Preferred)
-// 2. DuckDuckGo (Fallback 1)
-// 3. Google S2 (Fallback 2)
 const sources = computed(() => {
-    if (!domain.value) return [];
-    return [
-        `${origin.value}/favicon.ico`,
-        `https://icons.duckduckgo.com/ip3/${domain.value}.ico`,
-        `https://www.google.com/s2/favicons?domain=${domain.value}&sz=64`
-    ];
+  if (!domain.value) return [];
+  return [
+    `${origin.value}/favicon.ico`,
+    `https://icons.duckduckgo.com/ip3/${domain.value}.ico`,
+    `https://www.google.com/s2/favicons?domain=${domain.value}&sz=64`
+  ];
 });
 
-// Track status of each source: 'pending', 'success', 'error'
-const sourceStatus = ref<('pending' | 'success' | 'error')[]>([]);
-
-// Determine the best src to display based on priority and success status
-const displaySrc = computed(() => {
-    const list = sources.value;
-    const status = sourceStatus.value;
-    
-    // Find highest priority source that succeeded
-    for (let i = 0; i < list.length; i++) {
-        if (status[i] === 'success') {
-            return list[i];
-        }
-    }
-    return null;
-});
+const displaySrc = ref<string | null>(null);
 
 function loadIcons() {
-    const list = sources.value;
-    sourceStatus.value = list.map(() => 'pending');
+  const d = domain.value;
+  if (!d) {
+    displaySrc.value = null;
+    return;
+  }
 
-    list.forEach((src, index) => {
-        const img = new Image();
-        img.referrerPolicy = "no-referrer";
-        img.onload = () => {
-            sourceStatus.value[index] = 'success';
-        };
-        img.onerror = () => {
-            sourceStatus.value[index] = 'error';
-        };
-        img.src = src;
-    });
+  // Check cache first
+  const cached = getCachedIcon(d);
+  if (cached) {
+    displaySrc.value = cached;
+    return;
+  }
+
+  // If cached === null (failed before), don't retry in same session
+  // If cached === undefined, try fetching
+
+  const list = sources.value;
+  let resolved = false;
+
+  list.forEach((src, index) => {
+    const img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => {
+      if (!resolved) {
+        resolved = true;
+        displaySrc.value = src;
+        setCache(d, src);
+      }
+    };
+    img.onerror = () => {
+      // If all failed, mark as null
+      if (index === list.length - 1 && !resolved) {
+        // Last source failed
+        setTimeout(() => {
+          if (!resolved) {
+            setCache(d, null);
+          }
+        }, 500);
+      }
+    };
+    img.src = src;
+  });
 }
 
 watch(() => props.url, () => {
-    loadIcons();
+  displaySrc.value = null;
+  loadIcons();
 });
 
 onMounted(() => {
-    loadIcons();
+  loadIcons();
 });
 </script>
 
