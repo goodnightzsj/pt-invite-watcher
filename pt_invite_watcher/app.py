@@ -436,10 +436,11 @@ async def api_state_reset(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[
 async def api_logs(
     ctx: Annotated[AppContext, Depends(get_ctx)],
     category: str = "all",
+    domain: str = "",
     keyword: str = "",
     limit: int = 200,
 ) -> Dict[str, Any]:
-    items = await ctx.store.list_events(category=category, keyword=keyword, limit=limit)
+    items = await ctx.store.list_events(category=category, domain=domain, keyword=keyword, limit=limit)
     return {"items": items}
 
 

@@ -56,6 +56,16 @@ def _append_retry_detail(detail: Optional[str], attempts: int) -> Optional[str]:
     return f"{detail} ({suffix})"
 
 
+def _merge_detail(a: Optional[str], b: Optional[str]) -> Optional[str]:
+    if not b:
+        return a
+    if not a:
+        return b
+    if b in a:
+        return a
+    return f"{a} | {b}"
+
+
 async def _get_with_retry(
     client: httpx.AsyncClient,
     url: str,
@@ -183,6 +193,7 @@ def _is_invite_disabled(text: str) -> Optional[str]:
 def _parse_home_invite_quota(text: str) -> tuple[Optional[int], Optional[int], Optional[str]]:
     patterns = [
         r"(?:邀请|邀請)\s*\[\s*(?:发送|發送)\s*\]\s*[:：]?\s*(\d{1,4})\s*(?:\(\s*(\d{1,4})\s*\))?",
+        r"\[\s*(?:邀请|邀請)\s*\]\s*[:：]?\s*(\d{1,4})\s*(?:\(\s*(\d{1,4})\s*\))?",
     ]
     for pat in patterns:
         m = re.search(pat, text, flags=re.I)
@@ -197,21 +208,26 @@ def _parse_home_invite_quota(text: str) -> tuple[Optional[int], Optional[int], O
     return None, None, None
 
 
-def _extract_user_id_from_html(html: str) -> Optional[str]:
+def _extract_user_id_and_source(html: str) -> tuple[Optional[str], Optional[str]]:
     raw = html or ""
     m = re.search(r"userdetails\.php\?id=(\d{1,10})", raw, flags=re.I)
     if m:
-        return m.group(1)
+        return m.group(1), "userdetail"
     m = re.search(r"\bUID\s*=\s*(\d{1,10})\b", raw, flags=re.I)
     if m:
-        return m.group(1)
+        return m.group(1), "home"
     m = re.search(r"\buser(?:id|_id)\s*=\s*(\d{1,10})\b", raw, flags=re.I)
     if m:
-        return m.group(1)
+        return m.group(1), "home"
     m = re.search(r"\buid\s*=\s*(\d{1,10})\b", raw, flags=re.I)
     if m:
-        return m.group(1)
-    return None
+        return m.group(1), "home"
+    return None, None
+
+
+def _extract_user_id_from_html(html: str) -> Optional[str]:
+    uid, _ = _extract_user_id_and_source(html)
+    return uid
 
 
 async def _probe_user_id_from_usercp(
@@ -564,6 +580,7 @@ class NexusPhpDetector:
             )
 
         home_text = _extract_text(home_resp)
+        uid_source: Optional[str] = None
         user_id = await _probe_user_id_from_usercp(
             client,
             site.url,
@@ -572,11 +589,15 @@ class NexusPhpDetector:
             adapter,
             retry_delay_seconds=retry_delay_seconds,
         )
+        if user_id:
+            uid_source = "usercp"
+        if not user_id and adapter:
+            user_id = adapter.extract_uid(home_resp.text or "") or None
+            if user_id:
+                uid_source = "home"
         if not user_id:
-            if adapter:
-                user_id = adapter.extract_uid(home_resp.text or "") or None
-            if not user_id:
-                user_id = _extract_user_id_from_html(home_resp.text)
+            user_id, uid_source = _extract_user_id_and_source(home_resp.text)
+        uid_detail = f"uid_source={uid_source}" if uid_source else None
         quota_perm, quota_temp, quota_matched = _parse_home_invite_quota(home_text)
         quota_total: Optional[int] = None
         if quota_perm is not None:
@@ -593,6 +614,7 @@ class NexusPhpDetector:
                         http_status=home_resp.status_code,
                         reason="invite_quota_home_zero",
                         matched=quota_matched,
+                        detail=uid_detail,
                     ),
                 )
         invite_url = _extract_invite_url_from_html(home_resp.text, site.url)
@@ -658,7 +680,7 @@ class NexusPhpDetector:
                         url=last_err_url or (invite_url or _join(site.url, "invite.php")),
                         http_status=None,
                         reason=f"invites_error:{type(last_err).__name__}",
-                        detail=last_err_detail,
+                        detail=_merge_detail(last_err_detail, uid_detail),
                     ),
                 )
             if last_http_err is not None:
@@ -668,7 +690,7 @@ class NexusPhpDetector:
                         url=str(last_http_err.url),
                         http_status=last_http_err.status_code,
                         reason=f"invites_error:HTTP{last_http_err.status_code}",
-                        detail=_append_retry_detail(None, last_http_used),
+                        detail=_merge_detail(_append_retry_detail(None, last_http_used), uid_detail),
                     ),
                 )
             return AspectResult(
@@ -677,7 +699,10 @@ class NexusPhpDetector:
                     url=invite_url or _join(site.url, "invite.php"),
                     http_status=404,
                     reason="invite_page_not_found",
-                    detail=f"quota_perm={quota_perm} quota_temp={quota_temp} quota_total={quota_total}" if quota_total is not None else None,
+                    detail=_merge_detail(
+                        f"quota_perm={quota_perm} quota_temp={quota_temp} quota_total={quota_total}" if quota_total is not None else None,
+                        uid_detail,
+                    ),
                 ),
             )
 
@@ -700,7 +725,10 @@ class NexusPhpDetector:
                     http_status=invite_resp.status_code,
                     reason="invites_disabled",
                     matched=disabled_pat,
-                    detail=f"quota_perm={quota_perm} quota_temp={quota_temp} quota_total={quota_total}" if quota_total is not None else None,
+                    detail=_merge_detail(
+                        f"quota_perm={quota_perm} quota_temp={quota_temp} quota_total={quota_total}" if quota_total is not None else None,
+                        uid_detail,
+                    ),
                 ),
             )
 
@@ -728,7 +756,7 @@ class NexusPhpDetector:
                     http_status=invite_resp.status_code,
                     reason="invite_permission_denied",
                     matched=action_matched,
-                    detail=f"quota_total={count}" if count is not None else None,
+                    detail=_merge_detail(f"quota_total={count}" if count is not None else None, uid_detail),
                 ),
             )
 
@@ -754,7 +782,7 @@ class NexusPhpDetector:
                     http_status=invite_resp.status_code,
                     reason="invite_permission_denied",
                     matched=denied_pat,
-                    detail=detail,
+                    detail=_merge_detail(detail, uid_detail),
                 ),
             )
 
@@ -765,6 +793,7 @@ class NexusPhpDetector:
                     url=str(invite_resp.url),
                     http_status=invite_resp.status_code,
                     reason="invite_count_not_found",
+                    detail=uid_detail,
                 ),
             )
 
@@ -780,7 +809,7 @@ class NexusPhpDetector:
                     url=str(invite_resp.url),
                     http_status=invite_resp.status_code,
                     reason="invite_action_not_found",
-                    detail=f"quota_total={count}",
+                    detail=_merge_detail(f"quota_total={count}", uid_detail),
                 ),
             )
 
@@ -794,5 +823,6 @@ class NexusPhpDetector:
                 http_status=invite_resp.status_code,
                 reason=count_reason or ("invite_count_parsed" if quota_total is None else "invite_quota_home_header"),
                 matched=action_matched or matched,
+                detail=uid_detail,
             ),
         )

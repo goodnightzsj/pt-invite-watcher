@@ -160,9 +160,10 @@ export const api = {
     requestJson<{ ok: boolean }>("/api/notifications", { method: "PUT", body: JSON.stringify(payload) }),
   notificationsTest: (channel: "telegram" | "wecom") =>
     requestJson<{ ok: boolean; message: string }>(`/api/notifications/test/${channel}`, { method: "POST" }),
-  logsList: (params: { category?: string; keyword?: string; limit?: number } = {}) => {
+  logsList: (params: { category?: string; domain?: string; keyword?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();
     if (params.category) q.set("category", params.category);
+    if (params.domain) q.set("domain", params.domain);
     if (params.keyword) q.set("keyword", params.keyword);
     if (params.limit) q.set("limit", String(params.limit));
     const qs = q.toString();

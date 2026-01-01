@@ -13,8 +13,25 @@ const loading = ref(false);
 const items = ref<LogItem[]>([]);
 
 const category = ref("all");
+const domain = ref("");  // New: site filter
 const keyword = ref("");
 const limit = ref(200);
+
+// Site domains list for filter dropdown
+const domainOptions = ref<string[]>([]);
+
+async function loadDomains() {
+  try {
+    const resp = await api.dashboard();
+    const domains = new Set<string>();
+    for (const row of resp.rows || []) {
+      if (row.domain) domains.add(row.domain);
+    }
+    domainOptions.value = Array.from(domains).sort();
+  } catch (e) {
+    // Ignore errors, dropdown will just be empty
+  }
+}
 
 // Pagination
 const STORAGE_PAGE_SIZE = "ptiw_logs_page_size";
@@ -58,7 +75,12 @@ function formatDateTime(v: string) {
 async function load(opts: { toast?: boolean } = {}) {
   loading.value = true;
   try {
-    const resp = await api.logsList({ category: category.value, keyword: keyword.value, limit: limit.value });
+    const resp = await api.logsList({
+      category: category.value,
+      domain: domain.value,
+      keyword: keyword.value,
+      limit: limit.value,
+    });
     items.value = resp.items || [];
     resetPage();
     if (opts.toast) showToast("日志已刷新", "success", 1800);
@@ -125,7 +147,10 @@ function resetPage() {
   currentPage.value = 1;
 }
 
-onMounted(() => load());
+onMounted(() => {
+  loadDomains();
+  load();
+});
 
 // SSE real-time updates
 import { useSSE } from "../sse";
@@ -148,12 +173,16 @@ useSSE("logs_update", () => {
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div class="flex w-full gap-2 sm:w-auto">
             <select v-model="category" class="ui-select w-full min-w-[110px] sm:w-auto" :disabled="loading" @change="load()">
-              <option value="all">全部</option>
+              <option value="all">全部分类</option>
               <option value="scan">扫描相关</option>
               <option value="site">站点相关</option>
               <option value="notify">通知相关</option>
               <option value="config">配置相关</option>
               <option value="backup">导入导出</option>
+            </select>
+            <select v-model="domain" class="ui-select w-full min-w-[130px] sm:w-auto" :disabled="loading" @change="load()">
+              <option value="">全部站点</option>
+              <option v-for="d in domainOptions" :key="d" :value="d">{{ d }}</option>
             </select>
             <Button variant="danger" :disabled="loading" @click="clear">清空</Button>
           </div>

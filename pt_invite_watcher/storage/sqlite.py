@@ -134,11 +134,13 @@ class SqliteStore:
         self,
         *,
         category: Optional[str] = None,
+        domain: Optional[str] = None,
         keyword: Optional[str] = None,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         conn = self._require_conn()
         cat = (str(category or "").strip().lower() or "").strip()
+        dom = (str(domain or "").strip().lower() or "").strip()
         kw = (str(keyword or "").strip() or "").strip()
         lim = max(1, min(1000, int(limit or 0)))
 
@@ -147,6 +149,9 @@ class SqliteStore:
         if cat and cat != "all":
             clauses.append("category = ?")
             params.append(cat)
+        if dom:
+            clauses.append("domain = ?")
+            params.append(dom)
         if kw:
             pattern = f"%{kw}%"
             clauses.append("(message LIKE ? OR domain LIKE ? OR action LIKE ? OR category LIKE ?)")

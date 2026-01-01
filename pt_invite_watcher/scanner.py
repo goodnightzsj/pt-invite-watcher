@@ -67,6 +67,27 @@ def _format_error_detail(exc: Exception) -> str:
     return msg
 
 
+def _site_page_kind(url: str) -> str:
+    try:
+        parsed = urlparse(str(url or ""))
+        path = (parsed.path or "/").strip("/").lower()
+        if not path:
+            return "home"
+        if path.startswith("usercp"):
+            return "usercp"
+        if path.startswith("signup"):
+            return "signup"
+        if path.startswith("userdetails"):
+            return "userdetail"
+        if path.startswith("invite"):
+            return "invite"
+        if path.startswith("login"):
+            return "login"
+        return path.split("/", 1)[0] or "other"
+    except Exception:
+        return "other"
+
+
 def _hosts_related(host_a: str, host_b: str) -> bool:
     a = (host_a or "").lower().strip(".")
     b = (host_b or "").lower().strip(".")
@@ -1257,6 +1278,22 @@ class Scanner:
         if not changes:
             return
 
+        reach_ev = result.reachability.evidence
+        reg_ev = result.registration.evidence
+        inv_ev = result.invites.evidence
+        reach_page = _site_page_kind(reach_ev.url)
+        reg_page = _site_page_kind(reg_ev.url)
+        inv_page = _site_page_kind(inv_ev.url)
+
+        primary_kind = inv_page
+        primary_url = inv_ev.url
+        if not any("邀请" in c for c in changes):
+            primary_kind = reg_page
+            primary_url = reg_ev.url
+        if not any(("邀请" in c or "注册" in c) for c in changes):
+            primary_kind = reach_page
+            primary_url = reach_ev.url
+
         try:
             await self._store.add_event(
                 category="site",
@@ -1264,7 +1301,46 @@ class Scanner:
                 action="state_changed",
                 message="; ".join(changes)[:200],
                 domain=_normalize_domain(site.domain),
-                detail={"changes": list(changes), "registration": result.registration.state, "invites": result.invites.state},
+                detail={
+                    "changes": list(changes),
+                    "page": {"kind": primary_kind, "url": primary_url},
+                    "reachability": {
+                        "state": result.reachability.state,
+                        "evidence": {
+                            "page": reach_page,
+                            "url": reach_ev.url,
+                            "http_status": reach_ev.http_status,
+                            "reason": reach_ev.reason,
+                            "matched": reach_ev.matched,
+                            "detail": reach_ev.detail,
+                        },
+                    },
+                    "registration": {
+                        "state": result.registration.state,
+                        "evidence": {
+                            "page": reg_page,
+                            "url": reg_ev.url,
+                            "http_status": reg_ev.http_status,
+                            "reason": reg_ev.reason,
+                            "matched": reg_ev.matched,
+                            "detail": reg_ev.detail,
+                        },
+                    },
+                    "invites": {
+                        "state": result.invites.state,
+                        "available": result.invites.available,
+                        "permanent": result.invites.permanent,
+                        "temporary": result.invites.temporary,
+                        "evidence": {
+                            "page": inv_page,
+                            "url": inv_ev.url,
+                            "http_status": inv_ev.http_status,
+                            "reason": inv_ev.reason,
+                            "matched": inv_ev.matched,
+                            "detail": inv_ev.detail,
+                        },
+                    },
+                },
             )
         except Exception:
             pass
