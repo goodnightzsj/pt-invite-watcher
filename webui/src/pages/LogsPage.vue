@@ -118,16 +118,18 @@ function getLocalizedAction(action: string) {
 setInterval(() => {
   if (pendingLogs.value.length > 0) {
     // Take the OLDEST pending log (FIFO from the pending queue)
-    // Wait, pendingLogs.push adds to end. So pendingLogs[0] is the oldest.
-    // If we want to show the NEWEST log at the top of the UI list (items is LIFO display),
-    // we normally receive logs in chronological order.
-    // If we process one by one, we should process them in order of arrival?
-    // Actually, if a burst happens, we have [Log1, Log2, Log3].
-    // If we pick Log1, put at top. Then Log2, put at top.
-    // Result UI: Log2, Log1. Correct.
+    // pendingLogs.push adds to end. So pendingLogs[0] is the oldest.
+    // Processing in order: Log1 -> Log2 -> Log3
+    // Each gets unshifted to items, resulting in: [Log3, Log2, Log1, ...oldItems]
+    // This is correct: newest at top.
     const item = pendingLogs.value.shift();
     if (item) {
       items.value.unshift(item);
+
+      // Auto-scroll to page 1 so user sees new logs at top
+      if (currentPage.value !== 1) {
+        currentPage.value = 1;
+      }
 
       // Safety cap 10k
       if (items.value.length > 10000) {
@@ -309,7 +311,7 @@ useWS("logs_append", (evt: any) => {
               <span class="text-slate-500">{{ getLocalizedAction(item.action) }}</span>
               <div class="h-3 w-px bg-slate-200 dark:bg-slate-700"></div>
               <span v-if="domainLabel(item) !== '-'" class="text-slate-600 dark:text-slate-300">{{ domainLabel(item)
-              }}</span>
+                }}</span>
               <span v-if="pageLabel(item)"
                 class="rounded bg-slate-200/50 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-400">{{
                   pageLabel(item) }}</span>
