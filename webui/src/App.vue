@@ -44,7 +44,7 @@ onMounted(async () => {
   <div class="min-h-screen relative overflow-x-hidden">
     <div class="ui-aurora" aria-hidden="true"></div>
 
-    <header class="sticky top-0 z-50 w-full border-b border-white/10 bg-white/70 backdrop-blur-xl dark:bg-slate-900/70">
+    <header class="sticky top-0 z-50 w-full glass border-x-0 border-t-0 rounded-none">
       <div class="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
         <!-- Logo -->
         <RouterLink to="/" class="flex items-center gap-2 transition-opacity hover:opacity-80">
@@ -62,8 +62,7 @@ onMounted(async () => {
             <RouterLink v-for="item in nav" :key="item.to" :to="item.to"
               class="group flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
               active-class="bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300 shadow-sm">
-              <component :is="item.icon"
-                class="h-4 w-4 transition-transform group-hover:-translate-y-0.5" />
+              <component :is="item.icon" class="h-4 w-4 transition-transform group-hover:-translate-y-0.5" />
               {{ item.label }}
             </RouterLink>
           </nav>

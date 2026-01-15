@@ -25,15 +25,13 @@ const paddingClass: Record<Padding, string> = {
 <template>
   <div
     class="relative glass rounded-2xl border-0 bg-white/5 shadow-xl backdrop-blur-md transition-all duration-300 dark:bg-slate-900/40 dark:border-white/5"
-    :class="
-      [
+    :class="[
         paddingClass[props.padding],
         (props.hoverable && !props.noHover)
-          ? 'hover:-translate-y-1 hover:shadow-cyan-500/20 hover:border-white/20'
+          ? 'hover:-translate-y-1 hover:shadow-brand-500/20 hover:border-white/20'
           : '',
       ].join(' ')
-    "
-  >
+      ">
     <div v-if="props.title" class="mb-4 text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-200">
       {{ props.title }}
     </div>
