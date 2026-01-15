@@ -325,19 +325,19 @@ onMounted(() => load());
           <div class="overflow-x-auto overflow-y-auto h-[calc(100vh-200px)] relative">
             <table class="min-w-full text-left text-sm relative border-collapse">
               <thead
-                class="sticky top-0 z-10 border-b-2 border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                class="sticky top-0 z-10 border-b border-slate-200/60 bg-slate-50/80 text-xs font-semibold text-slate-500 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-400">
                 <tr>
-                  <th class="px-6 py-4 font-semibold">站点</th>
-                  <th class="px-6 py-4 font-semibold">域名</th>
-                  <th class="px-6 py-4 font-semibold">来源</th>
-                  <th class="px-6 py-4 font-semibold">模板</th>
-                  <th class="px-6 py-4 font-semibold">Cookie</th>
-                  <th class="px-6 py-4 font-semibold">注册页</th>
-                  <th class="px-6 py-4 font-semibold">邀请页</th>
-                  <th class="px-6 py-4 font-semibold text-right">操作</th>
+                  <th class="px-6 py-4">站点</th>
+                  <th class="px-6 py-4">域名</th>
+                  <th class="px-6 py-4">来源</th>
+                  <th class="px-6 py-4">模板</th>
+                  <th class="px-6 py-4">Cookie</th>
+                  <th class="px-6 py-4">注册页</th>
+                  <th class="px-6 py-4">邀请页</th>
+                  <th class="px-6 py-4 text-right">操作</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
                 <TransitionGroup name="list" appear>
                   <tr v-for="(item, index) in items" :key="item.domain" :style="{ '--i': index }"
                     class="table-row-hover group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">

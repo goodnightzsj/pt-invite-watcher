@@ -39,7 +39,7 @@ const inviteState = computed(() => {
 
 <template>
   <div
-    class="group relative overflow-hidden rounded-2xl border-2 border-slate-200 bg-white shadow-[6px_6px_0_0_rgba(15,23,42,0.08)] transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[8px_8px_0_0_rgba(15,23,42,0.10)] active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:shadow-[6px_6px_0_0_rgba(0,0,0,0.35)] dark:hover:shadow-[8px_8px_0_0_rgba(0,0,0,0.42)]"
+    class="group relative overflow-hidden rounded-2xl border border-white/20 bg-white/5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-white/30 hover:shadow-xl hover:shadow-brand-500/10 active:scale-[0.98] dark:border-white/10 dark:bg-slate-900/40 p-5"
     @click="emit('click')"
   >
       <div class="flex items-start justify-between">

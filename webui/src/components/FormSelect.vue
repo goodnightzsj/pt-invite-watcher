@@ -160,11 +160,11 @@ onUnmounted(() => teardownGlobalListeners());
         <div
           v-if="open"
           ref="panelRef"
-          class="overflow-hidden rounded-2xl border-2 border-slate-200 bg-white shadow-[10px_10px_0_0_rgba(15,23,42,0.10)] dark:border-slate-800 dark:bg-slate-950 dark:shadow-[10px_10px_0_0_rgba(0,0,0,0.45)]"
+          class="overflow-hidden rounded-xl border border-slate-200/60 bg-white/95 shadow-xl backdrop-blur-md dark:border-slate-700/60 dark:bg-slate-900/95"
           :style="panelStyle"
           role="listbox"
         >
-          <div class="max-h-[inherit] overflow-auto divide-y divide-slate-200 dark:divide-slate-800">
+          <div class="max-h-[inherit] overflow-auto divide-y divide-slate-100 dark:divide-slate-800/60">
             <button
               v-for="opt in props.options"
               :key="String(opt.value)"

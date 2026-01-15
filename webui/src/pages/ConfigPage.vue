@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { Download, Upload, FileJson, ShieldAlert, UploadCloud, Info, RefreshCw } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
 import Card from "../components/Card.vue";
@@ -16,13 +17,13 @@ const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
 const IMPORT_MODE_OPTIONS = [
   { label: "merge", value: "merge", help: "合并，保留本地敏感字段" },
   { label: "replace", value: "replace", help: "覆盖，按备份为准" },
-] as const;
+];
 
 const COOKIE_SOURCE_OPTIONS = [
   { label: "auto", value: "auto", help: "CookieCloud 优先，失败回退 MoviePilot" },
   { label: "cookiecloud", value: "cookiecloud", help: "仅 CookieCloud" },
   { label: "moviepilot", value: "moviepilot", help: "仅 MoviePilot" },
-] as const;
+];
 
 const RETRY_INTERVAL_OPTIONS = [
   { label: "1 分钟", value: 60 },
@@ -34,7 +35,7 @@ const RETRY_INTERVAL_OPTIONS = [
   { label: "6 小时", value: 21600 },
   { label: "12 小时", value: 43200 },
   { label: "24 小时", value: 86400 },
-] as const;
+];
 
 const REQUEST_RETRY_DELAY_OPTIONS = [
   { label: "30 秒", value: 30 },
@@ -47,7 +48,7 @@ const REQUEST_RETRY_DELAY_OPTIONS = [
   { label: "6 小时", value: 21600 },
   { label: "12 小时", value: 43200 },
   { label: "24 小时", value: 86400 },
-] as const;
+];
 
 type Model = {
   moviepilot: { base_url: string; username: string; password: string; otp_password: string; sites_cache_ttl_seconds: number };
@@ -359,59 +360,107 @@ onMounted(() => load());
     </Card>
 
     <Card title="配置备份与恢复">
-      <div class="mb-4 text-sm text-slate-500 dark:text-slate-400">
-        备份本服务 SQLite 中的运行时配置（服务配置 / 通知设置 / 站点管理）；不包含扫描结果与历史。
-      </div>
+      <template #description>
+        备份本服务 SQLite 中的运行时配置（服务配置/通知设置/站点管理）；不包含扫描结果与历史。
+      </template>
 
-      <div class="flex flex-wrap gap-3">
-        <Button :disabled="backupBusy" @click="exportBackup(false)">导出（脱敏）</Button>
-        <Button variant="primary" :disabled="backupBusy" @click="exportBackup(true)">导出（含敏感信息）</Button>
-      </div>
-
-      <div class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <!-- Export Section -->
         <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium">导入 JSON 文件</label>
+          <div class="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+            <Download class="w-4 h-4 text-brand-500" />
+            <span>导出配置</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              class="group relative flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-50/30 hover:shadow-md active:translate-y-0 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-brand-700/50 dark:hover:bg-brand-900/20"
+              :disabled="backupBusy"
+              @click="exportBackup(false)"
+            >
+              <FileJson class="h-6 w-6 text-slate-400 transition-colors group-hover:text-brand-500 dark:text-slate-500" />
+              <div class="text-center">
+                <div class="text-sm font-medium text-slate-700 dark:text-slate-200">仅配置 (脱敏)</div>
+                <div class="text-[10px] text-slate-400 dark:text-slate-500">不含密钥/密码</div>
+              </div>
+            </button>
+            <button
+              class="group relative flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:-translate-y-0.5 hover:border-rose-200 hover:bg-rose-50/30 hover:shadow-md active:translate-y-0 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-rose-700/50 dark:hover:bg-rose-900/20"
+              :disabled="backupBusy"
+              @click="exportBackup(true)"
+            >
+              <ShieldAlert class="h-6 w-6 text-slate-400 transition-colors group-hover:text-rose-500 dark:text-slate-500" />
+              <div class="text-center">
+                <div class="text-sm font-medium text-slate-700 dark:text-slate-200">完整导出</div>
+                <div class="text-[10px] text-slate-400 dark:text-slate-500">含敏感密钥信息</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Import Section -->
+        <div class="space-y-4">
+          <div class="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+            <Upload class="w-4 h-4 text-brand-500" />
+            <span>恢复配置</span>
+          </div>
+          
+          <div 
+            class="relative rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-4 transition-all hover:border-brand-300 hover:bg-brand-50/20 dark:border-slate-800 dark:bg-slate-900/30 dark:hover:border-brand-700/50 dark:hover:bg-brand-900/10"
+            :class="{'border-brand-500 bg-brand-50/10': importFile}"
+          >
             <input
               type="file"
               accept="application/json"
-              class="mt-2 block w-full text-sm text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800 dark:text-slate-200 dark:file:bg-slate-100 dark:file:text-slate-900 dark:hover:file:bg-white"
+              class="absolute inset-0 cursor-pointer opacity-0"
               @change="onPickFile"
             />
-            <div v-if="importFile" class="mt-1 text-xs text-slate-500 dark:text-slate-400">已选择：{{ importFile.name }}</div>
-          </div>
-        </div>
-
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium">导入模式</label>
-            <div class="mt-2 flex gap-2">
-              <div class="flex-1">
-                <FormSelect v-model="importMode" :options="IMPORT_MODE_OPTIONS" :disabled="backupBusy" />
+            <div class="flex flex-col items-center justify-center gap-2 py-2">
+              <div v-if="!importFile" class="flex flex-col items-center gap-1 text-slate-400">
+                <UploadCloud class="h-8 w-8 mb-1 opacity-50" />
+                <span class="text-xs">点击或拖拽 JSON 文件至此</span>
               </div>
-              <Button :disabled="backupBusy || !importFile" @click="importBackup">导入</Button>
+              <div v-else class="flex flex-col items-center gap-1 text-brand-600 dark:text-brand-400">
+                <FileJson class="h-8 w-8 mb-1" />
+                <span class="text-xs font-medium">{{ importFile.name }}</span>
+                <span class="text-[10px] opacity-70">点击更换文件</span>
+              </div>
             </div>
+          </div>
+
+          <div class="flex gap-2">
+             <div class="w-32">
+                <FormSelect v-model="importMode" :options="IMPORT_MODE_OPTIONS" :disabled="backupBusy" dense />
+             </div>
+             <Button class="flex-1" :disabled="backupBusy || !importFile" :loading="backupBusy" @click="importBackup" variant="primary">
+               导入恢复
+             </Button>
           </div>
         </div>
       </div>
 
-      <div class="mt-4 text-xs text-slate-500 dark:text-slate-400">
-        备份文件会额外包含浏览器本地的“自动刷新开关/间隔”设置；导入后会写入当前浏览器 localStorage。
+      <div class="mt-6 flex items-start gap-2 rounded-lg bg-slate-100/50 p-3 text-xs text-slate-500 dark:bg-slate-900/30 dark:text-slate-400">
+        <Info class="h-4 w-4 shrink-0 mt-0.5 text-slate-400" />
+        备份文件额外包含浏览器本地的“自动刷新”偏好；导入后将写入当前浏览器配置。
       </div>
 
       <div
         v-if="importScanPrompt"
-        class="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-100"
+        class="mt-4 rounded-xl border border-brand-200 bg-brand-50/80 p-4 backdrop-blur-sm dark:border-brand-900/50 dark:bg-brand-950/30"
       >
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div class="font-semibold">下一步</div>
-            <div class="mt-1 text-brand-800/80 dark:text-brand-200/80">
-              导入只恢复配置，不包含扫描结果；建议立即扫描。
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-900/50 dark:text-brand-400">
+              <RefreshCw class="h-5 w-5" :class="{'animate-spin': scanNowRunning}" />
+            </div>
+            <div>
+              <div class="text-sm font-semibold text-brand-900 dark:text-brand-100">配置已恢复</div>
+              <div class="text-xs text-brand-700/80 dark:text-brand-300/60">
+                建议立即进行一次状态扫描以同步站点数据。
+              </div>
             </div>
           </div>
-          <Button variant="primary" :disabled="scanNowRunning" :loading="scanNowRunning" @click="runScanNow">
-            {{ scanNowRunning ? "扫描中…" : "立即扫描" }}
+          <Button variant="primary" size="sm" :disabled="scanNowRunning" :loading="scanNowRunning" @click="runScanNow">
+            立即扫描
           </Button>
         </div>
       </div>

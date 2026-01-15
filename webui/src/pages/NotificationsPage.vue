@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { Send, MessageSquare } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
 import Toggle from "../components/Toggle.vue";
@@ -148,7 +149,12 @@ onMounted(() => load());
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <Card>
         <div class="mb-4 flex items-center justify-between">
-          <div class="text-sm font-semibold">Telegram</div>
+          <div class="text-sm font-semibold flex items-center gap-2">
+            <div class="p-1.5 rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
+              <Send class="w-4 h-4" />
+            </div>
+            Telegram
+          </div>
           <Badge v-if="view" :label="view.telegram.configured ? '已配置' : '未配置'" :tone="view.telegram.configured ? 'green' : 'amber'" />
         </div>
         <div class="space-y-4">
@@ -177,7 +183,12 @@ onMounted(() => load());
 
       <Card>
         <div class="mb-4 flex items-center justify-between">
-          <div class="text-sm font-semibold">企业微信（企业应用）</div>
+          <div class="text-sm font-semibold flex items-center gap-2">
+            <div class="p-1.5 rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+              <MessageSquare class="w-4 h-4" />
+            </div>
+            企业微信（企业应用）
+          </div>
           <Badge v-if="view" :label="view.wecom.configured ? '已配置' : '未配置'" :tone="view.wecom.configured ? 'green' : 'amber'" />
         </div>
         <div class="space-y-4">

@@ -15,21 +15,21 @@ const emit = defineEmits<{
 const view = computed(() => {
   if (props.kind === "success") {
     return {
-      box: "border-success-200 bg-success-50 text-success-900 shadow-[6px_6px_0_0_rgba(16,185,129,0.16)] dark:border-success-900 dark:bg-success-950/40 dark:text-success-100 dark:shadow-[6px_6px_0_0_rgba(0,0,0,0.45)]",
-      iconWrap: "border-success-200 bg-success-500 text-white dark:border-success-900",
+      box: "border-emerald-200/50 bg-emerald-50/80 text-emerald-900 shadow-lg shadow-emerald-500/10 backdrop-blur-md dark:border-emerald-800/30 dark:bg-emerald-950/60 dark:text-emerald-100",
+      iconWrap: "bg-emerald-500 text-white shadow-sm shadow-emerald-500/20",
       icon: "success",
     } as const;
   }
   if (props.kind === "error") {
     return {
-      box: "border-danger-200 bg-danger-50 text-danger-900 shadow-[6px_6px_0_0_rgba(244,63,94,0.16)] dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-100 dark:shadow-[6px_6px_0_0_rgba(0,0,0,0.45)]",
-      iconWrap: "border-danger-200 bg-danger-500 text-white dark:border-danger-900",
+      box: "border-rose-200/50 bg-rose-50/80 text-rose-900 shadow-lg shadow-rose-500/10 backdrop-blur-md dark:border-rose-800/30 dark:bg-rose-950/60 dark:text-rose-100",
+      iconWrap: "bg-rose-500 text-white shadow-sm shadow-rose-500/20",
       icon: "error",
     } as const;
   }
   return {
-    box: "border-slate-200 bg-white text-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[6px_6px_0_0_rgba(0,0,0,0.45)]",
-    iconWrap: "border-slate-200 bg-slate-900 text-white dark:border-slate-800 dark:bg-slate-100 dark:text-slate-900",
+    box: "border-slate-200/60 bg-white/80 text-slate-900 shadow-lg shadow-slate-500/10 backdrop-blur-md ring-1 ring-slate-900/5 dark:border-slate-700/50 dark:bg-slate-900/80 dark:text-slate-100 dark:ring-white/10",
+    iconWrap: "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900",
     icon: "info",
   } as const;
 });
@@ -37,14 +37,14 @@ const view = computed(() => {
 
 <template>
   <div
-    class="max-w-sm cursor-pointer rounded-2xl border-2 px-4 py-3 text-sm font-medium transition-transform duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0"
+    class="pointer-events-auto max-w-sm cursor-pointer rounded-2xl border px-4 py-3 text-sm font-medium transition-all duration-300 hover:-translate-y-1 hover:shadow-xl active:scale-[0.98]"
     :class="view.box"
     @click="emit('close')"
     role="alert"
   >
     <div class="flex items-start gap-3">
       <div
-        class="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border-2 shadow-[3px_3px_0_0_rgba(15,23,42,0.08)] dark:shadow-[3px_3px_0_0_rgba(0,0,0,0.35)]"
+        class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
         :class="view.iconWrap"
         aria-hidden="true"
       >

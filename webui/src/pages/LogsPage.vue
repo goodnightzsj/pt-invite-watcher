@@ -327,16 +327,16 @@ useWS("logs_append", (evt: any) => {
         <!-- Desktop View -->
         <table class="hidden md:table min-w-full text-left text-sm relative border-collapse">
           <thead
-            class="sticky top-0 z-10 border-b-2 border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+            class="sticky top-0 z-10 border-b border-slate-200/60 bg-slate-50/80 text-xs font-semibold text-slate-500 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-400">
             <tr>
-              <th class="px-6 py-4 font-semibold">时间</th>
-              <th class="px-6 py-4 font-semibold">分类</th>
-              <th class="px-6 py-4 font-semibold">级别</th>
-              <th class="px-6 py-4 font-semibold">站点 / 页面</th>
-              <th class="px-6 py-4 font-semibold">内容</th>
+              <th class="px-6 py-4">时间</th>
+              <th class="px-6 py-4">分类</th>
+              <th class="px-6 py-4">级别</th>
+              <th class="px-6 py-4">站点 / 页面</th>
+              <th class="px-6 py-4">内容</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
             <TransitionGroup name="list">
               <tr v-for="item in paginatedItems" :key="item.id"
                 class="table-row-hover group cursor-pointer transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30"
@@ -390,12 +390,12 @@ useWS("logs_append", (evt: any) => {
           </div>
         <div class="flex gap-2">
           <button
-            class="whitespace-nowrap rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]"
+            class="flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-800"
             :disabled="currentPage <= 1" @click="prevPage">
             上一页
           </button>
           <button
-            class="whitespace-nowrap rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]"
+            class="flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-800"
             :disabled="currentPage >= totalPages" @click="nextPage">
             下一页
           </button>

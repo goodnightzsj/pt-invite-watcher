@@ -44,15 +44,14 @@ onMounted(async () => {
   <div class="min-h-screen relative overflow-x-hidden">
     <div class="ui-aurora" aria-hidden="true"></div>
 
-    <header class="sticky top-0 z-50 w-full border-b-2 border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+    <header class="sticky top-0 z-50 w-full border-b border-white/10 bg-white/70 backdrop-blur-xl dark:bg-slate-900/70">
       <div class="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
         <!-- Logo -->
         <RouterLink to="/" class="flex items-center gap-2 transition-opacity hover:opacity-80">
           <Activity class="h-6 w-6 text-brand-600 dark:text-brand-400" />
           <h1 class="text-xl font-bold tracking-tight text-slate-800 dark:text-white">
             PT Invite Watcher
-            <span v-if="version" class="ml-2 text-xs font-medium text-slate-400 dark:text-slate-500">v{{ version
-              }}</span>
+            <span v-if="version" class="ml-2 text-xs font-medium text-slate-500/80">v{{ version }}</span>
           </h1>
         </RouterLink>
 
@@ -61,8 +60,8 @@ onMounted(async () => {
           <!-- Desktop Nav Links -->
           <nav class="hidden items-center gap-1 md:flex">
             <RouterLink v-for="item in nav" :key="item.to" :to="item.to"
-              class="group flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/50 dark:hover:text-white"
-              active-class="bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+              class="group flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+              active-class="bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300 shadow-sm">
               <component :is="item.icon"
                 class="h-4 w-4 transition-transform group-hover:-translate-y-0.5" />
               {{ item.label }}
@@ -70,12 +69,12 @@ onMounted(async () => {
           </nav>
 
           <!-- Divider (Desktop only) -->
-          <div class="hidden h-5 w-px bg-slate-200 dark:bg-slate-700 md:block"></div>
+          <div class="hidden h-5 w-px bg-slate-200 dark:bg-white/10 md:block"></div>
 
           <!-- Global Actions (Auto-Dark, GitHub) -->
           <div class="flex items-center gap-2">
             <a href="https://github.com/goodnightzsj/pt-invite-watcher" target="_blank"
-              class="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-slate-200 bg-white text-slate-700 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]">
+              class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:border-brand-300 hover:shadow-md dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-white/20">
               <Github class="h-5 w-5" />
             </a>
             <ThemeToggle />
@@ -86,7 +85,7 @@ onMounted(async () => {
 
     <main class="container mx-auto max-w-7xl flex-1 px-4 py-8 pb-24 md:pb-8">
       <RouterView v-slot="{ Component }">
-        <Transition name="fade-slide" mode="out-in">
+        <Transition name="page" mode="out-in">
           <component :is="Component" />
         </Transition>
       </RouterView>
@@ -98,7 +97,7 @@ onMounted(async () => {
 
     <!-- Toast Queue -->
     <div class="fixed bottom-24 right-5 z-50 flex flex-col-reverse gap-2 sm:bottom-5">
-      <transition-group name="fade">
+      <transition-group name="list">
         <Toast v-for="t in toasts" :key="t.id" :kind="t.kind" @close="removeToast(t.id)">
           {{ t.message }}
         </Toast>
@@ -110,29 +109,5 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateX(40px);
-}
-
-.fade-page-enter-active,
-.fade-page-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.fade-page-enter-from {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-.fade-page-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
+/* Scoped styles removed in favor of global styles.css */
 </style>

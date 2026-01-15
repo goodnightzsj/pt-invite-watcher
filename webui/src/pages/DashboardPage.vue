@@ -363,7 +363,7 @@ const stats = computed(() => {
 
     <Card v-else padding="none" :hoverable="false">
       <div class="overflow-hidden rounded-2xl">
-        <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        <div class="border-b border-slate-200/60 bg-slate-50/50 px-4 py-4 text-sm font-medium text-slate-500 backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-slate-400">
           <span v-if="loading && !hasRows">加载中…</span>
           <span v-else>共 {{ rows.length }} 个站点</span>
         </div>
@@ -379,7 +379,7 @@ const stats = computed(() => {
       </div>
 
       <!-- Mobile: Card View -->
-      <div v-if="hasRows" class="md:hidden space-y-3">
+      <div v-if="hasRows" class="md:hidden space-y-3 p-4">
         <TransitionGroup name="list">
           <SiteCard v-for="(row, index) in sortedRows" :key="row.domain" :site="row" :style="{ '--i': index }"
             @click="selectedSite = row" />
@@ -388,20 +388,20 @@ const stats = computed(() => {
 
       <!-- Desktop: Table View -->
       <div v-if="hasRows || (!loading && !hasRows)" class="hidden md:block overflow-x-auto max-h-[calc(100vh-300px)]">
-        <table class="min-w-full text-left text-sm">
+        <table class="min-w-full text-left text-sm relative border-collapse">
           <thead
-            class="sticky top-0 z-10 border-b-2 border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+            class="sticky top-0 z-10 border-b border-slate-200/60 bg-slate-50/80 text-xs font-semibold text-slate-500 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-400">
             <tr>
-              <th class="px-6 py-4 font-semibold min-w-[180px] max-w-[280px]">站点 / 域名</th>
-              <th class="hidden md:table-cell px-6 py-4 font-semibold w-24">引擎</th>
-              <th class="px-6 py-4 font-semibold w-32">可访问</th>
-              <th class="px-6 py-4 font-semibold w-32">开放注册</th>
-              <th class="px-6 py-4 font-semibold w-32">可用邀请</th>
-              <th class="hidden lg:table-cell px-6 py-4 font-semibold min-w-[160px]">最后检查</th>
-              <th class="px-6 py-4 font-semibold text-right">操作</th>
+              <th class="px-6 py-4 min-w-[180px] max-w-[280px]">站点 / 域名</th>
+              <th class="hidden md:table-cell px-6 py-4 w-24">引擎</th>
+              <th class="px-6 py-4 w-32">可访问</th>
+              <th class="px-6 py-4 w-32">开放注册</th>
+              <th class="px-6 py-4 w-32">可用邀请</th>
+              <th class="hidden lg:table-cell px-6 py-4 min-w-[160px]">最后检查</th>
+              <th class="px-6 py-4 text-right">操作</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
             <TransitionGroup name="list" appear>
               <tr v-for="(row, index) in sortedRows" :key="row.domain" :style="{ '--i': index }"
                 class="group table-row-hover transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
