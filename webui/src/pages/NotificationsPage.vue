@@ -5,6 +5,7 @@ import Badge from "../components/Badge.vue";
 import Toggle from "../components/Toggle.vue";
 import Card from "../components/Card.vue";
 import Button from "../components/Button.vue";
+import PageHeader from "../components/PageHeader.vue";
 import { api, type NotificationsResponse } from "../api";
 import { showToast } from "../toast";
 
@@ -135,18 +136,14 @@ onMounted(() => load());
 
 <template>
   <div class="space-y-5">
-    <Card>
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div class="text-base font-semibold">通知设置</div>
-          <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">敏感信息会存储在本服务的 SQLite；建议为 Web UI 配置 BasicAuth 或放到内网。</div>
-        </div>
+    <PageHeader title="通知设置" description="敏感信息会存储在本服务的 SQLite；建议为 Web UI 配置 BasicAuth 或放到内网。">
+      <template #actions>
         <div class="flex items-center gap-3">
           <Button :disabled="loading" :loading="loading" @click="reload">重新加载</Button>
           <Button variant="primary" :disabled="saving || !isDirty" :loading="saving" @click="save">保存</Button>
         </div>
-      </div>
-    </Card>
+      </template>
+    </PageHeader>
 
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <Card>

@@ -41,9 +41,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen">
+  <div class="min-h-screen relative overflow-x-hidden">
+    <div class="ui-aurora" aria-hidden="true"></div>
 
-    <header class="sticky top-0 z-50 w-full border-b border-slate-200/50 glass dark:border-slate-800/50">
+    <header class="sticky top-0 z-50 w-full border-b-2 border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       <div class="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
         <!-- Logo -->
         <RouterLink to="/" class="flex items-center gap-2 transition-opacity hover:opacity-80">
@@ -60,10 +61,10 @@ onMounted(async () => {
           <!-- Desktop Nav Links -->
           <nav class="hidden items-center gap-1 md:flex">
             <RouterLink v-for="item in nav" :key="item.to" :to="item.to"
-              class="group flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 active:scale-95 dark:text-slate-300 dark:hover:bg-slate-800/50 dark:hover:text-white"
+              class="group flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/50 dark:hover:text-white"
               active-class="bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
               <component :is="item.icon"
-                class="h-4 w-4 transition-transform group-hover:scale-110 group-active:scale-95" />
+                class="h-4 w-4 transition-transform group-hover:-translate-y-0.5" />
               {{ item.label }}
             </RouterLink>
           </nav>
@@ -74,7 +75,7 @@ onMounted(async () => {
           <!-- Global Actions (Auto-Dark, GitHub) -->
           <div class="flex items-center gap-2">
             <a href="https://github.com/goodnightzsj/pt-invite-watcher" target="_blank"
-              class="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-white transition-all">
+              class="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-slate-200 bg-white text-slate-700 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]">
               <Github class="h-5 w-5" />
             </a>
             <ThemeToggle />

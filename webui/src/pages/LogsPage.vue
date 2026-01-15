@@ -6,6 +6,8 @@ import Modal from "../components/Modal.vue";
 import Button from "../components/Button.vue";
 import EmptyState from "../components/EmptyState.vue";
 import Card from "../components/Card.vue";
+import PageHeader from "../components/PageHeader.vue";
+import FormSelect from "../components/FormSelect.vue";
 import { api, type LogItem } from "../api";
 import { showToast } from "../toast";
 
@@ -244,38 +246,40 @@ useWS("logs_append", (evt: any) => {
 
 <template>
   <div class="space-y-5">
-    <div
-      class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-sm shadow-slate-200/50 dark:border-slate-800/60 dark:bg-slate-900/50 dark:shadow-none">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div class="flex items-center gap-2">
-            <div class="h-2 w-2 rounded-full bg-brand-500 ring-2 ring-brand-100 dark:ring-brand-900"></div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">日志</h2>
-          </div>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">查看扫描、站点、通知、配置等关键事件</p>
-        </div>
+    <PageHeader title="日志" description="查看扫描、站点、通知、配置等关键事件">
+      <template #actions>
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div class="flex w-full gap-2 sm:w-auto">
-            <select v-model="category" class="ui-select w-full min-w-[110px] sm:w-auto" :disabled="loading"
-              @change="load()">
-              <option value="all">全部分类</option>
-              <option value="scan">扫描相关</option>
-              <option value="site">站点相关</option>
-              <option value="notify">通知相关</option>
-              <option value="config">配置相关</option>
-              <option value="backup">导入导出</option>
-            </select>
-            <select v-model="domain" class="ui-select w-full min-w-[130px] sm:w-auto" :disabled="loading"
-              @change="load()">
-              <option value="">全部站点</option>
-              <option v-for="d in domainOptions" :key="d" :value="d">{{ d }}</option>
-            </select>
+            <div class="w-full min-w-[110px] sm:w-auto">
+              <FormSelect
+                v-model="category"
+                :disabled="loading"
+                :options="[
+                  { label: '全部分类', value: 'all' },
+                  { label: '扫描相关', value: 'scan' },
+                  { label: '站点相关', value: 'site' },
+                  { label: '通知相关', value: 'notify' },
+                  { label: '配置相关', value: 'config' },
+                  { label: '导入导出', value: 'backup' },
+                ]"
+                @update:modelValue="load()"
+              />
+            </div>
+            <div class="w-full min-w-[130px] sm:w-auto">
+              <FormSelect
+                v-model="domain"
+                :disabled="loading"
+                :options="[{ label: '全部站点', value: '' }, ...domainOptions.map((d) => ({ label: d, value: d }))]"
+                @update:modelValue="load()"
+              />
+            </div>
           </div>
           <input v-model="keyword" class="ui-input w-full sm:w-60" placeholder="搜索..." :disabled="loading"
             @keyup.enter="load({ toast: true })" />
+          <Button :disabled="loading" :loading="loading" @click="reload">刷新</Button>
         </div>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <EmptyState v-if="!hasItems && !loading" title="暂无日志" description="当前没有符合查询条件的日志记录" actionText="刷新"
       @action="reload" />
@@ -286,9 +290,9 @@ useWS("logs_append", (evt: any) => {
       </template>
     </EmptyState>
 
-    <div v-else
-      class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="overflow-y-auto overflow-x-auto h-[calc(100vh-250px)] relative scroll-smooth">
+    <Card v-else padding="none" :hoverable="false">
+      <div class="overflow-hidden rounded-2xl">
+        <div class="overflow-y-auto overflow-x-auto h-[calc(100vh-250px)] relative scroll-smooth">
         <!-- Mobile View -->
         <div class="md:hidden p-4 space-y-3">
           <div v-for="item in paginatedItems" :key="item.id"
@@ -323,7 +327,7 @@ useWS("logs_append", (evt: any) => {
         <!-- Desktop View -->
         <table class="hidden md:table min-w-full text-left text-sm relative border-collapse">
           <thead
-            class="sticky top-0 z-10 border-b border-slate-200/70 bg-slate-50 text-xs uppercase tracking-wider text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            class="sticky top-0 z-10 border-b-2 border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
             <tr>
               <th class="px-6 py-4 font-semibold">时间</th>
               <th class="px-6 py-4 font-semibold">分类</th>
@@ -370,29 +374,35 @@ useWS("logs_append", (evt: any) => {
       </div>
 
       <!-- Pagination -->
-      <div v-if="totalPages > 1 || items.length > 10"
-        class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
-        <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-          <span>每页</span>
-          <select v-model.number="pageSize" class="ui-select w-auto py-1 text-sm" @change="setPageSize(pageSize)">
-            <option v-for="opt in pageSizeOptions" :key="opt" :value="opt">{{ opt }}</option>
-          </select>
-          <span>条，第 {{ currentPage }}/{{ totalPages }} 页，共 {{ items.length }} 条</span>
-        </div>
+        <div v-if="totalPages > 1 || items.length > 10"
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+            <span>每页</span>
+            <div class="w-[88px]">
+              <FormSelect
+                v-model="pageSize"
+                dense
+                :options="pageSizeOptions.map((opt) => ({ label: String(opt), value: opt }))"
+                @update:modelValue="(v) => setPageSize(v as any)"
+              />
+            </div>
+            <span>条，第 {{ currentPage }}/{{ totalPages }} 页，共 {{ items.length }} 条</span>
+          </div>
         <div class="flex gap-2">
           <button
-            class="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            class="whitespace-nowrap rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]"
             :disabled="currentPage <= 1" @click="prevPage">
             上一页
           </button>
           <button
-            class="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            class="whitespace-nowrap rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]"
             :disabled="currentPage >= totalPages" @click="nextPage">
             下一页
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </Card>
 
     <Modal :open="showDetail" :title="detailTitle" @close="showDetail = false">
       <div v-if="!detailContent" class="text-sm text-slate-500 dark:text-slate-400">无详情</div>

@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import Badge from "../components/Badge.vue";
 import Card from "../components/Card.vue";
 import Button from "../components/Button.vue";
+import FormSelect from "../components/FormSelect.vue";
 import Toggle from "../components/Toggle.vue";
 import { api, type ConfigResponse } from "../api";
 import { showToast } from "../toast";
@@ -11,6 +12,42 @@ import { type AccentColor, getAccentColor, setAccentColor, PALETTES } from "../t
 
 const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
+
+const IMPORT_MODE_OPTIONS = [
+  { label: "merge", value: "merge", help: "合并，保留本地敏感字段" },
+  { label: "replace", value: "replace", help: "覆盖，按备份为准" },
+] as const;
+
+const COOKIE_SOURCE_OPTIONS = [
+  { label: "auto", value: "auto", help: "CookieCloud 优先，失败回退 MoviePilot" },
+  { label: "cookiecloud", value: "cookiecloud", help: "仅 CookieCloud" },
+  { label: "moviepilot", value: "moviepilot", help: "仅 MoviePilot" },
+] as const;
+
+const RETRY_INTERVAL_OPTIONS = [
+  { label: "1 分钟", value: 60 },
+  { label: "5 分钟", value: 300 },
+  { label: "10 分钟", value: 600 },
+  { label: "30 分钟", value: 1800 },
+  { label: "60 分钟", value: 3600 },
+  { label: "2 小时", value: 7200 },
+  { label: "6 小时", value: 21600 },
+  { label: "12 小时", value: 43200 },
+  { label: "24 小时", value: 86400 },
+] as const;
+
+const REQUEST_RETRY_DELAY_OPTIONS = [
+  { label: "30 秒", value: 30 },
+  { label: "60 秒", value: 60 },
+  { label: "5 分钟", value: 300 },
+  { label: "10 分钟", value: 600 },
+  { label: "30 分钟", value: 1800 },
+  { label: "60 分钟", value: 3600 },
+  { label: "2 小时", value: 7200 },
+  { label: "6 小时", value: 21600 },
+  { label: "12 小时", value: 43200 },
+  { label: "24 小时", value: 86400 },
+] as const;
 
 type Model = {
   moviepilot: { base_url: string; username: string; password: string; otp_password: string; sites_cache_ttl_seconds: number };
@@ -304,20 +341,22 @@ onMounted(() => load());
 <template>
   <div class="space-y-6">
     <!-- Header Actions -->
-    <div class="sticky top-[4rem] z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/90 max-sm:top-[7rem]">
-      <div>
-        <h2 class="text-base font-bold text-slate-900 dark:text-white">配置管理</h2>
-        <div class="mt-0.5 flex gap-2 text-xs">
-          <span v-if="isDirty" class="text-amber-600 dark:text-amber-400">● 有未保存修改</span>
-          <span class="text-slate-500 dark:text-slate-400">修改后需保存生效</span>
+    <Card padding="sm" :hoverable="false" class="sticky top-[4rem] z-20 max-sm:top-[7rem]">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-base font-bold text-slate-900 dark:text-white">配置管理</h2>
+          <div class="mt-0.5 flex gap-2 text-xs">
+            <span v-if="isDirty" class="text-amber-600 dark:text-amber-400">● 有未保存修改</span>
+            <span class="text-slate-600 dark:text-slate-400">修改后需保存生效</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button :disabled="loading" @click="reload">重载</Button>
+          <Button variant="primary" :disabled="saving || !isDirty" @click="save">保存</Button>
+          <Button variant="danger" title="重置 webui 配置" @click="resetAll">重置</Button>
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        <Button :disabled="loading" @click="reload">重载</Button>
-        <Button variant="primary" :disabled="saving || !isDirty" @click="save">保存</Button>
-        <Button variant="danger" title="重置 webui 配置" @click="resetAll">重置</Button>
-      </div>
-    </div>
+    </Card>
 
     <Card title="配置备份与恢复">
       <div class="mb-4 text-sm text-slate-500 dark:text-slate-400">
@@ -347,10 +386,9 @@ onMounted(() => load());
           <div>
             <label class="block text-sm font-medium">导入模式</label>
             <div class="mt-2 flex gap-2">
-              <select v-model="importMode" class="ui-select flex-1">
-                <option value="merge">merge（合并，保留本地敏感字段）</option>
-                <option value="replace">replace（覆盖，按备份为准）</option>
-              </select>
+              <div class="flex-1">
+                <FormSelect v-model="importMode" :options="IMPORT_MODE_OPTIONS" :disabled="backupBusy" />
+              </div>
               <Button :disabled="backupBusy || !importFile" @click="importBackup">导入</Button>
             </div>
           </div>
@@ -438,14 +476,7 @@ onMounted(() => load());
         </div>
 
         <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium">Cookie 来源</label>
-            <select v-model="model.cookie.source" class="mt-1 ui-select">
-              <option value="auto">auto（CookieCloud 优先，失败回退 MoviePilot）</option>
-              <option value="cookiecloud">cookiecloud（仅 CookieCloud）</option>
-              <option value="moviepilot">moviepilot（仅 MoviePilot）</option>
-            </select>
-          </div>
+          <FormSelect v-model="model.cookie.source" label="Cookie 来源" :options="COOKIE_SOURCE_OPTIONS" />
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
             <div class="mb-3 text-sm font-semibold">CookieCloud</div>
             <div class="space-y-3">
@@ -494,37 +525,18 @@ onMounted(() => load());
           <input v-model.number="model.scan.interval_seconds" type="number" min="30" max="86400" class="mt-1 ui-input" />
         </div>
         <div>
-          <label class="block text-sm font-medium">依赖重试间隔（MoviePilot / CookieCloud）</label>
-          <select v-model.number="model.connectivity.retry_interval_seconds" class="mt-1 ui-select">
-            <option :value="60">1 分钟</option>
-            <option :value="300">5 分钟</option>
-            <option :value="600">10 分钟</option>
-            <option :value="1800">30 分钟</option>
-            <option :value="3600">60 分钟</option>
-            <option :value="7200">2 小时</option>
-            <option :value="21600">6 小时</option>
-            <option :value="43200">12 小时</option>
-            <option :value="86400">24 小时</option>
-          </select>
-          <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            依赖连接失败时会优先使用缓存，并按此间隔重新尝试恢复连接。
-          </div>
+          <FormSelect v-model="model.connectivity.retry_interval_seconds" label="依赖重试间隔（MoviePilot / CookieCloud）" :options="RETRY_INTERVAL_OPTIONS">
+            <template #help>
+              <div class="mt-1 text-xs text-slate-600 dark:text-slate-400">依赖连接失败时会优先使用缓存，并按此间隔重新尝试恢复连接。</div>
+            </template>
+          </FormSelect>
         </div>
         <div>
-          <label class="block text-sm font-medium">网络请求失败重试延迟（站点探测 / 通知）</label>
-          <select v-model.number="model.connectivity.request_retry_delay_seconds" class="mt-1 ui-select">
-            <option :value="30">30 秒</option>
-            <option :value="60">60 秒</option>
-            <option :value="300">5 分钟</option>
-            <option :value="600">10 分钟</option>
-            <option :value="1800">30 分钟</option>
-            <option :value="3600">60 分钟</option>
-            <option :value="7200">2 小时</option>
-            <option :value="21600">6 小时</option>
-            <option :value="43200">12 小时</option>
-            <option :value="86400">24 小时</option>
-          </select>
-          <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">遇到网络异常/5xx/429/408 时会按此间隔重试（最多 3 次）。</div>
+          <FormSelect v-model="model.connectivity.request_retry_delay_seconds" label="网络请求失败重试延迟（站点探测 / 通知）" :options="REQUEST_RETRY_DELAY_OPTIONS">
+            <template #help>
+              <div class="mt-1 text-xs text-slate-600 dark:text-slate-400">遇到网络异常/5xx/429/408 时会按此间隔重试（最多 3 次）。</div>
+            </template>
+          </FormSelect>
         </div>
         <div>
           <label class="block text-sm font-medium">超时（秒）</label>
@@ -555,7 +567,7 @@ onMounted(() => load());
             <button
               v-for="color in ['indigo', 'emerald', 'rose', 'amber', 'violet']"
               :key="color"
-              class="group relative flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 transition-transform active:scale-95 dark:border-slate-700"
+              class="group relative flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 transition-colors dark:border-slate-700"
               :class="{ 'ring-2 ring-slate-400 dark:ring-slate-500': accent === color }"
               :style="{ backgroundColor: `rgb(${PALETTES[color as AccentColor][500]})` }" 
               @click="updateAccent(color as any)"

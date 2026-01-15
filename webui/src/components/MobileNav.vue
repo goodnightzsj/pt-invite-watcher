@@ -18,12 +18,12 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <nav class="fixed bottom-0 z-40 flex w-full justify-around border-t border-slate-200/80 bg-white/80 px-2 py-2 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 dark:border-slate-800/80 dark:bg-slate-950/80 dark:supports-[backdrop-filter]:bg-slate-950/60 sm:hidden">
+  <nav class="fixed bottom-0 z-40 flex w-full justify-around border-t-2 border-slate-200 bg-white px-2 py-2 dark:border-slate-800 dark:bg-slate-950 sm:hidden">
     <RouterLink
       v-for="item in items"
       :key="item.to"
       :to="item.to"
-      class="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[10px] font-medium transition-colors active:scale-95"
+      class="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[10px] font-medium transition-transform active:translate-y-0.5"
       :class="
         isActive(item.to)
           ? 'text-brand-600 dark:text-brand-400'

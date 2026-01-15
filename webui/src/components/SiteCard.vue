@@ -39,37 +39,38 @@ const inviteState = computed(() => {
 
 <template>
   <div
-    class="relative overflow-hidden rounded-xl bg-white p-4 shadow-sm transition-all active:scale-[0.98] dark:bg-slate-900/50 glass hover:shadow-md hover:ring-2 hover:ring-brand-500/20"
-    @click="emit('click')">
-    <div class="flex items-start justify-between">
-      <!-- Left: Icon & Name -->
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10">
-          <SiteIcon :url="site.url" :name="site.name || site.domain" />
+    class="group relative overflow-hidden rounded-2xl border-2 border-slate-200 bg-white shadow-[6px_6px_0_0_rgba(15,23,42,0.08)] transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[8px_8px_0_0_rgba(15,23,42,0.10)] active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:shadow-[6px_6px_0_0_rgba(0,0,0,0.35)] dark:hover:shadow-[8px_8px_0_0_rgba(0,0,0,0.42)]"
+    @click="emit('click')"
+  >
+      <div class="flex items-start justify-between">
+        <!-- Left: Icon & Name -->
+        <div class="flex items-center gap-3">
+          <div class="h-10 w-10">
+            <SiteIcon :url="site.url" :name="site.name || site.domain" />
+          </div>
+          <div>
+            <div class="font-semibold text-slate-900 dark:text-slate-100">{{ site.name || site.domain }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">{{ site.domain }}</div>
+          </div>
         </div>
-        <div>
-          <div class="font-semibold text-slate-800 dark:text-slate-100">{{ site.name || site.domain }}</div>
-          <div class="text-xs text-slate-400">{{ site.domain }}</div>
-        </div>
+
+        <!-- Right: Action Arrow -->
+        <ChevronRight class="h-5 w-5 text-slate-300 dark:text-slate-600" />
       </div>
 
-      <!-- Right: Action Arrow -->
-      <ChevronRight class="h-5 w-5 text-slate-300 dark:text-slate-600" />
-    </div>
+      <!-- Middle: Status Badges -->
+      <div class="mt-4 flex flex-wrap gap-2">
+        <Badge :label="reachability.label" :tone="reachability.tone as any" />
+        <Badge :label="regState.label" :tone="regState.tone as any" />
+        <Badge :label="inviteState.label" :tone="inviteState.tone as any" />
+      </div>
 
-    <!-- Middle: Status Badges -->
-    <div class="mt-4 flex flex-wrap gap-2">
-      <Badge :label="reachability.label" :tone="reachability.tone as any" />
-      <Badge :label="regState.label" :tone="regState.tone as any" />
-      <Badge :label="inviteState.label" :tone="inviteState.tone as any" />
-    </div>
-
-    <!-- Footer: Time -->
-    <div
-      class="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-400 dark:border-slate-800">
-      <div>{{ site.engine }}</div>
-      <div>{{ formatRelativeTime(site.last_checked_at) }} 更新</div>
-    </div>
-
+      <!-- Footer: Time -->
+      <div
+        class="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-400"
+      >
+        <div>{{ site.engine }}</div>
+        <div>{{ formatRelativeTime(site.last_checked_at) }} 更新</div>
+      </div>
   </div>
 </template>

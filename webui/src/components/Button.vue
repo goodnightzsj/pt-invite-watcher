@@ -16,11 +16,11 @@ const props = withDefaults(
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    "bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-500/20 hover:translate-y-[-1px] hover:shadow-brand-500/30 dark:shadow-none",
+    "border-2 border-slate-900 bg-brand-500 text-white shadow-[3px_3px_0_0_rgba(15,23,42,0.20)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-100/40 dark:shadow-[3px_3px_0_0_rgba(0,0,0,0.35)]",
   secondary:
-    "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white",
+    "border-2 border-slate-200 bg-white text-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[3px_3px_0_0_rgba(0,0,0,0.35)]",
   danger:
-    "border border-danger-200 bg-danger-50 text-danger-800 shadow-sm hover:bg-danger-100 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200 dark:hover:bg-danger-950/60",
+    "border-2 border-danger-200 bg-danger-50 text-danger-900 shadow-[3px_3px_0_0_rgba(244,63,94,0.12)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-100 dark:shadow-[3px_3px_0_0_rgba(0,0,0,0.35)]",
   ghost:
     "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200",
 };
@@ -28,7 +28,7 @@ const variantClasses: Record<Variant, string> = {
 
 <template>
   <button
-    class="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60"
+    class="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/25 dark:focus-visible:ring-brand-400/25"
     :class="variantClasses[props.variant]"
     :disabled="props.disabled || props.loading"
   >

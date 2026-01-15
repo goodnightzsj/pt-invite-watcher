@@ -2,12 +2,14 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import Badge from "../components/Badge.vue";
+import Card from "../components/Card.vue";
 import SiteIcon from "../components/SiteIcon.vue";
 import PageHeader from "../components/PageHeader.vue";
 import Button from "../components/Button.vue";
 import Modal from "../components/Modal.vue";
 import EmptyState from "../components/EmptyState.vue";
 import FormInput from "../components/FormInput.vue";
+import FormSelect from "../components/FormSelect.vue";
 import SiteCard from "../components/SiteCard.vue";
 import { api, type SiteConfigItem, type SiteTemplate } from "../api";
 import { showToast } from "../toast";
@@ -282,8 +284,7 @@ onMounted(() => load());
     <template v-else>
       <!-- Mobile Card View -->
       <div class="space-y-4 sm:hidden">
-        <div v-for="(site, i) in items" :key="site.name"
-          class="relative overflow-hidden rounded-xl bg-white p-4 shadow-sm transition-all active:scale-[0.98] dark:bg-slate-900/50 glass border border-slate-100 dark:border-slate-800">
+        <Card v-for="(site, i) in items" :key="site.domain" padding="sm" class="relative overflow-hidden">
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-3">
               <div class="h-10 w-10">
@@ -305,41 +306,41 @@ onMounted(() => load());
             </div>
           </div>
 
-          <div class="mt-3 flex items-center justify-end gap-2 border-t border-slate-50 pt-3 dark:border-slate-800/50">
+          <div class="mt-3 flex items-center justify-end gap-2 border-t border-slate-200/40 pt-3 dark:border-slate-800/50">
             <Button v-if="site.source === 'manual' || site.has_local_config" variant="danger" size="sm"
               @click="remove(site)">删除</Button>
             <Button size="sm" @click="openEdit(site)">编辑</Button>
           </div>
-        </div>
+        </Card>
       </div>
 
       <!-- Desktop Table View -->
-      <div
-        class="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:block">
-        <div
-          class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-          共 {{ items.length }} 个站点（MoviePilot + 手动/覆盖）
-        </div>
+      <Card class="hidden sm:block" padding="none" :hoverable="false">
+        <div class="overflow-hidden rounded-2xl">
+          <div
+            class="border-b border-slate-100 px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            共 {{ items.length }} 个站点（MoviePilot + 手动/覆盖）
+          </div>
 
-        <div class="overflow-x-auto overflow-y-auto h-[calc(100vh-200px)] relative">
-          <table class="min-w-full text-left text-sm relative border-collapse">
-            <thead
-              class="sticky top-0 z-10 bg-slate-50 border-b border-slate-200/70 text-xs uppercase tracking-wider text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-              <tr>
-                <th class="px-6 py-4 font-semibold">站点</th>
-                <th class="px-6 py-4 font-semibold">域名</th>
-                <th class="px-6 py-4 font-semibold">来源</th>
-                <th class="px-6 py-4 font-semibold">模板</th>
-                <th class="px-6 py-4 font-semibold">Cookie</th>
-                <th class="px-6 py-4 font-semibold">注册页</th>
-                <th class="px-6 py-4 font-semibold">邀请页</th>
-                <th class="px-6 py-4 font-semibold text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
-              <TransitionGroup name="list" appear>
-                <tr v-for="(item, index) in items" :key="item.domain" :style="{ '--i': index }"
-                  class="table-row-hover group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
+          <div class="overflow-x-auto overflow-y-auto h-[calc(100vh-200px)] relative">
+            <table class="min-w-full text-left text-sm relative border-collapse">
+              <thead
+                class="sticky top-0 z-10 border-b-2 border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                <tr>
+                  <th class="px-6 py-4 font-semibold">站点</th>
+                  <th class="px-6 py-4 font-semibold">域名</th>
+                  <th class="px-6 py-4 font-semibold">来源</th>
+                  <th class="px-6 py-4 font-semibold">模板</th>
+                  <th class="px-6 py-4 font-semibold">Cookie</th>
+                  <th class="px-6 py-4 font-semibold">注册页</th>
+                  <th class="px-6 py-4 font-semibold">邀请页</th>
+                  <th class="px-6 py-4 font-semibold text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
+                <TransitionGroup name="list" appear>
+                  <tr v-for="(item, index) in items" :key="item.domain" :style="{ '--i': index }"
+                    class="table-row-hover group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
                   <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
                     <div class="flex items-center gap-3">
                       <div class="h-8 w-8">
@@ -390,7 +391,7 @@ onMounted(() => load());
                   <td class="px-6 py-4 text-right">
                     <div class="flex items-center justify-end gap-2">
                       <button
-                        class="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        class="whitespace-nowrap rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]"
                         @click="openEdit(item)">
                         编辑
                       </button>
@@ -403,11 +404,12 @@ onMounted(() => load());
                     </div>
                   </td>
                 </tr>
-              </TransitionGroup>
-            </tbody>
-          </table>
+                </TransitionGroup>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </Card>
     </template>
 
     <Modal :open="modalOpen" :title="modalTitle" @close="modalOpen = false">
@@ -434,14 +436,15 @@ onMounted(() => load());
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <FormInput label="Name（站点名）" v-model="form.name" placeholder="可选" />
-          <div>
-            <label class="block text-sm font-medium">Template（模板）</label>
-            <select v-model="form.template" class="mt-1 ui-select">
-              <option value="nexusphp">nexusphp</option>
-              <option value="custom">custom（自定义注册/邀请页）</option>
-              <option value="mteam">m-team（馒头）</option>
-            </select>
-          </div>
+          <FormSelect
+            v-model="form.template"
+            label="Template（模板）"
+            :options="[
+              { label: 'nexusphp', value: 'nexusphp', help: '默认 signup.php / invite.php?id=<uid>' },
+              { label: 'custom', value: 'custom', help: '自定义注册/邀请页（从 URL 解析 path）' },
+              { label: 'm-team', value: 'mteam', help: '馒头（API 探测，可配置 Authorization / API Key）' },
+            ]"
+          />
         </div>
 
         <div v-if="isCustom"

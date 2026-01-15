@@ -17,12 +17,13 @@
   --color-brand-900: 49 46 129;
   --color-brand-950: 30 27 75;
   /* Glassmorphism utilities */
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(226, 232, 240, 0.6);
-  --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  /* Tuned for Bento/Aurora surfaces (higher opacity, less "fog") */
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(226, 232, 240, 0.72);
+  --glass-shadow: 0 10px 30px -18px rgba(15, 23, 42, 0.25);
 
-  --glass-bg-dark: rgba(15, 23, 42, 0.7);
-  --glass-border-dark: rgba(30, 41, 59, 0.6);
+  --glass-bg-dark: rgba(15, 23, 42, 0.62);
+  --glass-border-dark: rgba(51, 65, 85, 0.7);
 
   /* Semantic Colors: Success (Emerald) */
   --color-success-50: 236 253 245;
@@ -66,14 +67,16 @@
 
 .glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
 }
 
 .dark .glass {
   background: var(--glass-bg-dark);
   border: 1px solid var(--glass-border-dark);
+  box-shadow: none;
 }
 
 html {
@@ -84,6 +87,17 @@ html {
 
 html.dark {
   color-scheme: dark;
+}
+
+/* Selection uses current brand palette */
+::selection {
+  background: rgb(var(--color-brand-500) / 0.22);
+  color: rgb(15 23 42);
+}
+
+.dark ::selection {
+  background: rgb(var(--color-brand-500) / 0.22);
+  color: rgb(248 250 252);
 }
 
 ::-webkit-scrollbar {
@@ -101,21 +115,92 @@ html.dark {
 
 @layer components {
   .ui-input {
-    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-brand-500 dark:focus:ring-brand-500/10;
+    @apply w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-slate-900 placeholder:text-slate-400 transition-[transform,box-shadow,border-color] duration-150 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500;
+    box-shadow: 4px 4px 0 rgba(15, 23, 42, 0.08);
   }
 
   .ui-select {
-    @apply w-full rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-brand-500 dark:focus:ring-brand-500/10;
+    @apply w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-slate-900 transition-[transform,box-shadow,border-color] duration-150 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100;
+    box-shadow: 4px 4px 0 rgba(15, 23, 42, 0.08);
+  }
+
+  .ui-input:focus-visible,
+  .ui-select:focus-visible {
+    border-color: rgb(var(--color-brand-500));
+    box-shadow:
+      4px 4px 0 rgba(15, 23, 42, 0.08),
+      0 0 0 4px rgb(var(--color-brand-500) / 0.18);
+  }
+
+  .dark .ui-input,
+  .dark .ui-select {
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  .dark .ui-input:focus-visible,
+  .dark .ui-select:focus-visible {
+    border-color: rgb(var(--color-brand-400));
+    box-shadow:
+      4px 4px 0 rgba(0, 0, 0, 0.35),
+      0 0 0 4px rgb(var(--color-brand-400) / 0.25);
+  }
+
+  .ui-input:disabled,
+  .ui-select:disabled {
+    @apply cursor-not-allowed opacity-60;
+    box-shadow: none;
   }
 }
 
-/* Global button click feedback */
-button:not(:disabled):active {
-  transform: scale(0.97);
-}
+@layer utilities {
+  /* App-level aurora background (Bento style). */
+  .ui-aurora {
+    position: fixed;
+    inset: 0;
+    z-index: -10;
+    pointer-events: none;
+    overflow: hidden;
+  }
 
-button {
-  transition: transform 0.1s ease;
+  .ui-aurora::before {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    background:
+      radial-gradient(900px circle at 12% 6%, rgb(var(--color-brand-200) / 0.48), transparent 58%),
+      radial-gradient(900px circle at 88% 8%, rgba(56, 189, 248, 0.18), transparent 60%),
+      radial-gradient(900px circle at 14% 96%, rgba(16, 185, 129, 0.14), transparent 60%);
+    filter: saturate(1.15);
+    transform: translateZ(0);
+  }
+
+  .dark .ui-aurora::before {
+    background:
+      radial-gradient(900px circle at 12% 0%, rgb(var(--color-brand-800) / 0.28), transparent 62%),
+      radial-gradient(900px circle at 88% 10%, rgba(56, 189, 248, 0.10), transparent 62%),
+      radial-gradient(1000px circle at 18% 96%, rgba(16, 185, 129, 0.08), transparent 62%);
+    filter: saturate(1.05);
+  }
+
+  /* Subtle bento grid overlay (very low contrast). */
+  .ui-aurora::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(15, 23, 42, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+    background-size: 72px 72px;
+    opacity: 0.35;
+    mask-image: radial-gradient(circle at 50% 12%, black 0%, transparent 70%);
+  }
+
+  .dark .ui-aurora::after {
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+    opacity: 0.22;
+  }
 }
 
 /* Firefox scrollbar */

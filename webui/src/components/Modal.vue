@@ -26,7 +26,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
     <transition name="modal-backdrop">
       <div
         v-if="props.open"
-        class="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+        class="fixed inset-0 z-50 bg-black/55"
         @click="emit('close')"
         aria-label="Close modal"
       />
@@ -37,12 +37,12 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
         class="fixed inset-0 z-50 flex items-center justify-center px-4 pointer-events-none"
       >
         <div
-          class="pointer-events-auto relative w-full max-w-2xl overflow-hidden rounded-2xl glass border-slate-200 bg-white/80 shadow-2xl dark:border-slate-800 dark:bg-slate-900/80 sm:rounded-2xl max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:max-h-[85vh]"
+          class="pointer-events-auto relative w-full max-w-2xl overflow-hidden rounded-2xl border-2 border-slate-200 bg-white shadow-[12px_12px_0_0_rgba(15,23,42,0.10)] dark:border-slate-800 dark:bg-slate-950 dark:shadow-[12px_12px_0_0_rgba(0,0,0,0.45)] max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:max-h-[85vh]"
         >
-          <div class="flex items-center justify-between border-b border-slate-200/50 px-5 py-4 dark:border-slate-700/50">
+          <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
             <div class="text-base font-semibold text-slate-900 dark:text-slate-100">{{ props.title }}</div>
             <button
-              class="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+              class="rounded-xl border-2 border-slate-200 bg-white px-2 py-1.5 text-slate-600 shadow-[3px_3px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:shadow-[3px_3px_0_0_rgba(0,0,0,0.35)]"
               @click="emit('close')"
               title="Close (Esc)"
             >
@@ -83,4 +83,3 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   transform: scale(0.95);
 }
 </style>
-

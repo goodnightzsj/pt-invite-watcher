@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Globe, UserPlus, Ticket, AlertTriangle, RefreshCw, AlertCircle, Loader2 } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
+import Card from "../components/Card.vue";
 import Button from "../components/Button.vue";
 import PageHeader from "../components/PageHeader.vue";
 import Modal from "../components/Modal.vue";
@@ -293,36 +294,32 @@ const stats = computed(() => {
 
     <!-- Stat Grid -->
     <div v-if="hasRows || loading" class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <div
-        class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+      <Card :hoverable="false" class="relative overflow-hidden">
         <div class="text-sm font-medium text-slate-500 dark:text-slate-400">总站点</div>
         <div class="relative z-10 mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ stats.total }}</div>
         <Globe
           class="absolute -bottom-3 -right-3 h-16 w-16 text-slate-400 opacity-10 dark:text-slate-200 dark:opacity-10" />
-      </div>
-      <div
-        class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+      </Card>
+      <Card :hoverable="false" class="relative overflow-hidden">
         <div class="text-sm font-medium text-slate-500 dark:text-slate-400">开放注册</div>
         <div class="relative z-10 mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">{{ stats.openReg }}
         </div>
         <UserPlus
           class="absolute -bottom-3 -right-3 h-16 w-16 text-emerald-500 opacity-10 dark:text-emerald-400 dark:opacity-10" />
-      </div>
-      <div
-        class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+      </Card>
+      <Card :hoverable="false" class="relative overflow-hidden">
         <div class="text-sm font-medium text-slate-500 dark:text-slate-400">开放邀请</div>
         <div class="relative z-10 mt-2 text-3xl font-bold text-blue-600 dark:text-blue-400">{{ stats.openInvite }}</div>
         <Ticket
           class="absolute -bottom-3 -right-3 h-16 w-16 text-blue-500 opacity-10 dark:text-blue-400 dark:opacity-10" />
-      </div>
-      <div
-        class="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/50">
+      </Card>
+      <Card :hoverable="false" class="relative overflow-hidden">
         <div class="text-sm font-medium text-slate-500 dark:text-slate-400">异常站点</div>
         <div class="relative z-10 mt-2 text-3xl font-bold text-rose-600 dark:text-rose-400">{{ stats.unreachable }}
         </div>
         <AlertTriangle
           class="absolute -bottom-3 -right-3 h-16 w-16 text-rose-500 opacity-10 dark:text-rose-400 dark:opacity-10" />
-      </div>
+      </Card>
     </div>
 
     <div v-if="scanHint"
@@ -340,8 +337,7 @@ const stats = computed(() => {
       </div>
     </div>
 
-    <div v-if="scanStatus"
-      class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <Card v-if="scanStatus" :hoverable="false">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div class="text-base font-semibold">扫描状态</div>
@@ -360,17 +356,17 @@ const stats = computed(() => {
         class="mt-3 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900 dark:border-warning-900 dark:bg-warning-950/40 dark:text-warning-200">
         警告：{{ scanStatus.warning }}
       </div>
-    </div>
+    </Card>
 
     <EmptyState v-if="!loading && !hasRows" title="暂无扫描数据" description="请先在“站点管理”配置或导入站点，然后点击“立即扫描”。" actionText="去配置站点"
       @action="$router.push('/sites')" />
 
-    <div v-else
-      class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-        <span v-if="loading && !hasRows">加载中…</span>
-        <span v-else>共 {{ rows.length }} 个站点</span>
-      </div>
+    <Card v-else padding="none" :hoverable="false">
+      <div class="overflow-hidden rounded-2xl">
+        <div class="border-b border-slate-100 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <span v-if="loading && !hasRows">加载中…</span>
+          <span v-else>共 {{ rows.length }} 个站点</span>
+        </div>
 
       <!-- Scanning progress bar -->
       <div v-if="scanRunning || hasInflightScan" class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
@@ -394,7 +390,7 @@ const stats = computed(() => {
       <div v-if="hasRows || (!loading && !hasRows)" class="hidden md:block overflow-x-auto max-h-[calc(100vh-300px)]">
         <table class="min-w-full text-left text-sm">
           <thead
-            class="sticky top-0 z-10 bg-slate-50 border-b border-slate-200/70 text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
+            class="sticky top-0 z-10 border-b-2 border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
             <tr>
               <th class="px-6 py-4 font-semibold min-w-[180px] max-w-[280px]">站点 / 域名</th>
               <th class="hidden md:table-cell px-6 py-4 font-semibold w-24">引擎</th>
@@ -501,7 +497,8 @@ const stats = computed(() => {
           </tbody>
         </table>
       </div>
-    </div>
+      </div>
+    </Card>
 
     <!-- Modals -->
 
