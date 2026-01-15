@@ -5,6 +5,7 @@ import { Download, Upload, FileJson, ShieldAlert, UploadCloud, Info, RefreshCw }
 import Badge from "../components/Badge.vue";
 import Card from "../components/Card.vue";
 import Button from "../components/Button.vue";
+import PageHeader from "../components/PageHeader.vue";
 import FormSelect from "../components/FormSelect.vue";
 import Toggle from "../components/Toggle.vue";
 import { api, type ConfigResponse } from "../api";
@@ -341,23 +342,23 @@ onMounted(() => load());
 
 <template>
   <div class="space-y-6">
-    <!-- Header Actions -->
-    <Card padding="sm" :hoverable="false" class="sticky top-[4rem] z-20 max-sm:top-[7rem]">
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 class="text-base font-bold text-slate-900 dark:text-white">配置管理</h2>
-          <div class="mt-0.5 flex gap-2 text-xs">
-            <span v-if="isDirty" class="text-amber-600 dark:text-amber-400">● 有未保存修改</span>
-            <span class="text-slate-600 dark:text-slate-400">修改后需保存生效</span>
-          </div>
+    <PageHeader title="配置管理">
+      <template #description>
+        <div class="mt-2 flex items-center gap-3 text-base text-slate-500 dark:text-slate-400">
+          <span>修改后需保存生效</span>
+          <span v-if="isDirty" class="animate-pulse font-medium text-amber-600 dark:text-amber-400">
+            ● 有未保存修改
+          </span>
         </div>
+      </template>
+      <template #actions>
         <div class="flex items-center gap-2">
           <Button :disabled="loading" @click="reload">重载</Button>
-          <Button variant="primary" :disabled="saving || !isDirty" @click="save">保存</Button>
+          <Button variant="primary" :disabled="saving || !isDirty" :loading="saving" @click="save">保存</Button>
           <Button variant="danger" title="重置 webui 配置" @click="resetAll">重置</Button>
         </div>
-      </div>
-    </Card>
+      </template>
+    </PageHeader>
 
     <Card title="配置备份与恢复">
       <template #description>
@@ -374,10 +375,9 @@ onMounted(() => load());
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               class="group relative flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-50/30 hover:shadow-md active:translate-y-0 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-brand-700/50 dark:hover:bg-brand-900/20"
-              :disabled="backupBusy"
-              @click="exportBackup(false)"
-            >
-              <FileJson class="h-6 w-6 text-slate-400 transition-colors group-hover:text-brand-500 dark:text-slate-500" />
+              :disabled="backupBusy" @click="exportBackup(false)">
+              <FileJson
+                class="h-6 w-6 text-slate-400 transition-colors group-hover:text-brand-500 dark:text-slate-500" />
               <div class="text-center">
                 <div class="text-sm font-medium text-slate-700 dark:text-slate-200">仅配置 (脱敏)</div>
                 <div class="text-[10px] text-slate-400 dark:text-slate-500">不含密钥/密码</div>
@@ -385,10 +385,9 @@ onMounted(() => load());
             </button>
             <button
               class="group relative flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:-translate-y-0.5 hover:border-rose-200 hover:bg-rose-50/30 hover:shadow-md active:translate-y-0 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-rose-700/50 dark:hover:bg-rose-900/20"
-              :disabled="backupBusy"
-              @click="exportBackup(true)"
-            >
-              <ShieldAlert class="h-6 w-6 text-slate-400 transition-colors group-hover:text-rose-500 dark:text-slate-500" />
+              :disabled="backupBusy" @click="exportBackup(true)">
+              <ShieldAlert
+                class="h-6 w-6 text-slate-400 transition-colors group-hover:text-rose-500 dark:text-slate-500" />
               <div class="text-center">
                 <div class="text-sm font-medium text-slate-700 dark:text-slate-200">完整导出</div>
                 <div class="text-[10px] text-slate-400 dark:text-slate-500">含敏感密钥信息</div>
@@ -403,17 +402,12 @@ onMounted(() => load());
             <Upload class="w-4 h-4 text-brand-500" />
             <span>恢复配置</span>
           </div>
-          
-          <div 
+
+          <div
             class="relative rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-4 transition-all hover:border-brand-300 hover:bg-brand-50/20 dark:border-slate-800 dark:bg-slate-900/30 dark:hover:border-brand-700/50 dark:hover:bg-brand-900/10"
-            :class="{'border-brand-500 bg-brand-50/10': importFile}"
-          >
-            <input
-              type="file"
-              accept="application/json"
-              class="absolute inset-0 cursor-pointer opacity-0"
-              @change="onPickFile"
-            />
+            :class="{ 'border-brand-500 bg-brand-50/10': importFile }">
+            <input type="file" accept="application/json" class="absolute inset-0 cursor-pointer opacity-0"
+              @change="onPickFile" />
             <div class="flex flex-col items-center justify-center gap-2 py-2">
               <div v-if="!importFile" class="flex flex-col items-center gap-1 text-slate-400">
                 <UploadCloud class="h-8 w-8 mb-1 opacity-50" />
@@ -428,29 +422,30 @@ onMounted(() => load());
           </div>
 
           <div class="flex gap-2">
-             <div class="w-32">
-                <FormSelect v-model="importMode" :options="IMPORT_MODE_OPTIONS" :disabled="backupBusy" dense />
-             </div>
-             <Button class="flex-1" :disabled="backupBusy || !importFile" :loading="backupBusy" @click="importBackup" variant="primary">
-               导入恢复
-             </Button>
+            <div class="w-32">
+              <FormSelect v-model="importMode" :options="IMPORT_MODE_OPTIONS" :disabled="backupBusy" dense />
+            </div>
+            <Button class="flex-1" :disabled="backupBusy || !importFile" :loading="backupBusy" @click="importBackup"
+              variant="primary">
+              导入恢复
+            </Button>
           </div>
         </div>
       </div>
 
-      <div class="mt-6 flex items-start gap-2 rounded-lg bg-slate-100/50 p-3 text-xs text-slate-500 dark:bg-slate-900/30 dark:text-slate-400">
+      <div
+        class="mt-6 flex items-start gap-2 rounded-lg bg-slate-100/50 p-3 text-xs text-slate-500 dark:bg-slate-900/30 dark:text-slate-400">
         <Info class="h-4 w-4 shrink-0 mt-0.5 text-slate-400" />
         备份文件额外包含浏览器本地的“自动刷新”偏好；导入后将写入当前浏览器配置。
       </div>
 
-      <div
-        v-if="importScanPrompt"
-        class="mt-4 rounded-xl border border-brand-200 bg-brand-50/80 p-4 backdrop-blur-sm dark:border-brand-900/50 dark:bg-brand-950/30"
-      >
+      <div v-if="importScanPrompt"
+        class="mt-4 rounded-xl border border-brand-200 bg-brand-50/80 p-4 backdrop-blur-sm dark:border-brand-900/50 dark:bg-brand-950/30">
         <div class="flex items-center justify-between gap-4">
           <div class="flex items-center gap-3">
-            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-900/50 dark:text-brand-400">
-              <RefreshCw class="h-5 w-5" :class="{'animate-spin': scanNowRunning}" />
+            <div
+              class="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-900/50 dark:text-brand-400">
+              <RefreshCw class="h-5 w-5" :class="{ 'animate-spin': scanNowRunning }" />
             </div>
             <div>
               <div class="text-sm font-semibold text-brand-900 dark:text-brand-100">配置已恢复</div>
@@ -470,11 +465,8 @@ onMounted(() => load());
       <Card>
         <div class="mb-4 flex items-center justify-between">
           <div class="text-sm font-semibold">MoviePilot</div>
-          <Badge
-            v-if="view"
-            :label="view.moviepilot.password_configured ? 'password 已配置' : 'password 未配置'"
-            :tone="view.moviepilot.password_configured ? 'green' : 'amber'"
-          />
+          <Badge v-if="view" :label="view.moviepilot.password_configured ? 'password 已配置' : 'password 未配置'"
+            :tone="view.moviepilot.password_configured ? 'green' : 'amber'" />
         </div>
 
         <div class="space-y-4">
@@ -488,31 +480,18 @@ onMounted(() => load());
           </div>
           <div>
             <label class="block text-sm font-medium">密码（留空不修改）</label>
-            <input
-              v-model="model.moviepilot.password"
-              type="password"
-              class="mt-1 ui-input"
-              :placeholder="view?.moviepilot.password_configured ? '已配置' : '未配置'"
-            />
+            <input v-model="model.moviepilot.password" type="password" class="mt-1 ui-input"
+              :placeholder="view?.moviepilot.password_configured ? '已配置' : '未配置'" />
           </div>
           <div>
             <label class="block text-sm font-medium">OTP 密码（可选，留空不修改）</label>
-            <input
-              v-model="model.moviepilot.otp_password"
-              type="password"
-              class="mt-1 ui-input"
-              :placeholder="view?.moviepilot.otp_configured ? '已配置' : '未配置'"
-            />
+            <input v-model="model.moviepilot.otp_password" type="password" class="mt-1 ui-input"
+              :placeholder="view?.moviepilot.otp_configured ? '已配置' : '未配置'" />
           </div>
           <div>
             <label class="block text-sm font-medium">站点列表缓存 TTL（秒）</label>
-            <input
-              v-model.number="model.moviepilot.sites_cache_ttl_seconds"
-              type="number"
-              min="60"
-              max="604800"
-              class="mt-1 ui-input"
-            />
+            <input v-model.number="model.moviepilot.sites_cache_ttl_seconds" type="number" min="60" max="604800"
+              class="mt-1 ui-input" />
             <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">MoviePilot 拉取失败时，未过期缓存可用于继续扫描。</div>
           </div>
         </div>
@@ -531,7 +510,8 @@ onMounted(() => load());
             <div class="space-y-3">
               <div>
                 <label class="block text-sm font-medium">Base URL</label>
-                <input v-model="model.cookie.cookiecloud.base_url" class="mt-1 ui-input" placeholder="http://cookiecloud:8088" />
+                <input v-model="model.cookie.cookiecloud.base_url" class="mt-1 ui-input"
+                  placeholder="http://cookiecloud:8088" />
               </div>
               <div>
                 <label class="block text-sm font-medium">UUID</label>
@@ -539,22 +519,13 @@ onMounted(() => load());
               </div>
               <div>
                 <label class="block text-sm font-medium">密码（留空不修改）</label>
-                <input
-                  v-model="model.cookie.cookiecloud.password"
-                  type="password"
-                  class="mt-1 ui-input"
-                  :placeholder="view?.cookie.cookiecloud.password_configured ? '已配置' : '未配置'"
-                />
+                <input v-model="model.cookie.cookiecloud.password" type="password" class="mt-1 ui-input"
+                  :placeholder="view?.cookie.cookiecloud.password_configured ? '已配置' : '未配置'" />
               </div>
               <div>
                 <label class="block text-sm font-medium">刷新间隔（秒）</label>
-                <input
-                  v-model.number="model.cookie.cookiecloud.refresh_interval_seconds"
-                  type="number"
-                  min="30"
-                  max="86400"
-                  class="mt-1 ui-input"
-                />
+                <input v-model.number="model.cookie.cookiecloud.refresh_interval_seconds" type="number" min="30"
+                  max="86400" class="mt-1 ui-input" />
               </div>
             </div>
           </div>
@@ -571,17 +542,20 @@ onMounted(() => load());
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
           <label class="block text-sm font-medium">间隔（秒，保存后下一轮生效）</label>
-          <input v-model.number="model.scan.interval_seconds" type="number" min="30" max="86400" class="mt-1 ui-input" />
+          <input v-model.number="model.scan.interval_seconds" type="number" min="30" max="86400"
+            class="mt-1 ui-input" />
         </div>
         <div>
-          <FormSelect v-model="model.connectivity.retry_interval_seconds" label="依赖重试间隔（MoviePilot / CookieCloud）" :options="RETRY_INTERVAL_OPTIONS">
+          <FormSelect v-model="model.connectivity.retry_interval_seconds" label="依赖重试间隔（MoviePilot / CookieCloud）"
+            :options="RETRY_INTERVAL_OPTIONS">
             <template #help>
               <div class="mt-1 text-xs text-slate-600 dark:text-slate-400">依赖连接失败时会优先使用缓存，并按此间隔重新尝试恢复连接。</div>
             </template>
           </FormSelect>
         </div>
         <div>
-          <FormSelect v-model="model.connectivity.request_retry_delay_seconds" label="网络请求失败重试延迟（站点探测 / 通知）" :options="REQUEST_RETRY_DELAY_OPTIONS">
+          <FormSelect v-model="model.connectivity.request_retry_delay_seconds" label="网络请求失败重试延迟（站点探测 / 通知）"
+            :options="REQUEST_RETRY_DELAY_OPTIONS">
             <template #help>
               <div class="mt-1 text-xs text-slate-600 dark:text-slate-400">遇到网络异常/5xx/429/408 时会按此间隔重试（最多 3 次）。</div>
             </template>
@@ -613,15 +587,11 @@ onMounted(() => load());
         <div>
           <label class="block text-sm font-medium">主题强调色 (Accent Color)</label>
           <div class="mt-2 flex flex-wrap gap-2">
-            <button
-              v-for="color in ['indigo', 'emerald', 'rose', 'amber', 'violet']"
-              :key="color"
+            <button v-for="color in ['indigo', 'emerald', 'rose', 'amber', 'violet']" :key="color"
               class="group relative flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 transition-colors dark:border-slate-700"
               :class="{ 'ring-2 ring-slate-400 dark:ring-slate-500': accent === color }"
-              :style="{ backgroundColor: `rgb(${PALETTES[color as AccentColor][500]})` }" 
-              @click="updateAccent(color as any)"
-              :title="color"
-            >
+              :style="{ backgroundColor: `rgb(${PALETTES[color as AccentColor][500]})` }"
+              @click="updateAccent(color as any)" :title="color">
               <!-- We use the semantic classes for preview buttons to avoid circular dependency on brand var for non-active ones?
                    Actually we defined brand vars. But for 'emerald' button we want it green even if brand is indigo.
                    So we need hardcoded preview colors or style override.
@@ -633,7 +603,7 @@ onMounted(() => load());
           </div>
           <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">选择您喜欢的品牌色调，即时生效。</div>
         </div>
-        
+
         <div class="flex items-center gap-3">
           <Toggle v-model="model.ui.allow_state_reset" />
           <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>

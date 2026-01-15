@@ -363,140 +363,142 @@ const stats = computed(() => {
 
     <Card v-else padding="none" :hoverable="false">
       <div class="overflow-hidden rounded-2xl">
-        <div class="border-b border-slate-200/60 bg-slate-50/50 px-4 py-4 text-sm font-medium text-slate-500 backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-slate-400">
+        <div
+          class="border-b border-slate-200/60 bg-slate-50/50 px-4 py-4 text-sm font-medium text-slate-500 backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-slate-400">
           <span v-if="loading && !hasRows">加载中…</span>
           <span v-else>共 {{ rows.length }} 个站点</span>
         </div>
 
-      <!-- Scanning progress bar -->
-      <div v-if="scanRunning || hasInflightScan" class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-        <div class="h-full w-full animate-scan-progress bg-gradient-to-r from-brand-500 via-purple-500 to-brand-500" />
-      </div>
+        <!-- Scanning progress bar -->
+        <div v-if="scanRunning || hasInflightScan" class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+          <div
+            class="h-full w-full animate-scan-progress bg-gradient-to-r from-brand-500 via-purple-500 to-brand-500" />
+        </div>
 
-      <!-- Skeleton loading -->
-      <div v-if="loading && !hasRows" class="overflow-x-auto">
-        <TableSkeleton :rows="5" :cols="7" />
-      </div>
+        <!-- Skeleton loading -->
+        <div v-if="loading && !hasRows" class="overflow-x-auto">
+          <TableSkeleton :rows="5" :cols="7" />
+        </div>
 
-      <!-- Mobile: Card View -->
-      <div v-if="hasRows" class="md:hidden space-y-3 p-4">
-        <TransitionGroup name="list">
-          <SiteCard v-for="(row, index) in sortedRows" :key="row.domain" :site="row" :style="{ '--i': index }"
-            @click="selectedSite = row" />
-        </TransitionGroup>
-      </div>
+        <!-- Mobile: Card View -->
+        <div v-if="hasRows" class="md:hidden space-y-3 p-4">
+          <TransitionGroup name="list">
+            <SiteCard v-for="(row, index) in sortedRows" :key="row.domain" :site="row" :style="{ '--i': index }"
+              @click="selectedSite = row" />
+          </TransitionGroup>
+        </div>
 
-      <!-- Desktop: Table View -->
-      <div v-if="hasRows || (!loading && !hasRows)" class="hidden md:block overflow-x-auto max-h-[calc(100vh-300px)]">
-        <table class="min-w-full text-left text-sm relative border-collapse">
-          <thead
-            class="sticky top-0 z-10 border-b border-slate-200/60 bg-slate-50/80 text-xs font-semibold text-slate-500 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-400">
-            <tr>
-              <th class="px-6 py-4 min-w-[180px] max-w-[280px]">站点 / 域名</th>
-              <th class="hidden md:table-cell px-6 py-4 w-24">引擎</th>
-              <th class="px-6 py-4 w-32">可访问</th>
-              <th class="px-6 py-4 w-32">开放注册</th>
-              <th class="px-6 py-4 w-32">可用邀请</th>
-              <th class="hidden lg:table-cell px-6 py-4 min-w-[160px]">最后检查</th>
-              <th class="px-6 py-4 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
-            <TransitionGroup name="list" appear>
-              <tr v-for="(row, index) in sortedRows" :key="row.domain" :style="{ '--i': index }"
-                class="group table-row-hover transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
-                <!-- Site & Domain Combined -->
-                <td class="px-6 py-4">
-                  <div class="flex items-center gap-3">
-                    <div class="h-10 w-10">
-                      <SiteIcon :url="row.url" :name="row.name || '-'" />
-                    </div>
-                    <div class="flex flex-col">
-                      <span
-                        class="cursor-pointer font-semibold text-slate-700 transition-colors hover:text-brand-600 dark:text-slate-200 dark:hover:text-brand-400"
-                        @click="selectedSite = row">{{ row.name || "-" }}</span>
-                      <a class="mt-0.5 text-xs text-brand-500 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300"
-                        :href="row.url" target="_blank" rel="noreferrer" @click.stop>
-                        {{ row.domain }}
-                      </a>
-                    </div>
-                  </div>
-                </td>
-
-                <td class="hidden md:table-cell px-6 py-4">
-                  <Badge :label="row.engine || 'unknown'" tone="slate" class="rounded-md px-2 py-1 text-[10px]" />
-                </td>
-
-                <td class="px-6 py-4">
-                  <div class="flex items-center gap-2">
-                    <Badge class="shrink-0" :label="reachabilityBadge(row).label"
-                      :tone="reachabilityBadge(row).tone as any" />
-                    <span v-if="row.reachability_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400"
-                      :title="row.reachability_note">
-                      {{ row.reachability_note }}
-                    </span>
-                  </div>
-                </td>
-
-                <td class="px-6 py-4">
-                  <div class="flex items-center gap-2">
-                    <a v-if="row.registration_state === 'open' && row.registration_url" :href="row.registration_url"
-                      target="_blank" rel="noreferrer" class="shrink-0" :title="`打开注册页：${row.registration_url}`">
-                      <Badge :label="row.registration_state" :tone="toneForState(row.registration_state) as any" />
-                    </a>
-                    <Badge v-else class="shrink-0" :label="row.registration_state"
-                      :tone="toneForState(row.registration_state) as any" />
-                    <span v-if="row.registration_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400"
-                      :title="row.registration_note">
-                      {{ row.registration_note }}
-                    </span>
-                  </div>
-                </td>
-
-                <td class="px-6 py-4">
-                  <div class="flex items-center gap-2">
-                    <a v-if="row.invites_state === 'open' && row.invite_url" :href="row.invite_url" target="_blank"
-                      rel="noreferrer" class="shrink-0" :title="`打开邀请页：${row.invite_url}`">
-                      <Badge :label="row.invites_state" :tone="toneForState(row.invites_state) as any" />
-                    </a>
-                    <Badge v-else class="shrink-0" :label="row.invites_state"
-                      :tone="toneForState(row.invites_state) as any" />
-                    <span v-if="row.invites_state === 'open' && row.invites_display"
-                      class="line-clamp-1 max-w-[120px] text-xs text-slate-400">
-                      {{ row.invites_display }}
-                    </span>
-                  </div>
-                </td>
-
-                <td class="hidden lg:table-cell px-6 py-4">
-                  <div class="text-xs text-slate-500 dark:text-slate-400">
-                    <div>最新检查：{{ formatRelativeTime(row.last_checked_at) }}</div>
-                    <div class="mt-0.5 scale-90 origin-left opacity-60">上次变更时间：{{ formatChangedAt(row) }}</div>
-                  </div>
-                </td>
-
-                <td class="px-6 py-4 text-right">
-                  <div class="flex items-center justify-end gap-2">
-                    <button
-                      class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-brand-500/10 dark:hover:text-brand-300"
-                      :disabled="scanRunning || loading || scanningDomains.has(row.domain) || row.scanning"
-                      @click="runRowScan(row)" title="扫描此站">
-                      <Loader2 v-if="scanningDomains.has(row.domain) || row.scanning"
-                        class="h-4 w-4 animate-spin opacity-50" />
-                      <RefreshCw v-else class="h-4 w-4" />
-                    </button>
-                    <button v-if="row.errors && row.errors.length"
-                      class="rounded-lg p-2 text-danger-500 transition-colors hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-900/20"
-                      @click="openErrors(row)" :title="`查看错误 (${row.errors.length})`">
-                      <AlertCircle class="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
+        <!-- Desktop: Table View -->
+        <div v-if="hasRows || (!loading && !hasRows)" class="hidden md:block overflow-x-auto max-h-[calc(100vh-300px)]">
+          <table class="min-w-full text-left text-sm relative border-collapse">
+            <thead
+              class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-400">
+              <tr>
+                <th class="px-6 py-4 min-w-[180px] max-w-[280px]">站点 / 域名</th>
+                <th class="hidden md:table-cell px-6 py-4 w-24">引擎</th>
+                <th class="px-6 py-4 w-32">可访问</th>
+                <th class="px-6 py-4 w-32">开放注册</th>
+                <th class="px-6 py-4 w-32">可用邀请</th>
+                <th class="hidden lg:table-cell px-6 py-4 min-w-[160px]">最后检查</th>
+                <th class="px-6 py-4 text-right">操作</th>
               </tr>
-            </TransitionGroup>
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
+              <TransitionGroup name="list" appear>
+                <tr v-for="(row, index) in sortedRows" :key="row.domain" :style="{ '--i': index }"
+                  class="group table-row-hover transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
+                  <!-- Site & Domain Combined -->
+                  <td class="px-6 py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="h-10 w-10">
+                        <SiteIcon :url="row.url" :name="row.name || '-'" />
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="cursor-pointer font-semibold text-slate-700 transition-colors hover:text-brand-600 dark:text-slate-200 dark:hover:text-brand-400"
+                          @click="selectedSite = row">{{ row.name || "-" }}</span>
+                        <a class="mt-0.5 text-xs text-brand-500 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300"
+                          :href="row.url" target="_blank" rel="noreferrer" @click.stop>
+                          {{ row.domain }}
+                        </a>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td class="hidden md:table-cell px-6 py-4">
+                    <Badge :label="row.engine || 'unknown'" tone="slate" class="rounded-md px-2 py-1 text-[10px]" />
+                  </td>
+
+                  <td class="px-6 py-4">
+                    <div class="flex items-center gap-2">
+                      <Badge class="shrink-0" :label="reachabilityBadge(row).label"
+                        :tone="reachabilityBadge(row).tone as any" />
+                      <span v-if="row.reachability_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400"
+                        :title="row.reachability_note">
+                        {{ row.reachability_note }}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td class="px-6 py-4">
+                    <div class="flex items-center gap-2">
+                      <a v-if="row.registration_state === 'open' && row.registration_url" :href="row.registration_url"
+                        target="_blank" rel="noreferrer" class="shrink-0" :title="`打开注册页：${row.registration_url}`">
+                        <Badge :label="row.registration_state" :tone="toneForState(row.registration_state) as any" />
+                      </a>
+                      <Badge v-else class="shrink-0" :label="row.registration_state"
+                        :tone="toneForState(row.registration_state) as any" />
+                      <span v-if="row.registration_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400"
+                        :title="row.registration_note">
+                        {{ row.registration_note }}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td class="px-6 py-4">
+                    <div class="flex items-center gap-2">
+                      <a v-if="row.invites_state === 'open' && row.invite_url" :href="row.invite_url" target="_blank"
+                        rel="noreferrer" class="shrink-0" :title="`打开邀请页：${row.invite_url}`">
+                        <Badge :label="row.invites_state" :tone="toneForState(row.invites_state) as any" />
+                      </a>
+                      <Badge v-else class="shrink-0" :label="row.invites_state"
+                        :tone="toneForState(row.invites_state) as any" />
+                      <span v-if="row.invites_state === 'open' && row.invites_display"
+                        class="line-clamp-1 max-w-[120px] text-xs text-slate-400">
+                        {{ row.invites_display }}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td class="hidden lg:table-cell px-6 py-4">
+                    <div class="text-xs text-slate-500 dark:text-slate-400">
+                      <div>最新检查：{{ formatRelativeTime(row.last_checked_at) }}</div>
+                      <div class="mt-0.5 scale-90 origin-left opacity-60">上次变更时间：{{ formatChangedAt(row) }}</div>
+                    </div>
+                  </td>
+
+                  <td class="px-6 py-4 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                      <button
+                        class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-brand-500/10 dark:hover:text-brand-300"
+                        :disabled="scanRunning || loading || scanningDomains.has(row.domain) || row.scanning"
+                        @click="runRowScan(row)" title="扫描此站">
+                        <Loader2 v-if="scanningDomains.has(row.domain) || row.scanning"
+                          class="h-4 w-4 animate-spin opacity-50" />
+                        <RefreshCw v-else class="h-4 w-4" />
+                      </button>
+                      <button v-if="row.errors && row.errors.length"
+                        class="rounded-lg p-2 text-danger-500 transition-colors hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-900/20"
+                        @click="openErrors(row)" :title="`查看错误 (${row.errors.length})`">
+                        <AlertCircle class="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </TransitionGroup>
+            </tbody>
+          </table>
+        </div>
       </div>
     </Card>
 

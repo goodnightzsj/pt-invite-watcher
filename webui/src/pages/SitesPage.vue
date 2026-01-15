@@ -306,7 +306,8 @@ onMounted(() => load());
             </div>
           </div>
 
-          <div class="mt-3 flex items-center justify-end gap-2 border-t border-slate-200/40 pt-3 dark:border-slate-800/50">
+          <div
+            class="mt-3 flex items-center justify-end gap-2 border-t border-slate-200/40 pt-3 dark:border-slate-800/50">
             <Button v-if="site.source === 'manual' || site.has_local_config" variant="danger" size="sm"
               @click="remove(site)">删除</Button>
             <Button size="sm" @click="openEdit(site)">编辑</Button>
@@ -325,7 +326,7 @@ onMounted(() => load());
           <div class="overflow-x-auto overflow-y-auto h-[calc(100vh-200px)] relative">
             <table class="min-w-full text-left text-sm relative border-collapse">
               <thead
-                class="sticky top-0 z-10 border-b border-slate-200/60 bg-slate-50/80 text-xs font-semibold text-slate-500 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-400">
+                class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-400">
                 <tr>
                   <th class="px-6 py-4">站点</th>
                   <th class="px-6 py-4">域名</th>
@@ -341,69 +342,70 @@ onMounted(() => load());
                 <TransitionGroup name="list" appear>
                   <tr v-for="(item, index) in items" :key="item.domain" :style="{ '--i': index }"
                     class="table-row-hover group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
-                  <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
-                    <div class="flex items-center gap-3">
-                      <div class="h-8 w-8">
-                        <SiteIcon :url="item.url" :name="item.name || '-'" />
+                    <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
+                      <div class="flex items-center gap-3">
+                        <div class="h-8 w-8">
+                          <SiteIcon :url="item.url" :name="item.name || '-'" />
+                        </div>
+                        <div class="flex flex-col">
+                          <span>{{ item.name || "-" }}</span>
+                          <Badge v-if="item.reachability_state === 'down'" label="异常" tone="red" />
+                        </div>
                       </div>
-                      <div class="flex flex-col">
-                        <span>{{ item.name || "-" }}</span>
-                        <Badge v-if="item.reachability_state === 'down'" label="异常" tone="red" />
+                    </td>
+                    <td class="px-6 py-4">
+                      <a class="text-xs text-brand-500 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-500 hover:text-brand-600 dark:text-brand-400 dark:decoration-brand-900 dark:hover:decoration-brand-400 dark:hover:text-brand-300"
+                        :href="item.url" target="_blank" rel="noreferrer">
+                        {{ item.domain }}
+                      </a>
+                      <div v-if="item.has_local_config && item.source === 'moviepilot'"
+                        class="mt-1 inline-flex items-center rounded bg-warning-50 px-1.5 py-0.5 text-[10px] font-medium text-warning-700 ring-1 ring-inset ring-warning-600/20 dark:bg-warning-900/40 dark:text-warning-300">
+                        本地覆盖
                       </div>
-                    </div>
-                  </td>
-                  <td class="px-6 py-4">
-                    <a class="text-xs text-brand-500 underline decoration-brand-200 underline-offset-4 hover:decoration-brand-500 hover:text-brand-600 dark:text-brand-400 dark:decoration-brand-900 dark:hover:decoration-brand-400 dark:hover:text-brand-300"
-                      :href="item.url" target="_blank" rel="noreferrer">
-                      {{ item.domain }}
-                    </a>
-                    <div v-if="item.has_local_config && item.source === 'moviepilot'"
-                      class="mt-1 inline-flex items-center rounded bg-warning-50 px-1.5 py-0.5 text-[10px] font-medium text-warning-700 ring-1 ring-inset ring-warning-600/20 dark:bg-warning-900/40 dark:text-warning-300">
-                      本地覆盖
-                    </div>
-                  </td>
-                  <td class="px-6 py-4">
-                    <Badge :label="badgeForSource(item.source).label" :tone="badgeForSource(item.source).tone as any" />
-                  </td>
-                  <td class="px-6 py-4">
-                    <Badge :label="item.template" tone="slate" />
-                  </td>
-                  <td class="px-6 py-4">
-                    <Badge :label="item.cookie_configured ? 'configured' : 'none'"
-                      :tone="item.cookie_configured ? 'green' : 'slate'" />
-                  </td>
-                  <td class="px-6 py-4">
-                    <a v-if="item.registration_url"
-                      class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
-                      :href="item.registration_url" target="_blank" rel="noreferrer">
-                      {{ displayPath(item.registration_url) }}
-                    </a>
-                    <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
-                  </td>
-                  <td class="px-6 py-4">
-                    <a v-if="item.invite_url"
-                      class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
-                      :href="item.invite_url" target="_blank" rel="noreferrer">
-                      {{ displayInvitePath(item) }}
-                    </a>
-                    <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
-                  </td>
-                  <td class="px-6 py-4 text-right">
-                    <div class="flex items-center justify-end gap-2">
-                      <button
-                        class="whitespace-nowrap rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]"
-                        @click="openEdit(item)">
-                        编辑
-                      </button>
-                      <button v-if="item.source === 'manual' || item.has_local_config"
-                        class="whitespace-nowrap rounded-lg border border-danger-200 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 shadow-sm hover:bg-danger-100 hover:text-danger-900 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-400 dark:hover:bg-danger-900/50"
-                        @click="remove(item)">
-                        {{ item.source === "manual" ? "删除" : "清除覆盖" }}
-                      </button>
+                    </td>
+                    <td class="px-6 py-4">
+                      <Badge :label="badgeForSource(item.source).label"
+                        :tone="badgeForSource(item.source).tone as any" />
+                    </td>
+                    <td class="px-6 py-4">
+                      <Badge :label="item.template" tone="slate" />
+                    </td>
+                    <td class="px-6 py-4">
+                      <Badge :label="item.cookie_configured ? 'configured' : 'none'"
+                        :tone="item.cookie_configured ? 'green' : 'slate'" />
+                    </td>
+                    <td class="px-6 py-4">
+                      <a v-if="item.registration_url"
+                        class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
+                        :href="item.registration_url" target="_blank" rel="noreferrer">
+                        {{ displayPath(item.registration_url) }}
+                      </a>
                       <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                    <td class="px-6 py-4">
+                      <a v-if="item.invite_url"
+                        class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
+                        :href="item.invite_url" target="_blank" rel="noreferrer">
+                        {{ displayInvitePath(item) }}
+                      </a>
+                      <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                      <div class="flex items-center justify-end gap-2">
+                        <button
+                          class="whitespace-nowrap rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[2px_2px_0_0_rgba(0,0,0,0.35)]"
+                          @click="openEdit(item)">
+                          编辑
+                        </button>
+                        <button v-if="item.source === 'manual' || item.has_local_config"
+                          class="whitespace-nowrap rounded-lg border border-danger-200 bg-danger-50 px-3 py-1.5 text-xs font-medium text-danger-700 shadow-sm hover:bg-danger-100 hover:text-danger-900 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-400 dark:hover:bg-danger-900/50"
+                          @click="remove(item)">
+                          {{ item.source === "manual" ? "删除" : "清除覆盖" }}
+                        </button>
+                        <span v-else class="text-xs text-slate-300 dark:text-slate-600">-</span>
+                      </div>
+                    </td>
+                  </tr>
                 </TransitionGroup>
               </tbody>
             </table>
@@ -436,15 +438,11 @@ onMounted(() => load());
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <FormInput label="Name（站点名）" v-model="form.name" placeholder="可选" />
-          <FormSelect
-            v-model="form.template"
-            label="Template（模板）"
-            :options="[
-              { label: 'nexusphp', value: 'nexusphp', help: '默认 signup.php / invite.php?id=<uid>' },
-              { label: 'custom', value: 'custom', help: '自定义注册/邀请页（从 URL 解析 path）' },
-              { label: 'm-team', value: 'mteam', help: '馒头（API 探测，可配置 Authorization / API Key）' },
-            ]"
-          />
+          <FormSelect v-model="form.template" label="Template（模板）" :options="[
+            { label: 'nexusphp', value: 'nexusphp', help: '默认 signup.php / invite.php?id=<uid>' },
+            { label: 'custom', value: 'custom', help: '自定义注册/邀请页（从 URL 解析 path）' },
+            { label: 'm-team', value: 'mteam', help: '馒头（API 探测，可配置 Authorization / API Key）' },
+          ]" />
         </div>
 
         <div v-if="isCustom"

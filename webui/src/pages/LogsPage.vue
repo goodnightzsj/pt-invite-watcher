@@ -251,27 +251,19 @@ useWS("logs_append", (evt: any) => {
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div class="flex w-full gap-2 sm:w-auto">
             <div class="w-full min-w-[110px] sm:w-auto">
-              <FormSelect
-                v-model="category"
-                :disabled="loading"
-                :options="[
-                  { label: '全部分类', value: 'all' },
-                  { label: '扫描相关', value: 'scan' },
-                  { label: '站点相关', value: 'site' },
-                  { label: '通知相关', value: 'notify' },
-                  { label: '配置相关', value: 'config' },
-                  { label: '导入导出', value: 'backup' },
-                ]"
-                @update:modelValue="load()"
-              />
+              <FormSelect v-model="category" :disabled="loading" :options="[
+                { label: '全部分类', value: 'all' },
+                { label: '扫描相关', value: 'scan' },
+                { label: '站点相关', value: 'site' },
+                { label: '通知相关', value: 'notify' },
+                { label: '配置相关', value: 'config' },
+                { label: '导入导出', value: 'backup' },
+              ]" @update:modelValue="load()" />
             </div>
             <div class="w-full min-w-[130px] sm:w-auto">
-              <FormSelect
-                v-model="domain"
-                :disabled="loading"
+              <FormSelect v-model="domain" :disabled="loading"
                 :options="[{ label: '全部站点', value: '' }, ...domainOptions.map((d) => ({ label: d, value: d }))]"
-                @update:modelValue="load()"
-              />
+                @update:modelValue="load()" />
             </div>
           </div>
           <input v-model="keyword" class="ui-input w-full sm:w-60" placeholder="搜索..." :disabled="loading"
@@ -293,113 +285,111 @@ useWS("logs_append", (evt: any) => {
     <Card v-else padding="none" :hoverable="false">
       <div class="overflow-hidden rounded-2xl">
         <div class="overflow-y-auto overflow-x-auto h-[calc(100vh-250px)] relative scroll-smooth">
-        <!-- Mobile View -->
-        <div class="md:hidden p-4 space-y-3">
-          <div v-for="item in paginatedItems" :key="item.id"
-            class="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 active:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/30 dark:active:bg-slate-800"
-            @click="openDetail(item)">
-            <div class="flex items-start justify-between gap-2">
-              <div class="flex flex-col gap-1">
-                <div class="flex items-center gap-2">
-                  <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
-                  <span class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ formatTime(item.ts) }}</span>
-                </div>
-                <div class="text-sm font-medium text-slate-800 dark:text-slate-100 break-all line-clamp-2">
-                  {{ item.message }}
-                </div>
-              </div>
-            </div>
-
-            <div
-              class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
-              <span class="text-slate-500">{{ getLocalizedAction(item.action) }}</span>
-              <div class="h-3 w-px bg-slate-200 dark:bg-slate-700"></div>
-              <span v-if="domainLabel(item) !== '-'" class="text-slate-600 dark:text-slate-300">{{ domainLabel(item)
-                }}</span>
-              <span v-if="pageLabel(item)"
-                class="rounded bg-slate-200/50 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-400">{{
-                  pageLabel(item) }}</span>
-              <Badge :label="item.category" :tone="toneForCategory(item.category) as any" class="ml-auto" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Desktop View -->
-        <table class="hidden md:table min-w-full text-left text-sm relative border-collapse">
-          <thead
-            class="sticky top-0 z-10 border-b border-slate-200/60 bg-slate-50/80 text-xs font-semibold text-slate-500 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-400">
-            <tr>
-              <th class="px-6 py-4">时间</th>
-              <th class="px-6 py-4">分类</th>
-              <th class="px-6 py-4">级别</th>
-              <th class="px-6 py-4">站点 / 页面</th>
-              <th class="px-6 py-4">内容</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
-            <TransitionGroup name="list">
-              <tr v-for="item in paginatedItems" :key="item.id"
-                class="table-row-hover group cursor-pointer transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30"
-                @click="openDetail(item)" :title="item.detail ? '点击查看详情' : ''">
-                <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-400 font-mono">{{ formatDateTime(item.ts) }}
-                </td>
-                <td class="px-6 py-4">
-                  <Badge :label="item.category" :tone="toneForCategory(item.category) as any" />
-                </td>
-                <td class="px-6 py-4">
-                  <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
-                </td>
-                <td class="px-6 py-4 text-xs text-slate-600 dark:text-slate-300">
-                  <div class="flex flex-col gap-1">
-                    <span v-if="domainLabel(item) !== '-'">{{ domainLabel(item) }}</span>
-                    <span v-if="pageLabel(item)"
-                      class="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400 w-fit">
-                      {{ pageLabel(item) }}
-                    </span>
-                    <span v-if="domainLabel(item) === '-' && !pageLabel(item)">-</span>
+          <!-- Mobile View -->
+          <div class="md:hidden p-4 space-y-3">
+            <div v-for="item in paginatedItems" :key="item.id"
+              class="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 active:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/30 dark:active:bg-slate-800"
+              @click="openDetail(item)">
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex flex-col gap-1">
+                  <div class="flex items-center gap-2">
+                    <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
+                    <span class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ formatTime(item.ts) }}</span>
                   </div>
-                </td>
-                <td class="px-6 py-4">
-                  <div class="text-sm font-medium text-slate-800 dark:text-slate-100">
+                  <div class="text-sm font-medium text-slate-800 dark:text-slate-100 break-all line-clamp-2">
                     {{ item.message }}
                   </div>
-                  <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    {{ item.action }}
-                  </div>
-                </td>
-              </tr>
-            </TransitionGroup>
-          </tbody>
-        </table>
-      </div>
+                </div>
+              </div>
 
-      <!-- Pagination -->
+              <div
+                class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
+                <span class="text-slate-500">{{ getLocalizedAction(item.action) }}</span>
+                <div class="h-3 w-px bg-slate-200 dark:bg-slate-700"></div>
+                <span v-if="domainLabel(item) !== '-'" class="text-slate-600 dark:text-slate-300">{{ domainLabel(item)
+                  }}</span>
+                <span v-if="pageLabel(item)"
+                  class="rounded bg-slate-200/50 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-400">{{
+                    pageLabel(item) }}</span>
+                <Badge :label="item.category" :tone="toneForCategory(item.category) as any" class="ml-auto" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Desktop View -->
+          <table class="hidden md:table min-w-full text-left text-sm relative border-collapse">
+            <thead
+              class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-400">
+              <tr>
+                <th class="px-6 py-4">时间</th>
+                <th class="px-6 py-4">分类</th>
+                <th class="px-6 py-4">级别</th>
+                <th class="px-6 py-4">站点 / 页面</th>
+                <th class="px-6 py-4">内容</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
+              <TransitionGroup name="list">
+                <tr v-for="item in paginatedItems" :key="item.id"
+                  class="table-row-hover group cursor-pointer transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30"
+                  @click="openDetail(item)" :title="item.detail ? '点击查看详情' : ''">
+                  <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-400 font-mono">{{ formatDateTime(item.ts)
+                    }}
+                  </td>
+                  <td class="px-6 py-4">
+                    <Badge :label="item.category" :tone="toneForCategory(item.category) as any" />
+                  </td>
+                  <td class="px-6 py-4">
+                    <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
+                  </td>
+                  <td class="px-6 py-4 text-xs text-slate-600 dark:text-slate-300">
+                    <div class="flex flex-col gap-1">
+                      <span v-if="domainLabel(item) !== '-'">{{ domainLabel(item) }}</span>
+                      <span v-if="pageLabel(item)"
+                        class="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400 w-fit">
+                        {{ pageLabel(item) }}
+                      </span>
+                      <span v-if="domainLabel(item) === '-' && !pageLabel(item)">-</span>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="text-sm font-medium text-slate-800 dark:text-slate-100">
+                      {{ item.message }}
+                    </div>
+                    <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      {{ item.action }}
+                    </div>
+                  </td>
+                </tr>
+              </TransitionGroup>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
         <div v-if="totalPages > 1 || items.length > 10"
           class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
           <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
             <span>每页</span>
             <div class="w-[88px]">
-              <FormSelect
-                v-model="pageSize"
-                dense
+              <FormSelect v-model="pageSize" dense
                 :options="pageSizeOptions.map((opt) => ({ label: String(opt), value: opt }))"
-                @update:modelValue="(v) => setPageSize(v as any)"
-              />
+                @update:modelValue="(v) => setPageSize(v as any)" />
             </div>
             <span>条，第 {{ currentPage }}/{{ totalPages }} 页，共 {{ items.length }} 条</span>
           </div>
-        <div class="flex gap-2">
-          <button
-            class="flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-800"
-            :disabled="currentPage <= 1" @click="prevPage">
-            上一页
-          </button>
-          <button
-            class="flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-800"
-            :disabled="currentPage >= totalPages" @click="nextPage">
-            下一页
-          </button>
-        </div>
+          <div class="flex gap-2">
+            <button
+              class="flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-800"
+              :disabled="currentPage <= 1" @click="prevPage">
+              上一页
+            </button>
+            <button
+              class="flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-800"
+              :disabled="currentPage >= totalPages" @click="nextPage">
+              下一页
+            </button>
+          </div>
         </div>
       </div>
     </Card>
