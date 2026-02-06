@@ -1,9 +1,18 @@
 import unittest
 
-from pt_invite_watcher.utils.url import hosts_related, page_kind_from_url
+from pt_invite_watcher.utils.url import hosts_related, join_url, page_kind_from_url
 
 
 class UrlUtilsTest(unittest.TestCase):
+    def test_join_url(self) -> None:
+        self.assertEqual(join_url("https://example.com", "signup.php"), "https://example.com/signup.php")
+        self.assertEqual(join_url("https://example.com/", "signup.php"), "https://example.com/signup.php")
+        self.assertEqual(join_url("https://example.com", "/signup.php"), "https://example.com/signup.php")
+        self.assertEqual(join_url("https://example.com/base", "signup.php"), "https://example.com/base/signup.php")
+        self.assertEqual(join_url("https://example.com/base/", "signup.php"), "https://example.com/base/signup.php")
+        self.assertEqual(join_url("https://example.com/base/", "/signup.php"), "https://example.com/base/signup.php")
+        self.assertEqual(join_url("", "signup.php"), "/signup.php")
+
     def test_page_kind_from_url(self) -> None:
         self.assertIsNone(page_kind_from_url(""))
         self.assertEqual(page_kind_from_url("https://example.com/"), "home")
@@ -24,4 +33,3 @@ class UrlUtilsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
