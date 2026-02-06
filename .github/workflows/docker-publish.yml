@@ -24,8 +24,47 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Compile (bytecode)
+        run: python -m compileall -q pt_invite_watcher tests tools
+
       - name: Run unit tests
         run: python -m unittest discover -s tests
+
+      - name: Smoke test (check-once)
+        run: |
+          cat > /tmp/ptiw_smoke.yaml <<'YAML'
+          moviepilot:
+            base_url: ""
+            username: ""
+            password: ""
+            otp_password: ""
+
+          cookie:
+            source: "auto"
+            cookiecloud:
+              base_url: ""
+              uuid: ""
+              password: ""
+              refresh_interval_seconds: 300
+
+          scan:
+            interval_seconds: 600
+            timeout_seconds: 1
+            concurrency: 1
+            user_agent: ""
+            trust_env: false
+
+          db:
+            path: "/tmp/ptiw_smoke.db"
+
+          web:
+            host: "127.0.0.1"
+            port: 8080
+            basic_auth:
+              username: ""
+              password: ""
+          YAML
+          python -m pt_invite_watcher check-once --config /tmp/ptiw_smoke.yaml
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
