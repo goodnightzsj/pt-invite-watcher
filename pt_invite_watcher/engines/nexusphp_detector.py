@@ -2,7 +2,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional
-from urllib.parse import urljoin
 
 import httpx
 
@@ -31,6 +30,7 @@ from pt_invite_watcher.engines.nexusphp_parse import (
 from pt_invite_watcher.models import AspectResult, Evidence, Site
 from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS, request_with_retry
 from pt_invite_watcher.utils.parse import format_error_detail
+from pt_invite_watcher.utils.url import _join
 
 
 logger = logging.getLogger("pt_invite_watcher.nexusphp")
@@ -54,12 +54,6 @@ async def _get_with_retry(
         attempts=max(1, int(attempts or 0)),
         delay_seconds=max(0, int(delay_seconds or 0)),
     )
-
-
-def _join(base: str, path: str) -> str:
-    if not base.endswith("/"):
-        base += "/"
-    return urljoin(base, path.lstrip("/"))
 
 
 def _looks_like_login(resp: httpx.Response) -> bool:
