@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -95,6 +96,7 @@ class CookieManager:
 
         self._cached_at: Optional[datetime] = prefetched_at
         self._cached: Optional[list[dict[str, Any]]] = prefetched_cookies
+        self._cc_lock = asyncio.Lock()
 
     async def _ensure_cookiecloud(self) -> list[dict[str, Any]]:
         if not self._cc:
@@ -106,16 +108,27 @@ class CookieManager:
             if age < self._refresh_interval_seconds:
                 return self._cached
 
-        cookies = await self._cc.fetch_cookie_items()
-        self._cached = cookies
-        self._cached_at = now
-        return cookies
+        async with self._cc_lock:
+            now = datetime.now(timezone.utc)
+            if self._cached is not None and self._cached_at is not None:
+                age = (now - self._cached_at).total_seconds()
+                if age < self._refresh_interval_seconds:
+                    return self._cached
+
+            cookies = await self._cc.fetch_cookie_items()
+            self._cached = cookies
+            self._cached_at = now
+            return cookies
 
     async def cookie_header_for(self, site_url: str, fallback_cookie: Optional[str]) -> Optional[str]:
         source = self._source
         hostname = urlparse(site_url).hostname or ""
 
         if source in {"cookiecloud", "auto"}:
+            if self._cached is not None:
+                header = self._build_cookie_header(self._cached, hostname)
+                if header:
+                    return header
             if not self._cc:
                 if source == "cookiecloud":
                     return None

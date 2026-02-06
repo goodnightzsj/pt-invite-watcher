@@ -1,6 +1,8 @@
 import { onUnmounted } from "vue";
 
-export type WSEventType = "connected" | "ping" | "dashboard_update" | "logs_update" | "logs_append";
+import { WS_PING } from "./ws_events";
+import type { WSEventType } from "./ws_events";
+export type { WSEventType } from "./ws_events";
 
 export interface WSMessage {
     type: WSEventType;
@@ -33,7 +35,7 @@ function connect() {
     socket.onmessage = (event) => {
         try {
             const msg: WSMessage = JSON.parse(event.data);
-            if (msg.type === "ping") return; // Ignore pong/ping echo if any
+            if (msg.type === WS_PING) return; // Ignore pong/ping echo if any
 
             const callbacks = listeners.get(msg.type);
             if (callbacks) {

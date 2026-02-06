@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 
 import Badge from "../components/Badge.vue";
 import Modal from "../components/Modal.vue";
@@ -7,9 +7,10 @@ import Button from "../components/Button.vue";
 import EmptyState from "../components/EmptyState.vue";
 import Card from "../components/Card.vue";
 import PageHeader from "../components/PageHeader.vue";
-import FormSelect from "../components/FormSelect.vue";
-import { api, type LogItem } from "../api";
-import { showToast } from "../toast";
+	import FormSelect from "../components/FormSelect.vue";
+	import { api, type LogItem } from "../api";
+	import { showToast } from "../toast";
+	import { WS_LOGS_APPEND, WS_LOGS_UPDATE } from "../ws_events";
 
 const loading = ref(false);
 const items = ref<LogItem[]>([]);
@@ -54,10 +55,10 @@ function openDetail(item: LogItem) {
   try {
     if (item.detail) {
       const obj = typeof item.detail === 'string' ? JSON.parse(item.detail) : item.detail;
-      detailContent.value = JSON.stringify(obj, null, 2);
+      detailContent.value = JSON.stringify(obj, null, 2).trimStart();
     }
   } catch (e) {
-    detailContent.value = String(item.detail);
+    detailContent.value = String(item.detail || "").trimStart();
   }
   detailTitle.value = `详情 - ${getLocalizedAction(item.action)}`;
   showDetail.value = true;
@@ -117,7 +118,8 @@ function getLocalizedAction(action: string) {
 }
 
 // Throttle logs: Process one log every 500ms to create a stream/typewriter effect
-setInterval(() => {
+let streamTimer: number | undefined;
+streamTimer = window.setInterval(() => {
   if (pendingLogs.value.length > 0) {
     // Take the OLDEST pending log (FIFO from the pending queue)
     // pendingLogs.push adds to end. So pendingLogs[0] is the oldest.
@@ -212,21 +214,28 @@ onMounted(() => {
   load();
 });
 
-// WS real-time updates
-import { useWS } from "../ws";
-useWS("logs_update", () => {
-  // refreshing logic if needed, or just reload
-  // load(); // usually logs_update means "clear" or big change, maybe reload?
-  // Current logic was: load()
-  load();
+onUnmounted(() => {
+  if (streamTimer) {
+    window.clearInterval(streamTimer);
+    streamTimer = undefined;
+  }
 });
 
-useWS("logs_append", (evt: any) => {
-  if (!evt || !evt.id) return;
-  // Strict Filter check
-  const cat = category.value;
-  // If specific category selected, mismatched category -> skip
-  if (cat !== "all" && evt.category !== cat) return;
+	// WS real-time updates
+	import { useWS } from "../ws";
+	useWS(WS_LOGS_UPDATE, () => {
+	  // refreshing logic if needed, or just reload
+	  // load(); // usually logs_update means "clear" or big change, maybe reload?
+	  // Current logic was: load()
+	  load();
+	});
+
+	useWS(WS_LOGS_APPEND, (evt: any) => {
+	  if (!evt || !evt.id) return;
+	  // Strict Filter check
+	  const cat = category.value;
+	  // If specific category selected, mismatched category -> skip
+	  if (cat !== "all" && evt.category !== cat) return;
 
   const dom = domain.value;
   // If specific domain selected, mismatched domain -> skip (strict equality, normalized)
@@ -254,6 +263,7 @@ useWS("logs_append", (evt: any) => {
               <FormSelect v-model="category" :disabled="loading" :options="[
                 { label: '全部分类', value: 'all' },
                 { label: '扫描相关', value: 'scan' },
+                { label: '租约相关', value: 'lease' },
                 { label: '站点相关', value: 'site' },
                 { label: '通知相关', value: 'notify' },
                 { label: '配置相关', value: 'config' },
@@ -396,9 +406,11 @@ useWS("logs_append", (evt: any) => {
 
     <Modal :open="showDetail" :title="detailTitle" @close="showDetail = false">
       <div v-if="!detailContent" class="text-sm text-slate-500 dark:text-slate-400">无详情</div>
-      <pre v-else
-        class="whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-200">
-    {{ detailContent }}</pre>
+      <pre
+        v-else
+        v-text="detailContent"
+        class="whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 py-3 pr-3 pl-0 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-200"
+      ></pre>
     </Modal>
   </div>
 </template>

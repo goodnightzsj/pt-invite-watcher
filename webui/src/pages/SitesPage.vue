@@ -123,10 +123,10 @@ watch(
   }
 );
 
-async function load(opts: { toast?: boolean } = {}) {
+async function load(opts: { toast?: boolean; force?: boolean } = {}) {
   loading.value = true;
   try {
-    const data = await api.sitesList();
+    const data = await api.sitesList(opts.force ? { force: true } : {});
     items.value = data.items || [];
     moviepilotOk.value = !!data.moviepilot_ok;
     moviepilotError.value = data.moviepilot_error || "";
@@ -141,7 +141,7 @@ async function load(opts: { toast?: boolean } = {}) {
 async function reload() {
   if (loading.value) return;
   showToast("正在刷新列表…", "info", 1600);
-  await load({ toast: true });
+  await load({ toast: true, force: true });
 }
 
 function openAdd() {

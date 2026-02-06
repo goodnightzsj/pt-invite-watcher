@@ -20,8 +20,14 @@ services:
       PTIW_SCAN_INTERVAL_SECONDS: "600"
       PTIW_SCAN_TIMEOUT_SECONDS: "20"
       PTIW_SCAN_CONCURRENCY: "8"
+      # Optional: disable built-in scheduler (manual scan only)
+      # PTIW_DISABLE_SCHEDULER: "1"
+      # Optional: disable scheduler leader lock (multi-worker/shared-DB may duplicate scans)
+      # PTIW_DISABLE_LEADER_LOCK: "1"
       # Optional: protect Web UI with BasicAuth
       # PTIW_WEB_AUTH_USERNAME: "admin"
       # PTIW_WEB_AUTH_PASSWORD: "CHANGE_ME"
+      # Optional: bypass BasicAuth even if configured
+      # PTIW_DISABLE_AUTH: "1"
     volumes:
       - ../data:/data

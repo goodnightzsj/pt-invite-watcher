@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pt_invite_watcher.models import Site
+from pt_invite_watcher.utils.parse import safe_dict, safe_int, safe_list, safe_str
 
 
 MP_SITES_CACHE_KEY = "moviepilot_sites_cache"
@@ -14,36 +15,12 @@ MP_SITES_CACHE_DEFAULT_TTL_SECONDS = 24 * 3600
 MP_SITES_CACHE_MIN_TTL_SECONDS = 60
 MP_SITES_CACHE_MAX_TTL_SECONDS = 7 * 24 * 3600
 
-
-def _safe_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _safe_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _safe_str(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
 def _norm_base_url(value: Any) -> str:
-    return _safe_str(value).rstrip("/")
-
-
-def _safe_int(value: Any) -> Optional[int]:
-    if value is None or value == "":
-        return None
-    try:
-        return int(value)
-    except Exception:
-        return None
+    return safe_str(value).rstrip("/")
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
-    s = _safe_str(value)
+    s = safe_str(value)
     if not s:
         return None
     try:
@@ -84,29 +61,29 @@ def build_cache(base_url: str, sites: list[Site], fetched_at: Optional[datetime]
 
 
 def parse_cache(payload: Any) -> Optional[MoviePilotSitesCache]:
-    data = _safe_dict(payload)
+    data = safe_dict(payload)
     if int(data.get("version") or 0) != MP_SITES_CACHE_VERSION:
         return None
     fetched_at = _parse_dt(data.get("fetched_at"))
     if not fetched_at:
         return None
-    base_url = _safe_str(data.get("base_url"))
+    base_url = safe_str(data.get("base_url"))
 
     sites: list[Site] = []
-    for raw in _safe_list(data.get("sites")):
-        item = _safe_dict(raw)
-        domain = _safe_str(item.get("domain")).lower()
-        url = _safe_str(item.get("url"))
+    for raw in safe_list(data.get("sites")):
+        item = safe_dict(raw)
+        domain = safe_str(item.get("domain")).lower()
+        url = safe_str(item.get("url"))
         if not domain or not url:
             continue
         sites.append(
             Site(
-                id=_safe_int(item.get("id")),
-                name=_safe_str(item.get("name")) or domain,
+                id=safe_int(item.get("id")),
+                name=safe_str(item.get("name")) or domain,
                 domain=domain,
                 url=url,
-                ua=_safe_str(item.get("ua")) or None,
-                cookie=_safe_str(item.get("cookie")) or None,
+                ua=safe_str(item.get("ua")) or None,
+                cookie=safe_str(item.get("cookie")) or None,
                 cookie_override=None,
                 authorization=None,
                 did=None,

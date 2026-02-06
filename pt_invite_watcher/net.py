@@ -41,6 +41,8 @@ async def request_with_retry(
                     await asyncio.sleep(wait_seconds)
                 continue
             return resp, None, attempt + 1
+        except asyncio.CancelledError:
+            raise
         except httpx.RequestError as e:
             last_exc = e
             if attempt < used_attempts - 1:
@@ -53,4 +55,3 @@ async def request_with_retry(
             return None, e, attempt + 1
 
     return last_resp, last_exc, used_attempts
-

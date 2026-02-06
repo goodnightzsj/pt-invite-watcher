@@ -84,6 +84,7 @@ docker run -d \
    npm install
    npm run build
    ```
+   说明：后端实际提供的是 `pt_invite_watcher/webui_dist`（Vite build 产物）。如果你修改了 `webui/src`，需要重新执行 build，否则可能看到旧 UI 行为（后端启动时会尝试提示 build 可能过期）。
 
 ## 🛠️ 配置说明
 
@@ -95,8 +96,11 @@ docker run -d \
 | :--- | :--- | :--- |
 | `PTIW_DB_PATH` | SQLite 数据库路径 | `./data/ptiw.db` |
 | `PTIW_SCAN_INTERVAL_SECONDS` | 扫描间隔 (秒) | `600` |
+| `PTIW_DISABLE_SCHEDULER` | 禁用后台定时扫描（仅手动触发） | `0` |
+| `PTIW_DISABLE_LEADER_LOCK` | 禁用定时扫描 Leader 锁（多进程共享同一 DB 时可能重复扫描） | `0` |
 | `PTIW_WEB_AUTH_USERNAME` | Web UI 认证用户名 | (无) |
 | `PTIW_WEB_AUTH_PASSWORD` | Web UI 认证密码 | (无) |
+| `PTIW_DISABLE_AUTH` | 强制禁用 Web UI 认证（用于临时绕过 BasicAuth） | `0` |
 | `MP_BASE_URL` | MoviePilot 地址 | - |
 | `COOKIECLOUD_BASE_URL` | CookieCloud 地址 | - |
 

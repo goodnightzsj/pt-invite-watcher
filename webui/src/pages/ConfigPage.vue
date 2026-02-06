@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { Download, Upload, FileJson, ShieldAlert, UploadCloud, Info, RefreshCw } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
@@ -67,6 +67,11 @@ const importScanPrompt = ref(false);
 const view = ref<ConfigResponse | null>(null);
 const baselineJson = ref<string>("");
 const accent = ref<AccentColor>(getAccentColor());
+const clearFlags = reactive({
+  mp_password: false,
+  mp_otp_password: false,
+  cc_password: false,
+});
 
 function updateAccent(color: AccentColor) {
   accent.value = color;
@@ -80,6 +85,25 @@ const model = reactive<Model>({
   scan: { interval_seconds: 600, timeout_seconds: 20, concurrency: 8, user_agent: "", trust_env: false },
   ui: { allow_state_reset: true },
 });
+
+watch(
+  () => model.moviepilot.password,
+  (v) => {
+    if (String(v || "").trim()) clearFlags.mp_password = false;
+  }
+);
+watch(
+  () => model.moviepilot.otp_password,
+  (v) => {
+    if (String(v || "").trim()) clearFlags.mp_otp_password = false;
+  }
+);
+watch(
+  () => model.cookie.cookiecloud.password,
+  (v) => {
+    if (String(v || "").trim()) clearFlags.cc_password = false;
+  }
+);
 
 function _normStr(v: string) {
   return (v || "").trim();
@@ -123,7 +147,8 @@ function normalizedModelForCompare(m: Model) {
 const isDirty = computed(() => {
   if (!baselineJson.value) return false;
   const current = JSON.stringify(normalizedModelForCompare(model));
-  return current !== baselineJson.value;
+  if (current !== baselineJson.value) return true;
+  return !!(clearFlags.mp_password || clearFlags.mp_otp_password || clearFlags.cc_password);
 });
 
 async function load(opts: { toast?: boolean } = {}) {
@@ -131,6 +156,9 @@ async function load(opts: { toast?: boolean } = {}) {
   try {
     const data = await api.configGet();
     view.value = data;
+    clearFlags.mp_password = false;
+    clearFlags.mp_otp_password = false;
+    clearFlags.cc_password = false;
     model.moviepilot.base_url = data.moviepilot.base_url || "";
     model.moviepilot.username = data.moviepilot.username || "";
     model.moviepilot.password = "";
@@ -171,6 +199,10 @@ async function save() {
   saving.value = true;
   try {
     showToast("正在保存…", "info", 1600);
+    const mpPassword = model.moviepilot.password.trim();
+    const mpOtpPassword = model.moviepilot.otp_password.trim();
+    const ccPassword = model.cookie.cookiecloud.password.trim();
+
     const payload: any = {
       moviepilot: {
         base_url: model.moviepilot.base_url,
@@ -201,9 +233,14 @@ async function save() {
       },
     };
 
-    if (model.moviepilot.password.trim()) payload.moviepilot.password = model.moviepilot.password.trim();
-    if (model.moviepilot.otp_password.trim()) payload.moviepilot.otp_password = model.moviepilot.otp_password.trim();
-    if (model.cookie.cookiecloud.password.trim()) payload.cookie.cookiecloud.password = model.cookie.cookiecloud.password.trim();
+    if (mpPassword) payload.moviepilot.password = mpPassword;
+    else if (clearFlags.mp_password) payload.moviepilot.clear_password = true;
+
+    if (mpOtpPassword) payload.moviepilot.otp_password = mpOtpPassword;
+    else if (clearFlags.mp_otp_password) payload.moviepilot.clear_otp_password = true;
+
+    if (ccPassword) payload.cookie.cookiecloud.password = ccPassword;
+    else if (clearFlags.cc_password) payload.cookie.cookiecloud.clear_password = true;
 
     await api.configPut(payload);
     showToast("已保存（下一轮扫描生效）", "success");
@@ -482,11 +519,29 @@ onMounted(() => load());
             <label class="block text-sm font-medium">密码（留空不修改）</label>
             <input v-model="model.moviepilot.password" type="password" class="mt-1 ui-input"
               :placeholder="view?.moviepilot.password_configured ? '已配置' : '未配置'" />
+            <div class="mt-2 flex items-center justify-between gap-3">
+              <div v-if="clearFlags.mp_password" class="text-xs font-medium text-amber-600 dark:text-amber-400">
+                将清除已保存 password（回退到 config.yaml/env）
+              </div>
+              <div v-else class="text-xs text-slate-500 dark:text-slate-400"></div>
+              <Button v-if="view?.moviepilot.password_configured" variant="ghost" size="sm" @click="clearFlags.mp_password = !clearFlags.mp_password">
+                {{ clearFlags.mp_password ? "取消清除" : "清除已保存密码" }}
+              </Button>
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium">OTP 密码（可选，留空不修改）</label>
             <input v-model="model.moviepilot.otp_password" type="password" class="mt-1 ui-input"
               :placeholder="view?.moviepilot.otp_configured ? '已配置' : '未配置'" />
+            <div class="mt-2 flex items-center justify-between gap-3">
+              <div v-if="clearFlags.mp_otp_password" class="text-xs font-medium text-amber-600 dark:text-amber-400">
+                将清除已保存 OTP（回退到 config.yaml/env）
+              </div>
+              <div v-else class="text-xs text-slate-500 dark:text-slate-400"></div>
+              <Button v-if="view?.moviepilot.otp_configured" variant="ghost" size="sm" @click="clearFlags.mp_otp_password = !clearFlags.mp_otp_password">
+                {{ clearFlags.mp_otp_password ? "取消清除" : "清除已保存 OTP" }}
+              </Button>
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium">站点列表缓存 TTL（秒）</label>
@@ -521,6 +576,16 @@ onMounted(() => load());
                 <label class="block text-sm font-medium">密码（留空不修改）</label>
                 <input v-model="model.cookie.cookiecloud.password" type="password" class="mt-1 ui-input"
                   :placeholder="view?.cookie.cookiecloud.password_configured ? '已配置' : '未配置'" />
+                <div class="mt-2 flex items-center justify-between gap-3">
+                  <div v-if="clearFlags.cc_password" class="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    将清除已保存密码（回退到 config.yaml/env）
+                  </div>
+                  <div v-else class="text-xs text-slate-500 dark:text-slate-400"></div>
+                  <Button v-if="view?.cookie.cookiecloud.password_configured" variant="ghost" size="sm"
+                    @click="clearFlags.cc_password = !clearFlags.cc_password">
+                    {{ clearFlags.cc_password ? "取消清除" : "清除已保存密码" }}
+                  </Button>
+                </div>
               </div>
               <div>
                 <label class="block text-sm font-medium">刷新间隔（秒）</label>

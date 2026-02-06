@@ -162,7 +162,12 @@ async function runScan() {
     }
     await refresh();
   } catch (e: any) {
-    showToast(String(e?.message || e || "扫描失败"), "error");
+    if (e?.status === 409) {
+      showToast("扫描已在进行中", "info", 2400);
+      await refresh({ silent: true });
+    } else {
+      showToast(String(e?.message || e || "扫描失败"), "error");
+    }
   } finally {
     if (scanPollTimer) {
       window.clearInterval(scanPollTimer);
@@ -192,7 +197,11 @@ async function runRowScan(row: SiteRow) {
     );
     await refresh();
   } catch (e: any) {
-    showToast(String(e?.message || e || "扫描失败"), "error", 4500);
+    if (e?.status === 409) {
+      showToast("该站点正在扫描中，请稍后再试", "info", 2400);
+    } else {
+      showToast(String(e?.message || e || "扫描失败"), "error", 4500);
+    }
   } finally {
     scanningDomains.value.delete(row.domain);
   }
@@ -257,7 +266,8 @@ onUnmounted(() => {
 
 // WS real-time updates
 import { useWS } from "../ws";
-useWS("dashboard_update", () => {
+import { WS_DASHBOARD_UPDATE } from "../ws_events";
+useWS(WS_DASHBOARD_UPDATE, () => {
   refresh({ silent: true });
 });
 

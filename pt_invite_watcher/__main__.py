@@ -30,7 +30,10 @@ async def _check_once(config_path: Optional[str]) -> None:
     settings = load_settings(config_path=config_path)
     logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO))
     ctx = await build_context(settings)
-    await ctx.scanner.run_once()
+    try:
+        await ctx.scanner.run_once()
+    finally:
+        await ctx.store.close()
 
 
 def main(argv: Optional[list[str]] = None) -> None:

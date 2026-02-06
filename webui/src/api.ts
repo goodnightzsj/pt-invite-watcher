@@ -75,6 +75,10 @@ export type SitesListResponse = {
   items: SiteConfigItem[];
   moviepilot_ok: boolean;
   moviepilot_error: string;
+  moviepilot_source?: string;
+  moviepilot_cache_fetched_at?: string | null;
+  moviepilot_cache_age_seconds?: number | null;
+  moviepilot_cache_expired?: boolean | null;
 };
 
 export type ConfigResponse = {
@@ -121,6 +125,22 @@ export type NotificationsResponse = {
   };
 };
 
+export class HttpError extends Error {
+  status: number;
+  statusText: string;
+  bodyText: string;
+  url: string;
+
+  constructor(status: number, statusText: string, bodyText: string, url: string) {
+    super(`${status} ${statusText}: ${bodyText.slice(0, 200)}`);
+    this.name = "HttpError";
+    this.status = status;
+    this.statusText = statusText;
+    this.bodyText = bodyText;
+    this.url = url;
+  }
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(url, {
     ...init,
@@ -131,7 +151,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`${resp.status} ${resp.statusText}: ${text.slice(0, 200)}`);
+    throw new HttpError(resp.status, resp.statusText, text, url);
   }
   return (await resp.json()) as T;
 }
@@ -141,7 +161,13 @@ export const api = {
   scanRun: () => requestJson<ScanStatus>("/api/scan/run", { method: "POST" }),
   scanRunOne: (domain: string) => requestJson<ScanStatus>(`/api/scan/run/${encodeURIComponent(domain)}`, { method: "POST" }),
   stateReset: () => requestJson<{ ok: boolean }>("/api/state/reset", { method: "POST" }),
-  sitesList: () => requestJson<SitesListResponse>("/api/sites"),
+  sitesList: (params: { live?: boolean; force?: boolean } = {}) => {
+    const q = new URLSearchParams();
+    if (params.live !== undefined) q.set("live", params.live ? "1" : "0");
+    if (params.force !== undefined) q.set("force", params.force ? "1" : "0");
+    const qs = q.toString();
+    return requestJson<SitesListResponse>(`/api/sites${qs ? `?${qs}` : ""}`);
+  },
   sitesUpsert: (payload: unknown) =>
     requestJson<{ ok: boolean; scan_triggered?: boolean; scan_reason?: string }>("/api/sites", {
       method: "PUT",
