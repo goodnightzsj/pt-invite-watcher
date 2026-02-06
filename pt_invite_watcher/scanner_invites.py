@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from urllib.parse import urljoin
 
 from pt_invite_watcher.models import AspectResult, Evidence
+from pt_invite_watcher.utils.url import join_url
 
 
 async def check_invites_for_site(
@@ -64,7 +64,7 @@ async def check_invites_for_site(
             permanent=None,
             temporary=None,
             evidence=Evidence(
-                url=urljoin(str(getattr(site, "url", "")).rstrip("/") + "/", inv_path),
+                url=join_url(str(getattr(site, "url", "")), inv_path),
                 http_status=None,
                 reason="manual_no_cookie_skip_invites",
                 detail="manual site without cookie; skip invites probe",
@@ -81,4 +81,3 @@ async def check_invites_for_site(
 
 
 __all__ = ["check_invites_for_site"]
-

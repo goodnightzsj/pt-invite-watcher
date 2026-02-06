@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from urllib.parse import urljoin
 
 from pt_invite_watcher.models import AspectResult, Evidence, ReachabilityResult, SiteCheckResult
+from pt_invite_watcher.utils.url import join_url
 
 
 def build_unreachable_result(
@@ -20,7 +20,7 @@ def build_unreachable_result(
     registration = AspectResult(
         state="unknown",
         evidence=Evidence(
-            url=urljoin(str(getattr(site, "url", "")).rstrip("/") + "/", reg_path),
+            url=join_url(str(getattr(site, "url", "")), reg_path),
             http_status=None,
             reason="site_unreachable",
             detail=detail,
@@ -29,7 +29,7 @@ def build_unreachable_result(
     invites = AspectResult(
         state="unknown",
         evidence=Evidence(
-            url=urljoin(str(getattr(site, "url", "")).rstrip("/") + "/", inv_path),
+            url=join_url(str(getattr(site, "url", "")), inv_path),
             http_status=None,
             reason="site_unreachable",
             detail=detail,
@@ -46,4 +46,3 @@ def build_unreachable_result(
 
 
 __all__ = ["build_unreachable_result"]
-

@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Optional
-from urllib.parse import urljoin
 
 import httpx
 
@@ -15,6 +14,7 @@ from pt_invite_watcher.providers.cookiecloud import CookieManager
 from pt_invite_watcher.scanner_invites import check_invites_for_site
 from pt_invite_watcher.scanner_reachability import probe_reachability
 from pt_invite_watcher.scanner_results import build_unreachable_result
+from pt_invite_watcher.utils.url import join_url
 
 
 logger = logging.getLogger("pt_invite_watcher.scanner.site")
@@ -84,7 +84,7 @@ async def check_one_site(
         registration = AspectResult(
             state="unknown",
             evidence=Evidence(
-                url=urljoin(site.url.rstrip("/") + "/", reg_path),
+                url=join_url(site.url, reg_path),
                 http_status=None,
                 reason=f"registration_error:{type(e).__name__}",
                 detail=format_error_detail(e),
@@ -116,7 +116,7 @@ async def check_one_site(
         invites = AspectResult(
             state="unknown",
             evidence=Evidence(
-                url=urljoin(site.url.rstrip("/") + "/", inv_path),
+                url=join_url(site.url, inv_path),
                 http_status=None,
                 reason=f"invites_error:{type(e).__name__}",
                 detail=format_error_detail(e),

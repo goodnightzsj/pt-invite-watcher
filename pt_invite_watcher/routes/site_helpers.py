@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from typing import Any, Dict
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from fastapi import HTTPException
 
 from pt_invite_watcher.site_templates import default_paths_for_template, normalize_template
 from pt_invite_watcher.utils.parse import cfg_str, normalize_domain
-from pt_invite_watcher.utils.url import hosts_related
+from pt_invite_watcher.utils.url import hosts_related, join_url
 
 
 def derive_site_page_urls(
@@ -39,8 +39,8 @@ def derive_site_page_urls(
         inv_path = f"invite.php?id={uid}"
 
     return {
-        "registration_url": urljoin(base_url.rstrip("/") + "/", reg_path) if base_url and reg_path else "",
-        "invite_url": urljoin(base_url.rstrip("/") + "/", inv_path) if base_url and inv_path else "",
+        "registration_url": join_url(base_url, reg_path) if base_url and reg_path else "",
+        "invite_url": join_url(base_url, inv_path) if base_url and inv_path else "",
     }
 
 
