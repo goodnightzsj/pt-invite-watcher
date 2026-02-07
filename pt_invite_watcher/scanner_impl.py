@@ -210,12 +210,24 @@ class Scanner:
                 ctx_reason=ctx_reason,
                 prefer_moviepilot_cache_if_fresh=prefer_moviepilot_cache_if_fresh,
             )
+            lease_refresh_task_name = f"scan_lease_refresh_{ctx_reason}"
             lease_refresh_task = asyncio.create_task(
                 self._lease.refresh_loop(
                     ttl_seconds=prepared.scan_lease_ttl_seconds,
                     refresh_interval_seconds=prepared.scan_lease_refresh_interval_seconds,
-                )
+                ),
+                name=lease_refresh_task_name,
             )
+
+            def _done(t: asyncio.Task[None]) -> None:
+                try:
+                    t.result()
+                except asyncio.CancelledError:
+                    return
+                except Exception:
+                    logger.exception("lease refresh task failed (task=%s)", lease_refresh_task_name)
+
+            lease_refresh_task.add_done_callback(_done)
             yield prepared
         finally:
             if lease_refresh_task is not None:
