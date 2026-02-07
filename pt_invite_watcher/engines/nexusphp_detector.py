@@ -110,7 +110,8 @@ class NexusPhpDetector:
         last_err: Optional[Exception] = None
         last_err_url: Optional[str] = None
         last_err_detail: Optional[str] = None
-        last_http_err: Optional[httpx.Response] = None
+        last_http_status: Optional[int] = None
+        last_http_url: Optional[str] = None
         last_http_used: int = 1
         last_unknown: Optional[AspectResult] = None
         raw_path = (site.registration_path or "").strip()
@@ -128,7 +129,8 @@ class NexusPhpDetector:
                 if resp.status_code == 404:
                     continue
                 if resp.status_code >= 500:
-                    last_http_err = resp
+                    last_http_status = int(resp.status_code)
+                    last_http_url = str(resp.url)
                     last_http_used = used
                     continue
 
@@ -174,13 +176,13 @@ class NexusPhpDetector:
                 ),
             )
 
-        if last_http_err is not None:
+        if last_http_status is not None:
             return AspectResult(
                 state="unknown",
                 evidence=Evidence(
-                    url=str(last_http_err.url),
-                    http_status=last_http_err.status_code,
-                    reason=f"registration_error:HTTP{last_http_err.status_code}",
+                    url=last_http_url or _join(site.url, "signup.php"),
+                    http_status=last_http_status,
+                    reason=f"registration_error:HTTP{last_http_status}",
                     detail=_append_retry_detail(None, last_http_used),
                 ),
             )
@@ -319,7 +321,8 @@ class NexusPhpDetector:
         last_err: Optional[Exception] = None
         last_err_url: Optional[str] = None
         last_err_detail: Optional[str] = None
-        last_http_err: Optional[httpx.Response] = None
+        last_http_status: Optional[int] = None
+        last_http_url: Optional[str] = None
         last_http_used: int = 1
         for u in invite_candidates:
             r, fetch_err, fetch_used = await _get_with_retry(
@@ -339,7 +342,8 @@ class NexusPhpDetector:
                     await r.aclose()
                 continue
             if r.status_code >= 500:
-                last_http_err = r
+                last_http_status = int(r.status_code)
+                last_http_url = str(r.url)
                 last_http_used = fetch_used
                 with suppress(Exception):
                     await r.aclose()
@@ -358,13 +362,13 @@ class NexusPhpDetector:
                         detail=_merge_detail(last_err_detail, uid_detail),
                     ),
                 )
-            if last_http_err is not None:
+            if last_http_status is not None:
                 return AspectResult(
                     state="unknown",
                     evidence=Evidence(
-                        url=str(last_http_err.url),
-                        http_status=last_http_err.status_code,
-                        reason=f"invites_error:HTTP{last_http_err.status_code}",
+                        url=last_http_url or (invite_url or _join(site.url, "invite.php")),
+                        http_status=last_http_status,
+                        reason=f"invites_error:HTTP{last_http_status}",
                         detail=_merge_detail(_append_retry_detail(None, last_http_used), uid_detail),
                     ),
                 )
