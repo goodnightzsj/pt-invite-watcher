@@ -22,7 +22,18 @@ def create_task_logged(
     - Always names the task for debugging (`asyncio.all_tasks()` / debug tools).
     """
     task_name = str(name or "").strip() or "task"
-    task = asyncio.create_task(coro, name=task_name)
+    try:
+        task = asyncio.create_task(coro, name=task_name)
+    except RuntimeError:
+        # Avoid leaking coroutine objects when called without a running loop
+        # (e.g. during interpreter/loop shutdown).
+        closer = getattr(coro, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception:
+                pass
+        raise
 
     def _done(t: asyncio.Task[T]) -> None:
         try:

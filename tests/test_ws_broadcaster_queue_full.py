@@ -39,5 +39,26 @@ class WebSocketBroadcasterQueueFullTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(broadcaster._queue.qsize(), 0)  # type: ignore[attr-defined]
 
 
+class WebSocketBroadcasterBestEffortTest(unittest.TestCase):
+    def test_publish_best_effort_without_running_loop(self) -> None:
+        # asyncio.Lock/Queue in Python 3.9 require a current event loop, but we
+        # intentionally avoid a *running* loop so `asyncio.create_task` fails.
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            broadcaster = WebSocketBroadcaster(queue_size=1)
+
+            # publish() short-circuits when there are no clients; we don't need a real WebSocket here.
+            broadcaster._clients.append(object())  # type: ignore[attr-defined]
+
+            broadcaster.publish({"type": WS_LOGS_APPEND, "data": {"id": 1}})
+            self.assertEqual(broadcaster._queue.qsize(), 0)  # type: ignore[attr-defined]
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
+
+
 if __name__ == "__main__":
     unittest.main()
