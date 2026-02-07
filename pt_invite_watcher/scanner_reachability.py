@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 from urllib.parse import urlparse
+from contextlib import suppress
 
 import httpx
 
@@ -71,50 +72,53 @@ async def probe_reachability(
             None,
         )
 
-    hint = engine_hint_from_html(resp.text)
-    status = resp.status_code
+    try:
+        hint = engine_hint_from_html(resp.text)
+        status = resp.status_code
 
-    final_host = resp.url.host if resp.url else ""
-    if orig_host and final_host and not hosts_related(orig_host, final_host):
-        detail = f"redirected_to:{final_host}"
-        if used > 1:
-            detail = f"{detail} (retries={used})"
+        final_host = resp.url.host if resp.url else ""
+        if orig_host and final_host and not hosts_related(orig_host, final_host):
+            detail = f"redirected_to:{final_host}"
+            if used > 1:
+                detail = f"{detail} (retries={used})"
+            return (
+                ReachabilityResult(
+                    state="down",
+                    evidence=Evidence(url=str(resp.url), http_status=status, reason="probe_redirect", detail=detail),
+                ),
+                hint,
+            )
+
+        if status >= 500 or status in _DOWN_HTTP_STATUSES:
+            detail = f"retries={used}" if used > 1 else None
+            return (
+                ReachabilityResult(
+                    state="down",
+                    evidence=Evidence(url=str(resp.url), http_status=status, reason=f"probe_http_{status}", detail=detail),
+                ),
+                hint,
+            )
+
+        if status in {408, 429}:
+            detail = f"retries={used}" if used > 1 else None
+            return (
+                ReachabilityResult(
+                    state="down",
+                    evidence=Evidence(url=str(resp.url), http_status=status, reason=f"probe_http_{status}", detail=detail),
+                ),
+                hint,
+            )
+
         return (
             ReachabilityResult(
-                state="down",
-                evidence=Evidence(url=str(resp.url), http_status=status, reason="probe_redirect", detail=detail),
+                state="up",
+                evidence=Evidence(url=str(resp.url), http_status=status, reason="probe_ok"),
             ),
             hint,
         )
-
-    if status >= 500 or status in _DOWN_HTTP_STATUSES:
-        detail = f"retries={used}" if used > 1 else None
-        return (
-            ReachabilityResult(
-                state="down",
-                evidence=Evidence(url=str(resp.url), http_status=status, reason=f"probe_http_{status}", detail=detail),
-            ),
-            hint,
-        )
-
-    if status in {408, 429}:
-        detail = f"retries={used}" if used > 1 else None
-        return (
-            ReachabilityResult(
-                state="down",
-                evidence=Evidence(url=str(resp.url), http_status=status, reason=f"probe_http_{status}", detail=detail),
-            ),
-            hint,
-        )
-
-    return (
-        ReachabilityResult(
-            state="up",
-            evidence=Evidence(url=str(resp.url), http_status=status, reason="probe_ok"),
-        ),
-        hint,
-    )
+    finally:
+        with suppress(Exception):
+            await resp.aclose()
 
 
 __all__ = ["engine_hint_from_html", "probe_reachability"]
-
