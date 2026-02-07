@@ -37,23 +37,10 @@ from pt_invite_watcher.storage.site_state_store import (
     reset_site_states as _reset_site_states,
     save_site_result as _save_site_result,
 )
+from pt_invite_watcher.utils.asyncio_tasks import create_task_logged
 
 
 logger = logging.getLogger("pt_invite_watcher.storage")
-
-def _create_task_logged(coro: Any, *, label: str) -> None:
-    task_name = f"sqlite_store_{str(label or 'task').strip().replace(' ', '_')}"
-    task = asyncio.create_task(coro, name=task_name)
-
-    def _done(t: asyncio.Task[Any]) -> None:
-        try:
-            t.result()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            logger.exception("%s task failed (task=%s)", label, task_name)
-
-    task.add_done_callback(_done)
 
 
 @dataclass(frozen=True)
@@ -122,7 +109,9 @@ class SqliteStore:
             try:
                 res = hook(reason)
                 if asyncio.iscoroutine(res):
-                    _create_task_logged(res, label="logs resync hook")
+                    label = "logs resync hook"
+                    task_name = f"sqlite_store_{label.strip().replace(' ', '_')}"
+                    create_task_logged(res, logger=logger, name=task_name, label=label)
             except Exception:
                 logger.exception("logs resync hook failed")
 
@@ -334,7 +323,9 @@ class SqliteStore:
             try:
                 res = hook(evt)
                 if asyncio.iscoroutine(res):
-                    _create_task_logged(res, label="event hook")
+                    label = "event hook"
+                    task_name = f"sqlite_store_{label.strip().replace(' ', '_')}"
+                    create_task_logged(res, logger=logger, name=task_name, label=label)
             except Exception:
                 logger.exception("event hook failed")
 

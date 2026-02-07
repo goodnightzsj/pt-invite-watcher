@@ -4,22 +4,10 @@ import asyncio
 import logging
 from typing import Any
 
+from pt_invite_watcher.utils.asyncio_tasks import create_task_logged
+
 
 logger = logging.getLogger("pt_invite_watcher.storage.event_hooks")
-
-def _create_task_logged(coro: Any) -> None:
-    task_name = "event_hook"
-    task = asyncio.create_task(coro, name=task_name)
-
-    def _done(t: asyncio.Task[Any]) -> None:
-        try:
-            t.result()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            logger.exception("event hook task failed (task=%s)", task_name)
-
-    task.add_done_callback(_done)
 
 
 def dispatch_event_hooks(store: Any, evt: dict[str, Any]) -> None:
@@ -39,7 +27,7 @@ def dispatch_event_hooks(store: Any, evt: dict[str, Any]) -> None:
         try:
             res = hook(evt)
             if asyncio.iscoroutine(res):
-                _create_task_logged(res)
+                create_task_logged(res, logger=logger, name="event_hook", label="event hook")
         except Exception:
             logger.exception("event hook failed")
 

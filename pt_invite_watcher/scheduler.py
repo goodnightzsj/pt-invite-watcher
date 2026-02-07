@@ -12,24 +12,11 @@ from pt_invite_watcher.kv_keys import SCHEDULER_LEASE_KEY
 from pt_invite_watcher.lease_policy import scheduler_lease_ttl_seconds
 from pt_invite_watcher.scanner import AlreadyScanningError
 from pt_invite_watcher.scheduler_lease import SchedulerLeaseManager
+from pt_invite_watcher.utils.asyncio_tasks import create_task_logged
 from pt_invite_watcher.utils.parse import cfg_bool
 
 
 logger = logging.getLogger("pt_invite_watcher.scheduler")
-
-def _create_task_logged(coro: Awaitable[Any], *, name: str) -> asyncio.Task[Any]:
-    task = asyncio.create_task(coro, name=name)
-
-    def _done(t: asyncio.Task[Any]) -> None:
-        try:
-            t.result()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            logger.exception("task failed: %s", name)
-
-    task.add_done_callback(_done)
-    return task
 
 
 async def start_scheduler(
@@ -59,13 +46,14 @@ async def start_scheduler(
             ),
         )
 
-    return _create_task_logged(
+    return create_task_logged(
         _scheduler_loop(
             ctx,
             broadcast_dashboard_update=broadcast_dashboard_update,
             owner=scheduler_owner,
             leader_lock_disabled=leader_lock_disabled,
         ),
+        logger=logger,
         name="scheduler_loop",
     )
 
