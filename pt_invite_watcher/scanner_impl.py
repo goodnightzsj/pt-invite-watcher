@@ -38,6 +38,7 @@ from pt_invite_watcher.scanner_reachability import probe_reachability as _probe_
 from pt_invite_watcher.scanner_results import build_unreachable_result as _build_unreachable_result
 from pt_invite_watcher.scanner_site_check import check_one_site as _check_one_site
 from pt_invite_watcher.site_list_sync import sync_site_list_summary
+from pt_invite_watcher.utils.asyncio_tasks import create_task_logged
 from pt_invite_watcher.utils.parse import format_error_detail as _format_error_detail_util
 from pt_invite_watcher.utils.parse import normalize_domain as _normalize_domain_util
 
@@ -211,23 +212,15 @@ class Scanner:
                 prefer_moviepilot_cache_if_fresh=prefer_moviepilot_cache_if_fresh,
             )
             lease_refresh_task_name = f"scan_lease_refresh_{ctx_reason}"
-            lease_refresh_task = asyncio.create_task(
+            lease_refresh_task = create_task_logged(
                 self._lease.refresh_loop(
                     ttl_seconds=prepared.scan_lease_ttl_seconds,
                     refresh_interval_seconds=prepared.scan_lease_refresh_interval_seconds,
                 ),
+                logger=logger,
                 name=lease_refresh_task_name,
+                label="scan lease refresh",
             )
-
-            def _done(t: asyncio.Task[None]) -> None:
-                try:
-                    t.result()
-                except asyncio.CancelledError:
-                    return
-                except Exception:
-                    logger.exception("lease refresh task failed (task=%s)", lease_refresh_task_name)
-
-            lease_refresh_task.add_done_callback(_done)
             yield prepared
         finally:
             if lease_refresh_task is not None:
