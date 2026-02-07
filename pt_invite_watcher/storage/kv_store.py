@@ -32,13 +32,14 @@ async def set_json(store: SupportsConn, key: str, value: Any, *, conn: Any | Non
     payload = json.dumps(value, ensure_ascii=False)
 
     if conn is not None:
-        await conn.execute(
+        cur = await conn.execute(
             """
             INSERT INTO kv(key, value, updated_at) VALUES(?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
             """,
             (key, payload, now),
         )
+        await cur.close()
         if commit:
             await conn.commit()
         return
@@ -46,13 +47,14 @@ async def set_json(store: SupportsConn, key: str, value: Any, *, conn: Any | Non
     write_txn = getattr(store, "write_transaction", None)
     if callable(write_txn) and commit:
         async with write_txn() as c:
-            await c.execute(
+            cur = await c.execute(
                 """
                 INSERT INTO kv(key, value, updated_at) VALUES(?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
                 """,
                 (key, payload, now),
             )
+            await cur.close()
         return
 
     require_conn = getattr(store, "require_conn", None)
@@ -60,13 +62,14 @@ async def set_json(store: SupportsConn, key: str, value: Any, *, conn: Any | Non
         c = require_conn()
     else:
         c = store._require_conn()
-    await c.execute(
+    cur = await c.execute(
         """
         INSERT INTO kv(key, value, updated_at) VALUES(?, ?, ?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
         """,
         (key, payload, now),
     )
+    await cur.close()
     if commit:
         await c.commit()
 

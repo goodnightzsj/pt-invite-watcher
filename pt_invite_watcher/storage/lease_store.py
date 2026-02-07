@@ -70,7 +70,8 @@ async def _try_acquire_lease_with_conn(conn: Any, key: str, *, owner: str, ttl_s
             if existing_owner and existing_owner != owner_id and existing_expires is not None and existing_expires > now:
                 return False
 
-    await conn.execute("BEGIN IMMEDIATE")
+    cur = await conn.execute("BEGIN IMMEDIATE")
+    await cur.close()
     try:
         cur = await conn.execute("SELECT value FROM kv WHERE key = ?", (key,))
         row = await cur.fetchone()
@@ -92,13 +93,14 @@ async def _try_acquire_lease_with_conn(conn: Any, key: str, *, owner: str, ttl_s
                     await conn.rollback()
                     return False
 
-        await conn.execute(
+        cur = await conn.execute(
             """
             INSERT INTO kv(key, value, updated_at) VALUES(?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
             """,
             (key, json.dumps(payload, ensure_ascii=False), now.isoformat()),
         )
+        await cur.close()
         await conn.commit()
         return True
     except Exception:
@@ -129,7 +131,8 @@ async def _release_lease_with_conn(conn: Any, key: str, *, owner: str) -> None:
     if not owner_id:
         raise ValueError("owner is required")
 
-    await conn.execute("BEGIN IMMEDIATE")
+    cur = await conn.execute("BEGIN IMMEDIATE")
+    await cur.close()
     try:
         cur = await conn.execute("SELECT value FROM kv WHERE key = ?", (key,))
         row = await cur.fetchone()
@@ -144,7 +147,8 @@ async def _release_lease_with_conn(conn: Any, key: str, *, owner: str) -> None:
             existing = None
 
         if isinstance(existing, dict) and str(existing.get("owner") or "").strip() == owner_id:
-            await conn.execute("DELETE FROM kv WHERE key = ?", (key,))
+            cur = await conn.execute("DELETE FROM kv WHERE key = ?", (key,))
+            await cur.close()
             await conn.commit()
             return
 
