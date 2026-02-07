@@ -20,6 +20,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--root", default="pt_invite_watcher", help="Package root (default: pt_invite_watcher)")
     parser.add_argument(
+        "--all-classes",
+        action="store_true",
+        help="Audit methods for all classes under root (refactor audit only)",
+    )
+    parser.add_argument(
         "--class",
         dest="classes",
         action="append",
@@ -32,11 +37,14 @@ def main(argv: list[str] | None = None) -> int:
     root = str(args.root).strip().rstrip("/")
     ref = str(args.ref).strip()
     classes = [str(c).strip() for c in (args.classes or []) if str(c).strip()]
+    all_classes = bool(getattr(args, "all_classes", False))
 
     _run([py, "-m", "compileall", "-q", root])
     _run([py, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-q"])
 
     audit_cmd = [py, "tools/refactor_audit.py", "--ref", ref, "--root", root]
+    if all_classes:
+        audit_cmd.append("--all-classes")
     for c in classes:
         audit_cmd += ["--class", c]
     _run(audit_cmd)
@@ -46,4 +54,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

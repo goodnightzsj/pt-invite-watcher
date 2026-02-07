@@ -237,7 +237,7 @@ def audit_class_methods(ref: str, root: str, *, classes: Iterable[str]) -> dict[
                 old[cls] = ClassMethods(files=[path], methods=set(methods))
             else:
                 item.files.append(path)
-                item.methods |= set(methods)
+                item.methods.update(methods)
 
     new: dict[str, ClassMethods] = {}
     for path in _list_py_files_current(root):
@@ -256,10 +256,64 @@ def audit_class_methods(ref: str, root: str, *, classes: Iterable[str]) -> dict[
                 new[cls] = ClassMethods(files=[path], methods=set(methods))
             else:
                 item.files.append(path)
-                item.methods |= set(methods)
+                item.methods.update(methods)
 
     out: dict[str, tuple[ClassMethods, ClassMethods]] = {}
     for cls in target:
+        out[cls] = (
+            old.get(cls) or ClassMethods(files=[], methods=set()),
+            new.get(cls) or ClassMethods(files=[], methods=set()),
+        )
+    return out
+
+
+def audit_all_class_methods(ref: str, root: str) -> dict[str, tuple[ClassMethods, ClassMethods]]:
+    """
+    Compare method sets for *all* classes between old ref and current working tree.
+
+    Returns: {class_name: (old, new)}
+
+    Notes:
+    - Only audits classes that exist in the old ref tree. This is intended to catch
+      missing/forgotten migrations (methods removed without replacement).
+    - New-only classes are ignored.
+    """
+    old: dict[str, ClassMethods] = {}
+    for path in _git_ls_tree(ref, root):
+        if not path.endswith(".py"):
+            continue
+        try:
+            txt = _git_show(ref, path)
+        except Exception:
+            continue
+        mapping = _top_level_class_methods(txt)
+        for cls, methods in mapping.items():
+            item = old.get(cls)
+            if item is None:
+                old[cls] = ClassMethods(files=[path], methods=set(methods))
+            else:
+                item.files.append(path)
+                item.methods.update(methods)
+
+    new: dict[str, ClassMethods] = {}
+    for path in _list_py_files_current(root):
+        if not path.endswith(".py"):
+            continue
+        try:
+            txt = Path(path).read_text(encoding="utf-8")
+        except Exception:
+            continue
+        mapping = _top_level_class_methods(txt)
+        for cls, methods in mapping.items():
+            item = new.get(cls)
+            if item is None:
+                new[cls] = ClassMethods(files=[path], methods=set(methods))
+            else:
+                item.files.append(path)
+                item.methods.update(methods)
+
+    out: dict[str, tuple[ClassMethods, ClassMethods]] = {}
+    for cls in sorted(old.keys()):
         out[cls] = (
             old.get(cls) or ClassMethods(files=[], methods=set()),
             new.get(cls) or ClassMethods(files=[], methods=set()),
@@ -309,6 +363,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--ref", default="HEAD", help="Git ref to compare against (default: HEAD)")
     parser.add_argument("--root", default="pt_invite_watcher", help="Package root to audit (default: pt_invite_watcher)")
     parser.add_argument(
+        "--all-classes",
+        action="store_true",
+        help="Audit methods for all classes under root (only checks classes that exist in old ref)",
+    )
+    parser.add_argument(
         "--class",
         dest="classes",
         action="append",
@@ -322,7 +381,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     missing, moved = audit_defs(ref, root)
     old_routes, new_routes, old_only, new_only = audit_routes(ref, root)
-    class_report = audit_class_methods(ref, root, classes=args.classes)
+    class_report = audit_all_class_methods(ref, root) if args.all_classes else audit_class_methods(ref, root, classes=args.classes)
 
     _print_section("Routes")
     print(f"old={len(old_routes)} new={len(new_routes)} missing_in_new={len(old_only)} new_extra={len(new_only)}")
@@ -352,36 +411,80 @@ def main(argv: Optional[list[str]] = None) -> int:
     missing_methods_total = 0
     if class_report:
         _print_section("Class methods")
-        for cls, (old, new) in class_report.items():
-            missing_methods_raw = sorted(old.methods - new.methods)
-            extra_methods = sorted(new.methods - old.methods)
+        if args.all_classes:
+            total_classes = len(class_report)
+            missing_classes = 0
+            moved_candidates_total = 0
+            for cls, (old, new) in class_report.items():
+                missing_methods_raw = sorted(old.methods - new.methods)
+                if not missing_methods_raw:
+                    continue
 
-            moved_candidates: dict[str, list[str]] = {}
-            missing_methods: list[str] = []
-            for m in missing_methods_raw:
-                hits = _resolve_missing_symbol(m, search_root=root)
-                hits = [h for h in hits if h not in new.files]
-                if hits:
-                    moved_candidates[m] = hits
-                else:
-                    missing_methods.append(m)
+                moved_candidates: dict[str, list[str]] = {}
+                missing_methods: list[str] = []
+                for m in missing_methods_raw:
+                    hits = _resolve_missing_symbol(m, search_root=root)
+                    hits = [h for h in hits if h not in new.files]
+                    if hits:
+                        moved_candidates[m] = hits
+                    else:
+                        missing_methods.append(m)
 
-            missing_methods_total += len(missing_methods)
+                moved_candidates_total += len(moved_candidates)
+                if not missing_methods:
+                    continue
+
+                missing_classes += 1
+                missing_methods_total += len(missing_methods)
+                extra_methods = sorted(new.methods - old.methods)
+                print(
+                    f"{cls}: old={len(old.methods)} new={len(new.methods)} missing_in_new={len(missing_methods)} moved_candidates={len(moved_candidates)} new_extra={len(extra_methods)}"
+                )
+                if old.files:
+                    print(f"  old_files: {', '.join(old.files[:5])}" + (" ..." if len(old.files) > 5 else ""))
+                if new.files:
+                    print(f"  new_files: {', '.join(new.files[:5])}" + (" ..." if len(new.files) > 5 else ""))
+                for name, hits in sorted(moved_candidates.items()):
+                    hits_preview = ", ".join(hits[:5])
+                    more = " ..." if len(hits) > 5 else ""
+                    print(f"  MOVED_METHOD    {name} -> {hits_preview}{more}")
+                for m in missing_methods[:200]:
+                    print(f"  MISSING_METHOD {m}")
+
             print(
-                f"{cls}: old={len(old.methods)} new={len(new.methods)} missing_in_new={len(missing_methods)} moved_candidates={len(moved_candidates)} new_extra={len(extra_methods)}"
+                f"summary: classes={total_classes} missing_classes={missing_classes} moved_candidates={moved_candidates_total} missing_methods_total={missing_methods_total}"
             )
-            if old.files:
-                print(f"  old_files: {', '.join(old.files[:5])}" + (" ..." if len(old.files) > 5 else ""))
-            if new.files:
-                print(f"  new_files: {', '.join(new.files[:5])}" + (" ..." if len(new.files) > 5 else ""))
-            for name, hits in sorted(moved_candidates.items()):
-                hits_preview = ", ".join(hits[:5])
-                more = " ..." if len(hits) > 5 else ""
-                print(f"  MOVED_METHOD    {name} -> {hits_preview}{more}")
-            for m in missing_methods[:200]:
-                print(f"  MISSING_METHOD {m}")
-            for m in extra_methods[:200]:
-                print(f"  EXTRA_METHOD   {m}")
+        else:
+            for cls, (old, new) in class_report.items():
+                missing_methods_raw = sorted(old.methods - new.methods)
+                extra_methods = sorted(new.methods - old.methods)
+
+                moved_candidates: dict[str, list[str]] = {}
+                missing_methods: list[str] = []
+                for m in missing_methods_raw:
+                    hits = _resolve_missing_symbol(m, search_root=root)
+                    hits = [h for h in hits if h not in new.files]
+                    if hits:
+                        moved_candidates[m] = hits
+                    else:
+                        missing_methods.append(m)
+
+                missing_methods_total += len(missing_methods)
+                print(
+                    f"{cls}: old={len(old.methods)} new={len(new.methods)} missing_in_new={len(missing_methods)} moved_candidates={len(moved_candidates)} new_extra={len(extra_methods)}"
+                )
+                if old.files:
+                    print(f"  old_files: {', '.join(old.files[:5])}" + (" ..." if len(old.files) > 5 else ""))
+                if new.files:
+                    print(f"  new_files: {', '.join(new.files[:5])}" + (" ..." if len(new.files) > 5 else ""))
+                for name, hits in sorted(moved_candidates.items()):
+                    hits_preview = ", ".join(hits[:5])
+                    more = " ..." if len(hits) > 5 else ""
+                    print(f"  MOVED_METHOD    {name} -> {hits_preview}{more}")
+                for m in missing_methods[:200]:
+                    print(f"  MISSING_METHOD {m}")
+                for m in extra_methods[:200]:
+                    print(f"  EXTRA_METHOD   {m}")
 
     ok = not old_only and not new_only and not missing and missing_methods_total == 0
     return 0 if ok else 1
