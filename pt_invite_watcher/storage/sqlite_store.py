@@ -109,8 +109,9 @@ class SqliteStore:
             try:
                 res = hook(reason)
                 if asyncio.iscoroutine(res):
-                    label = "logs resync hook"
-                    task_name = f"sqlite_store_{label.strip().replace(' ', '_')}"
+                    reason_key = str(reason or "-").strip() or "-"
+                    task_name = f"sqlite_store_logs_resync_{reason_key}".replace(" ", "_")[:120]
+                    label = f"logs resync hook (reason={reason_key})"
                     create_task_logged(res, logger=logger, name=task_name, label=label)
             except Exception:
                 logger.exception("logs resync hook failed")
@@ -319,12 +320,17 @@ class SqliteStore:
 
     def dispatch_event_hooks(self, evt: dict[str, Any]) -> None:
         hooks = list(self._event_hooks)
+        action = str(evt.get("action") or "event").strip() or "event"
+        domain = (str(evt.get("domain") or "").strip().lower() if evt.get("domain") is not None else "") or ""
         for hook in hooks:
             try:
                 res = hook(evt)
                 if asyncio.iscoroutine(res):
-                    label = "event hook"
-                    task_name = f"sqlite_store_{label.strip().replace(' ', '_')}"
+                    task_name = f"sqlite_store_event_hook_{action}"
+                    if domain:
+                        task_name = f"{task_name}_{domain}"
+                    task_name = task_name.replace(" ", "_")[:120]
+                    label = f"event hook (action={action} domain={domain or '-'})"
                     create_task_logged(res, logger=logger, name=task_name, label=label)
             except Exception:
                 logger.exception("event hook failed")
