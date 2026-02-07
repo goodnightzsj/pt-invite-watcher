@@ -20,6 +20,7 @@ class WebSocketBroadcaster:
         self._queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=max(1, int(queue_size or 0)))
         self._pump_task: Optional[asyncio.Task[None]] = None
         self._logs_update_enqueued = False
+        self._stopped = False
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -33,9 +34,11 @@ class WebSocketBroadcaster:
                 self._clients.remove(websocket)
 
     async def start(self) -> None:
+        self._stopped = False
         self._ensure_pump()
 
     async def stop(self) -> None:
+        self._stopped = True
         if self._pump_task is not None:
             self._pump_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -47,6 +50,8 @@ class WebSocketBroadcaster:
                 self._queue.get_nowait()
                 self._queue.task_done()
         self._logs_update_enqueued = False
+        async with self._clients_lock:
+            self._clients.clear()
 
     def publish(self, message: dict) -> None:
         """
@@ -55,6 +60,8 @@ class WebSocketBroadcaster:
         This avoids creating an asyncio.Task per event. If the queue is full, we drop
         the message and (for logs) ask clients to resync via a single `logs_update`.
         """
+        if self._stopped:
+            return
         if not self._clients:
             return
         if message.get("type") == WS_LOGS_UPDATE and self._logs_update_enqueued:
