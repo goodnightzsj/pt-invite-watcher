@@ -142,7 +142,7 @@ async def run_once_locked(
                     if in_flight.get(dom) is asyncio.current_task():
                         in_flight.pop(dom, None)
 
-            task = asyncio.create_task(_runner())
+            task = asyncio.create_task(_runner(), name=f"scan_{dom}")
             in_flight[dom] = task
             tasks.append(task)
 
@@ -222,4 +222,3 @@ async def run_once_locked(
 
 
 __all__ = ["PreparedRun", "ScanRunResult", "run_once_locked"]
-
