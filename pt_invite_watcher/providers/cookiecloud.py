@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -61,8 +62,12 @@ class CookieCloudClient:
             if err:
                 raise err
             assert resp is not None
-            resp.raise_for_status()
-            data = resp.json()
+            try:
+                resp.raise_for_status()
+                data = resp.json()
+            finally:
+                with suppress(Exception):
+                    await resp.aclose()
 
         cookie_data = data.get("cookie_data") or {}
         cookies: list[dict[str, Any]] = []
