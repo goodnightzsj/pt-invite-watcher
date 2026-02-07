@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import suppress
+
 import httpx
 
 from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS, DEFAULT_REQUEST_RETRY_DELAY_SECONDS, request_with_retry
@@ -37,4 +39,7 @@ class TelegramNotifier:
             if err:
                 return False
             assert resp is not None
-            return resp.status_code == 200
+            ok = resp.status_code == 200
+            with suppress(Exception):
+                await resp.aclose()
+            return ok
