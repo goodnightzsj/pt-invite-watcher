@@ -10,12 +10,29 @@ from pt_invite_watcher.storage.event_log_store import add_event as _add_event
 
 logger = logging.getLogger("pt_invite_watcher.storage.scan_log_buffer")
 
+def _create_task_logged(coro: Any, *, name: str) -> asyncio.Task[Any]:
+    task = asyncio.create_task(coro, name=name)
+
+    def _done(t: asyncio.Task[Any]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.exception("task failed: %s", name)
+
+    task.add_done_callback(_done)
+    return task
+
 
 def ensure_scan_log_flusher(store: Any) -> None:
     task = getattr(store, "_scan_log_flush_task", None)
     if task is not None and not task.done():
         return
-    store._scan_log_flush_task = asyncio.create_task(scan_log_flush_loop(store))  # type: ignore[attr-defined]
+    store._scan_log_flush_task = _create_task_logged(  # type: ignore[attr-defined]
+        scan_log_flush_loop(store),
+        name="scan_log_flush_loop",
+    )
 
 
 async def scan_log_flush_loop(store: Any) -> None:
@@ -181,4 +198,3 @@ async def flush_scan_logs(store: Any, *, max_items: int | None = None) -> None:
 
 
 __all__ = ["ensure_scan_log_flusher", "scan_log_flush_loop", "enqueue_scan_log_event", "flush_scan_logs"]
-
