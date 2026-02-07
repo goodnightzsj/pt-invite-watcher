@@ -264,7 +264,7 @@ async def api_sites_put(
         scan_triggered = True
 
         async def _kick() -> None:
-            run_task = asyncio.create_task(ctx.scanner.run_one(domain))
+            run_task = asyncio.create_task(ctx.scanner.run_one(domain), name=f"scan_one_{domain}")
             await asyncio.sleep(0)
             try:
                 await broadcast_dashboard_update()
@@ -282,7 +282,7 @@ async def api_sites_put(
                 except Exception:
                     pass
 
-        asyncio.create_task(_kick())
+        asyncio.create_task(_kick(), name=f"sites_auto_scan_{domain}")
 
     return {"ok": True, "scan_triggered": scan_triggered, "scan_reason": scan_reason}
 
