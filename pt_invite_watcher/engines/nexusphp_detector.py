@@ -124,37 +124,41 @@ class NexusPhpDetector:
                 last_err_detail = _append_retry_detail(format_error_detail(err, max_len=_MAX_ERROR_DETAIL_LEN), used)
                 continue
             assert resp is not None
-            if resp.status_code == 404:
-                continue
-            if resp.status_code >= 500:
-                last_http_err = resp
-                last_http_used = used
-                continue
+            try:
+                if resp.status_code == 404:
+                    continue
+                if resp.status_code >= 500:
+                    last_http_err = resp
+                    last_http_used = used
+                    continue
 
-            text = _extract_text(resp.text or "")
-            closed_pat = _is_registration_closed(text)
-            if closed_pat:
+                text = _extract_text(resp.text or "")
+                closed_pat = _is_registration_closed(text)
+                if closed_pat:
+                    return AspectResult(
+                        state="closed",
+                        evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="registration_closed", matched=closed_pat),
+                    )
+
+                if not _has_signup_form(resp.text or ""):
+                    return AspectResult(
+                        state="closed",
+                        evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="signup_form_missing"),
+                    )
+
+                if _has_invite_field(resp.text or ""):
+                    return AspectResult(
+                        state="closed",
+                        evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="invite_required"),
+                    )
+
                 return AspectResult(
-                    state="closed",
-                    evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="registration_closed", matched=closed_pat),
+                    state="open",
+                    evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="signup_form_detected"),
                 )
-
-            if not _has_signup_form(resp.text or ""):
-                return AspectResult(
-                    state="closed",
-                    evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="signup_form_missing"),
-                )
-
-            if _has_invite_field(resp.text or ""):
-                return AspectResult(
-                    state="closed",
-                    evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="invite_required"),
-                )
-
-            return AspectResult(
-                state="open",
-                evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="signup_form_detected"),
-            )
+            finally:
+                with suppress(Exception):
+                    await resp.aclose()
 
         if last_unknown is not None:
             return last_unknown
