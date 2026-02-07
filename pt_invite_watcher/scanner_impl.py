@@ -96,7 +96,7 @@ class Scanner:
         )
 
     def in_flight_domains(self) -> set[str]:
-        return set(list(self._in_flight.keys()))
+        return set(self._in_flight.keys())
 
     async def probe_dependencies(self) -> Dict[str, Any]:
         async with self._deps_lock:
@@ -285,9 +285,6 @@ class Scanner:
                         **mp_fields,
                         "last_run_at": started_at.isoformat(),
                     }
-
-                if target in self._in_flight:
-                    raise AlreadyScanningError(target)
 
                 logger.info("single scan start: %s", target)
                 await self._store.add_event(
