@@ -41,6 +41,19 @@ from pt_invite_watcher.storage.site_state_store import (
 
 logger = logging.getLogger("pt_invite_watcher.storage")
 
+def _create_task_logged(coro: Any, *, label: str) -> None:
+    task = asyncio.create_task(coro)
+
+    def _done(t: asyncio.Task[Any]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.exception("%s task failed", label)
+
+    task.add_done_callback(_done)
+
 
 @dataclass(frozen=True)
 class StoredSiteState:
@@ -108,7 +121,7 @@ class SqliteStore:
             try:
                 res = hook(reason)
                 if asyncio.iscoroutine(res):
-                    asyncio.create_task(res)
+                    _create_task_logged(res, label="logs resync hook")
             except Exception:
                 logger.exception("logs resync hook failed")
 
@@ -320,7 +333,7 @@ class SqliteStore:
             try:
                 res = hook(evt)
                 if asyncio.iscoroutine(res):
-                    asyncio.create_task(res)
+                    _create_task_logged(res, label="event hook")
             except Exception:
                 logger.exception("event hook failed")
 

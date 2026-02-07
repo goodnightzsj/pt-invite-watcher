@@ -7,6 +7,19 @@ from typing import Any
 
 logger = logging.getLogger("pt_invite_watcher.storage.event_hooks")
 
+def _create_task_logged(coro: Any) -> None:
+    task = asyncio.create_task(coro)
+
+    def _done(t: asyncio.Task[Any]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.exception("event hook task failed")
+
+    task.add_done_callback(_done)
+
 
 def dispatch_event_hooks(store: Any, evt: dict[str, Any]) -> None:
     """
@@ -25,10 +38,9 @@ def dispatch_event_hooks(store: Any, evt: dict[str, Any]) -> None:
         try:
             res = hook(evt)
             if asyncio.iscoroutine(res):
-                asyncio.create_task(res)
+                _create_task_logged(res)
         except Exception:
             logger.exception("event hook failed")
 
 
 __all__ = ["dispatch_event_hooks"]
-
