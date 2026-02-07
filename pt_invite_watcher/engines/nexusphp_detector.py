@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -79,16 +80,20 @@ async def _probe_user_id_from_usercp(
     resp, err, _ = await _get_with_retry(client, url, headers={"User-Agent": ua, "Cookie": cookie_header}, delay_seconds=retry_delay_seconds)
     if err or resp is None:
         return None
-    if resp.status_code == 404 or resp.status_code >= 500:
-        return None
-    if _looks_like_login(resp):
-        return None
-    raw_html = resp.text or ""
-    if adapter:
-        uid = adapter.extract_uid(raw_html)
-        if uid:
-            return uid
-    return _extract_user_id_from_html(raw_html)
+    try:
+        if resp.status_code == 404 or resp.status_code >= 500:
+            return None
+        if _looks_like_login(resp):
+            return None
+        raw_html = resp.text or ""
+        if adapter:
+            uid = adapter.extract_uid(raw_html)
+            if uid:
+                return uid
+        return _extract_user_id_from_html(raw_html)
+    finally:
+        with suppress(Exception):
+            await resp.aclose()
 
 
 @dataclass(frozen=True)
