@@ -227,23 +227,30 @@ class NexusPhpDetector:
                 ),
             )
         assert home_resp is not None
-        if home_resp.status_code >= 500:
-            return AspectResult(
-                state="unknown",
-                evidence=Evidence(
-                    url=str(home_resp.url),
-                    http_status=home_resp.status_code,
-                    reason=f"invites_error:HTTP{home_resp.status_code}",
-                    detail=_append_retry_detail(None, used),
-                ),
-            )
-        if _looks_like_login(home_resp):
-            return AspectResult(
-                state="unknown",
-                evidence=Evidence(url=str(home_resp.url), http_status=home_resp.status_code, reason="not_logged_in"),
-            )
+        try:
+            if home_resp.status_code >= 500:
+                return AspectResult(
+                    state="unknown",
+                    evidence=Evidence(
+                        url=str(home_resp.url),
+                        http_status=home_resp.status_code,
+                        reason=f"invites_error:HTTP{home_resp.status_code}",
+                        detail=_append_retry_detail(None, used),
+                    ),
+                )
+            if _looks_like_login(home_resp):
+                return AspectResult(
+                    state="unknown",
+                    evidence=Evidence(url=str(home_resp.url), http_status=home_resp.status_code, reason="not_logged_in"),
+                )
+            home_url = str(home_resp.url)
+            home_status = int(home_resp.status_code)
+            home_html = home_resp.text or ""
+        finally:
+            with suppress(Exception):
+                await home_resp.aclose()
 
-        home_text = _extract_text(home_resp.text or "")
+        home_text = _extract_text(home_html)
         uid_source: Optional[str] = None
         user_id = await _probe_user_id_from_usercp(
             client,
@@ -256,18 +263,18 @@ class NexusPhpDetector:
         if user_id:
             uid_source = "usercp"
         if not user_id and adapter:
-            user_id = adapter.extract_uid(home_resp.text or "") or None
+            user_id = adapter.extract_uid(home_html) or None
             if user_id:
                 uid_source = "home"
         if not user_id:
-            user_id, uid_source = _extract_user_id_and_source(home_resp.text)
+            user_id, uid_source = _extract_user_id_and_source(home_html)
         uid_detail = f"uid_source={uid_source}" if uid_source else None
         quota_perm, quota_temp, quota_matched = _parse_home_invite_quota(home_text)
         quota_total: Optional[int] = None
         if quota_perm is not None:
             quota_total = quota_perm + (quota_temp or 0)
             if quota_perm == 0 and (quota_temp or 0) == 0 and quota_matched:
-                evidence_url = _join(site.url, f"invite.php?id={user_id}") if user_id else str(home_resp.url)
+                evidence_url = _join(site.url, f"invite.php?id={user_id}") if user_id else home_url
                 return AspectResult(
                     state="closed",
                     available=0,
@@ -275,13 +282,13 @@ class NexusPhpDetector:
                     temporary=quota_temp or 0,
                     evidence=Evidence(
                         url=evidence_url,
-                        http_status=home_resp.status_code,
+                        http_status=home_status,
                         reason="invite_quota_home_zero",
                         matched=quota_matched,
                         detail=uid_detail,
                     ),
                 )
-        invite_url = _extract_invite_url_from_html(home_resp.text or "", site.url, join=_join)
+        invite_url = _extract_invite_url_from_html(home_html, site.url, join=_join)
         invite_url_with_id = _join(site.url, f"invite.php?id={user_id}") if user_id else None
         if invite_url and user_id:
             raw = invite_url.lower()
@@ -328,10 +335,14 @@ class NexusPhpDetector:
                 continue
             assert r is not None
             if r.status_code == 404:
+                with suppress(Exception):
+                    await r.aclose()
                 continue
             if r.status_code >= 500:
                 last_http_err = r
                 last_http_used = fetch_used
+                with suppress(Exception):
+                    await r.aclose()
                 continue
             invite_resp = r
             break
@@ -370,123 +381,128 @@ class NexusPhpDetector:
                 ),
             )
 
-        if _looks_like_login(invite_resp):
-            return AspectResult(
-                state="unknown",
-                evidence=Evidence(url=str(invite_resp.url), http_status=invite_resp.status_code, reason="not_logged_in"),
-            )
+        try:
+            if _looks_like_login(invite_resp):
+                return AspectResult(
+                    state="unknown",
+                    evidence=Evidence(url=str(invite_resp.url), http_status=invite_resp.status_code, reason="not_logged_in"),
+                )
 
-        invite_text = _extract_text(invite_resp.text or "")
-        disabled_pat = _is_invite_disabled(invite_text)
-        if disabled_pat:
-            return AspectResult(
-                state="closed",
-                available=0,
-                permanent=quota_perm,
-                temporary=quota_temp,
-                evidence=Evidence(
-                    url=str(invite_resp.url),
-                    http_status=invite_resp.status_code,
-                    reason="invites_disabled",
-                    matched=disabled_pat,
-                    detail=_merge_detail(
-                        f"quota_perm={quota_perm} quota_temp={quota_temp} quota_total={quota_total}" if quota_total is not None else None,
-                        uid_detail,
+            invite_html = invite_resp.text or ""
+            invite_text = _extract_text(invite_html)
+            disabled_pat = _is_invite_disabled(invite_text)
+            if disabled_pat:
+                return AspectResult(
+                    state="closed",
+                    available=0,
+                    permanent=quota_perm,
+                    temporary=quota_temp,
+                    evidence=Evidence(
+                        url=str(invite_resp.url),
+                        http_status=invite_resp.status_code,
+                        reason="invites_disabled",
+                        matched=disabled_pat,
+                        detail=_merge_detail(
+                            f"quota_perm={quota_perm} quota_temp={quota_temp} quota_total={quota_total}" if quota_total is not None else None,
+                            uid_detail,
+                        ),
                     ),
-                ),
-            )
+                )
 
-        count_reason: Optional[str] = None
-        count = quota_total
-        matched = quota_matched
-        if count is None:
-            count, matched = _parse_invite_count(invite_text)
+            count_reason: Optional[str] = None
+            count = quota_total
+            matched = quota_matched
             if count is None:
-                quota_insufficient = _extract_invite_quota_insufficient(invite_text)
-                if quota_insufficient:
-                    count = 0
-                    matched = quota_insufficient
-                    count_reason = "invite_quota_insufficient"
+                count, matched = _parse_invite_count(invite_text)
+                if count is None:
+                    quota_insufficient = _extract_invite_quota_insufficient(invite_text)
+                    if quota_insufficient:
+                        count = 0
+                        matched = quota_insufficient
+                        count_reason = "invite_quota_insufficient"
 
-        action_status, action_matched = _invite_send_action_status(invite_resp.text)
-        if action_status is False:
+            action_status, action_matched = _invite_send_action_status(invite_html)
+            if action_status is False:
+                return AspectResult(
+                    state="closed",
+                    available=0,
+                    permanent=quota_perm if quota_perm is not None else count,
+                    temporary=quota_temp if quota_perm is not None else 0,
+                    evidence=Evidence(
+                        url=str(invite_resp.url),
+                        http_status=invite_resp.status_code,
+                        reason="invite_permission_denied",
+                        matched=action_matched,
+                        detail=_merge_detail(f"quota_total={count}" if count is not None else None, uid_detail),
+                    ),
+                )
+
+            permission_reason: Optional[str] = None
+            if adapter:
+                try:
+                    permission_reason = adapter.invite_permission_reason(invite_text, invite_html)
+                except Exception:
+                    permission_reason = None
+            permission_reason = permission_reason or _extract_invite_permission_reason(invite_text)
+            denied_pat = _invite_permission_denied_any(invite_text, invite_html)
+            if denied_pat or permission_reason:
+                detail = _truncate_detail(permission_reason) if permission_reason else None
+                if not detail and count is not None:
+                    detail = f"quota_total={count}"
+                return AspectResult(
+                    state="closed",
+                    available=0,
+                    permanent=quota_perm if quota_perm is not None else count,
+                    temporary=quota_temp if quota_perm is not None else 0,
+                    evidence=Evidence(
+                        url=str(invite_resp.url),
+                        http_status=invite_resp.status_code,
+                        reason="invite_permission_denied",
+                        matched=denied_pat,
+                        detail=_merge_detail(detail, uid_detail),
+                    ),
+                )
+
+            if count is None:
+                return AspectResult(
+                    state="unknown",
+                    evidence=Evidence(
+                        url=str(invite_resp.url),
+                        http_status=invite_resp.status_code,
+                        reason="invite_count_not_found",
+                        detail=uid_detail,
+                    ),
+                )
+
+            if action_status is None and count > 0:
+                # Some sites hide/disable the send-invite action without a clear text marker.
+                # For "open invites", we require that a send/create invite action is visible.
+                return AspectResult(
+                    state="closed",
+                    available=0,
+                    permanent=quota_perm if quota_perm is not None else count,
+                    temporary=quota_temp if quota_perm is not None else 0,
+                    evidence=Evidence(
+                        url=str(invite_resp.url),
+                        http_status=invite_resp.status_code,
+                        reason="invite_action_not_found",
+                        detail=_merge_detail(f"quota_total={count}", uid_detail),
+                    ),
+                )
+
             return AspectResult(
-                state="closed",
-                available=0,
+                state="open" if count > 0 else "closed",
+                available=count,
                 permanent=quota_perm if quota_perm is not None else count,
                 temporary=quota_temp if quota_perm is not None else 0,
                 evidence=Evidence(
                     url=str(invite_resp.url),
                     http_status=invite_resp.status_code,
-                    reason="invite_permission_denied",
-                    matched=action_matched,
-                    detail=_merge_detail(f"quota_total={count}" if count is not None else None, uid_detail),
-                ),
-            )
-
-        permission_reason: Optional[str] = None
-        if adapter:
-            try:
-                permission_reason = adapter.invite_permission_reason(invite_text, invite_resp.text or "")
-            except Exception:
-                permission_reason = None
-        permission_reason = permission_reason or _extract_invite_permission_reason(invite_text)
-        denied_pat = _invite_permission_denied_any(invite_text, invite_resp.text)
-        if denied_pat or permission_reason:
-            detail = _truncate_detail(permission_reason) if permission_reason else None
-            if not detail and count is not None:
-                detail = f"quota_total={count}"
-            return AspectResult(
-                state="closed",
-                available=0,
-                permanent=quota_perm if quota_perm is not None else count,
-                temporary=quota_temp if quota_perm is not None else 0,
-                evidence=Evidence(
-                    url=str(invite_resp.url),
-                    http_status=invite_resp.status_code,
-                    reason="invite_permission_denied",
-                    matched=denied_pat,
-                    detail=_merge_detail(detail, uid_detail),
-                ),
-            )
-
-        if count is None:
-            return AspectResult(
-                state="unknown",
-                evidence=Evidence(
-                    url=str(invite_resp.url),
-                    http_status=invite_resp.status_code,
-                    reason="invite_count_not_found",
+                    reason=count_reason or ("invite_count_parsed" if quota_total is None else "invite_quota_home_header"),
+                    matched=action_matched or matched,
                     detail=uid_detail,
                 ),
             )
-
-        if action_status is None and count > 0:
-            # Some sites hide/disable the send-invite action without a clear text marker.
-            # For "open invites", we require that a send/create invite action is visible.
-            return AspectResult(
-                state="closed",
-                available=0,
-                permanent=quota_perm if quota_perm is not None else count,
-                temporary=quota_temp if quota_perm is not None else 0,
-                evidence=Evidence(
-                    url=str(invite_resp.url),
-                    http_status=invite_resp.status_code,
-                    reason="invite_action_not_found",
-                    detail=_merge_detail(f"quota_total={count}", uid_detail),
-                ),
-            )
-
-        return AspectResult(
-            state="open" if count > 0 else "closed",
-            available=count,
-            permanent=quota_perm if quota_perm is not None else count,
-            temporary=quota_temp if quota_perm is not None else 0,
-            evidence=Evidence(
-                url=str(invite_resp.url),
-                http_status=invite_resp.status_code,
-                reason=count_reason or ("invite_count_parsed" if quota_total is None else "invite_quota_home_header"),
-                matched=action_matched or matched,
-                detail=uid_detail,
-            ),
-        )
+        finally:
+            with suppress(Exception):
+                await invite_resp.aclose()
