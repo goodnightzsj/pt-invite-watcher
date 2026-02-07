@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
@@ -64,30 +65,34 @@ class WeComNotifier:
         if err:
             return None, f"gettoken request error: {type(err).__name__}", {"stage": "gettoken", "error": str(err)}
         assert resp is not None
-        data = self._safe_json(resp)
-        if resp.status_code != 200:
-            return (
-                None,
-                f"gettoken http {resp.status_code}",
-                {"stage": "gettoken", "http_status": resp.status_code, "response": data or (resp.text or "")[:200]},
-            )
-        if data.get("errcode") != 0:
-            return (
-                None,
-                f"gettoken errcode={data.get('errcode')} errmsg={data.get('errmsg')}",
-                {"stage": "gettoken", "http_status": resp.status_code, "response": data},
-            )
+        try:
+            data = self._safe_json(resp)
+            if resp.status_code != 200:
+                return (
+                    None,
+                    f"gettoken http {resp.status_code}",
+                    {"stage": "gettoken", "http_status": resp.status_code, "response": data or (resp.text or "")[:200]},
+                )
+            if data.get("errcode") != 0:
+                return (
+                    None,
+                    f"gettoken errcode={data.get('errcode')} errmsg={data.get('errmsg')}",
+                    {"stage": "gettoken", "http_status": resp.status_code, "response": data},
+                )
 
-        expires_in = int(data.get("expires_in") or 7200)
-        token = data.get("access_token")
-        if not token:
-            return (
-                None,
-                "gettoken missing access_token",
-                {"stage": "gettoken", "http_status": resp.status_code, "response": data},
-            )
-        self._token = _Token(value=token, expires_at=now + timedelta(seconds=expires_in))
-        return token, "token ok", {"stage": "gettoken", "http_status": resp.status_code, "expires_in": expires_in}
+            expires_in = int(data.get("expires_in") or 7200)
+            token = data.get("access_token")
+            if not token:
+                return (
+                    None,
+                    "gettoken missing access_token",
+                    {"stage": "gettoken", "http_status": resp.status_code, "response": data},
+                )
+            self._token = _Token(value=token, expires_at=now + timedelta(seconds=expires_in))
+            return token, "token ok", {"stage": "gettoken", "http_status": resp.status_code, "expires_in": expires_in}
+        finally:
+            with suppress(Exception):
+                await resp.aclose()
 
     async def send_detail(self, text: str) -> tuple[bool, str, dict]:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -127,20 +132,24 @@ class WeComNotifier:
                     {"stage": "send", "error": str(err), "token": token_detail},
                 )
             assert resp is not None
-            data = self._safe_json(resp)
-            if resp.status_code != 200:
-                return (
-                    False,
-                    f"send http {resp.status_code}",
-                    {"stage": "send", "http_status": resp.status_code, "response": data or (resp.text or "")[:200], "token": token_detail},
-                )
-            if data.get("errcode") != 0:
-                return (
-                    False,
-                    f"send errcode={data.get('errcode')} errmsg={data.get('errmsg')}",
-                    {"stage": "send", "http_status": resp.status_code, "response": data, "token": token_detail},
-                )
-            return True, "sent", {"stage": "send", "http_status": resp.status_code, "response": data, "token": token_detail}
+            try:
+                data = self._safe_json(resp)
+                if resp.status_code != 200:
+                    return (
+                        False,
+                        f"send http {resp.status_code}",
+                        {"stage": "send", "http_status": resp.status_code, "response": data or (resp.text or "")[:200], "token": token_detail},
+                    )
+                if data.get("errcode") != 0:
+                    return (
+                        False,
+                        f"send errcode={data.get('errcode')} errmsg={data.get('errmsg')}",
+                        {"stage": "send", "http_status": resp.status_code, "response": data, "token": token_detail},
+                    )
+                return True, "sent", {"stage": "send", "http_status": resp.status_code, "response": data, "token": token_detail}
+            finally:
+                with suppress(Exception):
+                    await resp.aclose()
 
     async def send(self, text: str) -> bool:
         ok, _, _ = await self.send_detail(text)
