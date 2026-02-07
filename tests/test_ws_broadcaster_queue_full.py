@@ -26,6 +26,18 @@ class WebSocketBroadcasterQueueFullTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(msg.get("type"), WS_LOGS_UPDATE)
             self.assertEqual((msg.get("data") or {}).get("reason"), "test")
 
+    async def test_publish_noop_after_stop(self) -> None:
+        broadcaster = WebSocketBroadcaster(queue_size=1)
+        await broadcaster.stop()
+
+        # Even if a client list is present, stop() should prevent publish() from enqueuing.
+        broadcaster._clients.append(object())  # type: ignore[attr-defined]
+
+        with patch.object(broadcaster, "_ensure_pump", return_value=None) as ensure:
+            broadcaster.publish({"type": WS_LOGS_APPEND, "data": {"id": 1}})
+            ensure.assert_not_called()
+            self.assertEqual(broadcaster._queue.qsize(), 0)  # type: ignore[attr-defined]
+
 
 if __name__ == "__main__":
     unittest.main()
