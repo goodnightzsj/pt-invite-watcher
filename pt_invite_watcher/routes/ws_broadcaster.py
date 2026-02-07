@@ -51,7 +51,7 @@ class WebSocketBroadcaster:
             self._pump_task = None
 
         while not self._queue.empty():
-            with suppress(asyncio.QueueEmpty):
+            with suppress(asyncio.QueueEmpty, RuntimeError):
                 self._queue.get_nowait()
                 self._queue.task_done()
         self._logs_update_enqueued = False
@@ -73,13 +73,12 @@ class WebSocketBroadcaster:
             return
         try:
             self._ensure_pump()
-        except RuntimeError:
-            # Event loop is closing / no running loop. Best-effort: drop.
-            return
-        try:
             self._queue.put_nowait(message)
             if message.get("type") == WS_LOGS_UPDATE:
                 self._logs_update_enqueued = True
+        except RuntimeError:
+            # Event loop is closing / no running loop. Best-effort: drop.
+            return
         except asyncio.QueueFull:
             msg_type = message.get("type")
             if msg_type not in {WS_LOGS_APPEND, WS_LOGS_UPDATE}:
@@ -88,10 +87,10 @@ class WebSocketBroadcaster:
                 return
             # Drop backlog and ask clients to resync once.
             while not self._queue.empty():
-                with suppress(asyncio.QueueEmpty):
+                with suppress(asyncio.QueueEmpty, RuntimeError):
                     self._queue.get_nowait()
                     self._queue.task_done()
-            with suppress(asyncio.QueueFull):
+            with suppress(asyncio.QueueFull, RuntimeError):
                 if msg_type == WS_LOGS_UPDATE:
                     self._queue.put_nowait(message)
                 else:
