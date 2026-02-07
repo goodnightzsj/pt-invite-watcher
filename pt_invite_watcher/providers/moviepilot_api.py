@@ -150,25 +150,29 @@ class MoviePilotClient:
         if err:
             raise MoviePilotError(f"login failed: {type(err).__name__} {str(err)[:200]}")
         assert resp is not None
-        if resp.status_code != 200:
-            hint = ""
-            if resp.status_code == 404:
-                hint = (
-                    " (check MP_BASE_URL: it must be the MoviePilot backend address; "
-                    "verify in browser that `${MP_BASE_URL}/docs` is reachable)"
-                )
-            retry_hint = f" (retries={used})" if used > 1 else ""
-            raise MoviePilotError(f"login failed: {resp.status_code} {resp.text[:200]}{hint}{retry_hint}")
+        try:
+            if resp.status_code != 200:
+                hint = ""
+                if resp.status_code == 404:
+                    hint = (
+                        " (check MP_BASE_URL: it must be the MoviePilot backend address; "
+                        "verify in browser that `${MP_BASE_URL}/docs` is reachable)"
+                    )
+                retry_hint = f" (retries={used})" if used > 1 else ""
+                raise MoviePilotError(f"login failed: {resp.status_code} {resp.text[:200]}{hint}{retry_hint}")
 
-        payload = resp.json()
-        token = safe_str(payload.get("access_token"))
-        if not token:
-            raise MoviePilotError("login failed: access_token missing")
+            payload = resp.json()
+            token = safe_str(payload.get("access_token"))
+            if not token:
+                raise MoviePilotError("login failed: access_token missing")
 
-        self._token = _Token(access_token=token, expires_at=_jwt_expires_at(token))
-        if self._token_cache_key:
-            _TOKEN_CACHE[self._token_cache_key] = self._token
-        return token
+            self._token = _Token(access_token=token, expires_at=_jwt_expires_at(token))
+            if self._token_cache_key:
+                _TOKEN_CACHE[self._token_cache_key] = self._token
+            return token
+        finally:
+            with suppress(Exception):
+                await resp.aclose()
 
     async def _get_token(self, client: httpx.AsyncClient) -> str:
         now = datetime.now(timezone.utc)
@@ -195,49 +199,56 @@ class MoviePilotClient:
             if err:
                 raise MoviePilotError(f"list sites failed: {type(err).__name__} {str(err)[:200]}")
             assert resp is not None
-            if resp.status_code == 401:
+            try:
+                if resp.status_code == 401:
+                    with suppress(Exception):
+                        await resp.aclose()
+                    token = await self._login(client)
+                    headers = {"Authorization": f"Bearer {token}"}
+                    resp2, err2, used2 = await request_with_retry(
+                        lambda: client.get(url, headers=headers),
+                        attempts=self._retry_attempts,
+                        delay_seconds=self._retry_delay_seconds,
+                    )
+                    if err2:
+                        raise MoviePilotError(f"list sites failed: {type(err2).__name__} {str(err2)[:200]}")
+                    assert resp2 is not None
+                    resp = resp2
+                    used = used2
+
+                if resp.status_code != 200:
+                    retry_hint = f" (retries={used})" if used > 1 else ""
+                    raise MoviePilotError(f"list sites failed: {resp.status_code} {resp.text[:200]}{retry_hint}")
+
+                items = resp.json()
+                if not isinstance(items, list):
+                    raise MoviePilotError("list sites failed: response is not a list")
+
+                sites: list[Site] = []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    is_active = bool(item.get("is_active", True))
+                    if only_active and not is_active:
+                        continue
+
+                    url_value = safe_str(item.get("url"))
+                    domain_value = safe_str(item.get("domain")) or _domain_from_url(url_value)
+                    if not domain_value or not url_value:
+                        continue
+
+                    sites.append(
+                        Site(
+                            id=item.get("id"),
+                            name=safe_str(item.get("name")) or domain_value,
+                            domain=domain_value,
+                            url=url_value,
+                            ua=safe_str(item.get("ua")) or None,
+                            cookie=safe_str(item.get("cookie")) or None,
+                            is_active=is_active,
+                        )
+                    )
+                return sites
+            finally:
                 with suppress(Exception):
                     await resp.aclose()
-                token = await self._login(client)
-                headers = {"Authorization": f"Bearer {token}"}
-                resp, err, used = await request_with_retry(
-                    lambda: client.get(url, headers=headers),
-                    attempts=self._retry_attempts,
-                    delay_seconds=self._retry_delay_seconds,
-                )
-                if err:
-                    raise MoviePilotError(f"list sites failed: {type(err).__name__} {str(err)[:200]}")
-                assert resp is not None
-            if resp.status_code != 200:
-                retry_hint = f" (retries={used})" if used > 1 else ""
-                raise MoviePilotError(f"list sites failed: {resp.status_code} {resp.text[:200]}{retry_hint}")
-
-            items = resp.json()
-            if not isinstance(items, list):
-                raise MoviePilotError("list sites failed: response is not a list")
-
-            sites: list[Site] = []
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                is_active = bool(item.get("is_active", True))
-                if only_active and not is_active:
-                    continue
-
-                url_value = safe_str(item.get("url"))
-                domain_value = safe_str(item.get("domain")) or _domain_from_url(url_value)
-                if not domain_value or not url_value:
-                    continue
-
-                sites.append(
-                    Site(
-                        id=item.get("id"),
-                        name=safe_str(item.get("name")) or domain_value,
-                        domain=domain_value,
-                        url=url_value,
-                        ua=safe_str(item.get("ua")) or None,
-                        cookie=safe_str(item.get("cookie")) or None,
-                        is_active=is_active,
-                    )
-                )
-            return sites
