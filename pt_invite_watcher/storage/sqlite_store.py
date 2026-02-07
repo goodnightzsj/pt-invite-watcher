@@ -132,24 +132,30 @@ class SqliteStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = await aiosqlite.connect(self._path.as_posix())
         self._conn.row_factory = aiosqlite.Row
-        await self._conn.execute("PRAGMA journal_mode=WAL;")
-        await self._conn.execute("PRAGMA synchronous=NORMAL;")
+        cur = await self._conn.execute("PRAGMA journal_mode=WAL;")
+        await cur.close()
+        cur = await self._conn.execute("PRAGMA synchronous=NORMAL;")
+        await cur.close()
 
         # Use a dedicated connection + lock for write transactions so we can batch
         # related writes without risking interleaving across coroutines.
         self._write_conn = await aiosqlite.connect(self._path.as_posix())
         self._write_conn.row_factory = aiosqlite.Row
-        await self._write_conn.execute("PRAGMA journal_mode=WAL;")
-        await self._write_conn.execute("PRAGMA synchronous=NORMAL;")
+        cur = await self._write_conn.execute("PRAGMA journal_mode=WAL;")
+        await cur.close()
+        cur = await self._write_conn.execute("PRAGMA synchronous=NORMAL;")
+        await cur.close()
 
         # Use a dedicated connection for lease operations so cross-process locking
         # logic isn't affected by concurrent writes on the main connection.
         self._lease_conn = await aiosqlite.connect(self._path.as_posix())
         self._lease_conn.row_factory = aiosqlite.Row
-        await self._lease_conn.execute("PRAGMA journal_mode=WAL;")
-        await self._lease_conn.execute("PRAGMA synchronous=NORMAL;")
+        cur = await self._lease_conn.execute("PRAGMA journal_mode=WAL;")
+        await cur.close()
+        cur = await self._lease_conn.execute("PRAGMA synchronous=NORMAL;")
+        await cur.close()
 
-        await self._conn.execute(
+        cur = await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS site_state (
               domain TEXT PRIMARY KEY,
@@ -165,7 +171,8 @@ class SqliteStore:
             );
             """
         )
-        await self._conn.execute(
+        await cur.close()
+        cur = await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS kv (
               key TEXT PRIMARY KEY,
@@ -174,7 +181,8 @@ class SqliteStore:
             );
             """
         )
-        await self._conn.execute(
+        await cur.close()
+        cur = await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS event_log (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,6 +196,7 @@ class SqliteStore:
             );
             """
         )
+        await cur.close()
         await self._conn.commit()
 
         await self._ensure_default_notifications()
