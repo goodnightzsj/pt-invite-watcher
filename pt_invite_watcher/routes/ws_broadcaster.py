@@ -71,7 +71,11 @@ class WebSocketBroadcaster:
             return
         if message.get("type") == WS_LOGS_UPDATE and self._logs_update_enqueued:
             return
-        self._ensure_pump()
+        try:
+            self._ensure_pump()
+        except RuntimeError:
+            # Event loop is closing / no running loop. Best-effort: drop.
+            return
         try:
             self._queue.put_nowait(message)
             if message.get("type") == WS_LOGS_UPDATE:
