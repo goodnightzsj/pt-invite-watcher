@@ -17,6 +17,20 @@ from pt_invite_watcher.utils.parse import cfg_bool
 
 logger = logging.getLogger("pt_invite_watcher.scheduler")
 
+def _create_task_logged(coro: Awaitable[Any], *, name: str) -> asyncio.Task[Any]:
+    task = asyncio.create_task(coro, name=name)
+
+    def _done(t: asyncio.Task[Any]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.exception("task failed: %s", name)
+
+    task.add_done_callback(_done)
+    return task
+
 
 async def start_scheduler(
     ctx: Any,
@@ -45,13 +59,14 @@ async def start_scheduler(
             ),
         )
 
-    return asyncio.create_task(
+    return _create_task_logged(
         _scheduler_loop(
             ctx,
             broadcast_dashboard_update=broadcast_dashboard_update,
             owner=scheduler_owner,
             leader_lock_disabled=leader_lock_disabled,
-        )
+        ),
+        name="scheduler_loop",
     )
 
 
@@ -63,6 +78,8 @@ async def stop_scheduler(task: Optional[asyncio.Task[Any]]) -> None:
         await task
     except asyncio.CancelledError:
         pass
+    except Exception:
+        logger.exception("scheduler task ended with error")
 
 
 async def _scheduler_loop(
@@ -87,7 +104,14 @@ async def _scheduler_loop(
     lease_ttl = scheduler_lease_ttl_seconds(interval_seconds=interval, timeout_seconds=timeout)
     try:
         while True:
-            is_leader = await lease.ensure_leader(ttl_seconds=lease_ttl)
+            try:
+                is_leader = await lease.ensure_leader(ttl_seconds=lease_ttl)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("ensure_leader failed")
+                await asyncio.sleep(5)
+                continue
             if not is_leader:
                 await asyncio.sleep(5)
                 continue
