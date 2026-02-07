@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import suppress
 from typing import Any, Optional
 
 import httpx
@@ -193,42 +194,46 @@ class MTeamDetector:
                 evidence=Evidence(url=_PROFILE_URL, http_status=None, reason=f"mteam_error:{type(err).__name__}", detail=detail),
             )
 
-        if resp.status_code in {401, 403}:
-            detail = _truncate_detail(resp.text)
-            if used > 1:
-                detail = f"{detail} (retries={used})"
-            return AspectResult(
-                state="unknown",
-                evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="mteam_auth_failed", detail=detail or None),
-            )
-
-        if resp.status_code != 200:
-            detail = None
-            if used > 1:
-                detail = f"retries={used}"
-            return AspectResult(
-                state="unknown",
-                evidence=Evidence(
-                    url=str(resp.url),
-                    http_status=resp.status_code,
-                    reason=f"mteam_error:HTTP{resp.status_code}",
-                    detail=detail,
-                ),
-            )
-
         try:
-            payload = resp.json()
-        except Exception as e:
-            detail = _truncate_detail(str(e))
-            return AspectResult(
-                state="unknown",
-                evidence=Evidence(
-                    url=str(resp.url),
-                    http_status=resp.status_code,
-                    reason="mteam_non_json",
-                    detail=detail,
-                ),
-            )
+            if resp.status_code in {401, 403}:
+                detail = _truncate_detail(resp.text)
+                if used > 1:
+                    detail = f"{detail} (retries={used})"
+                return AspectResult(
+                    state="unknown",
+                    evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="mteam_auth_failed", detail=detail or None),
+                )
+
+            if resp.status_code != 200:
+                detail = None
+                if used > 1:
+                    detail = f"retries={used}"
+                return AspectResult(
+                    state="unknown",
+                    evidence=Evidence(
+                        url=str(resp.url),
+                        http_status=resp.status_code,
+                        reason=f"mteam_error:HTTP{resp.status_code}",
+                        detail=detail,
+                    ),
+                )
+
+            try:
+                payload = resp.json()
+            except Exception as e:
+                detail = _truncate_detail(str(e))
+                return AspectResult(
+                    state="unknown",
+                    evidence=Evidence(
+                        url=str(resp.url),
+                        http_status=resp.status_code,
+                        reason="mteam_non_json",
+                        detail=detail,
+                    ),
+                )
+        finally:
+            with suppress(Exception):
+                await resp.aclose()
 
         if not isinstance(payload, dict):
             return AspectResult(
