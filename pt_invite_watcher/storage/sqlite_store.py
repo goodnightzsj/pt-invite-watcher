@@ -268,26 +268,40 @@ class SqliteStore:
 
 
     async def close(self) -> None:
-        if self._scan_log_flush_task is not None:
-            self._scan_log_flush_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._scan_log_flush_task
+        flush_task = self._scan_log_flush_task
+        if flush_task is not None and not flush_task.done():
+            flush_task.cancel()
+        if flush_task is not None:
+            try:
+                with suppress(asyncio.CancelledError):
+                    await flush_task
+            except Exception:
+                logger.exception("scan log flush task failed on close")
             self._scan_log_flush_task = None
 
-        try:
-            await self.flush_scan_logs()
-        except Exception:
-            logger.exception("failed to flush scan logs on close")
+        if self._write_conn is not None:
+            try:
+                await asyncio.wait_for(self.flush_scan_logs(), timeout=5)
+            except asyncio.TimeoutError:
+                logger.warning("timed out flushing scan logs on close")
+            except Exception:
+                logger.exception("failed to flush scan logs on close")
 
-        if self._conn:
-            await self._conn.close()
-            self._conn = None
-        if self._write_conn:
-            await self._write_conn.close()
-            self._write_conn = None
-        if self._lease_conn:
-            await self._lease_conn.close()
-            self._lease_conn = None
+        conns = [
+            ("conn", self._conn),
+            ("write_conn", self._write_conn),
+            ("lease_conn", self._lease_conn),
+        ]
+        self._conn = None
+        self._write_conn = None
+        self._lease_conn = None
+        for label, conn in conns:
+            if conn is None:
+                continue
+            try:
+                await conn.close()
+            except Exception:
+                logger.exception("failed to close sqlite connection (%s)", label)
 
     def _require_conn(self) -> aiosqlite.Connection:
         if not self._conn:
