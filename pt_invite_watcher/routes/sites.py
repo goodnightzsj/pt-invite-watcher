@@ -24,6 +24,7 @@ from pt_invite_watcher.routes.site_helpers import derive_site_page_urls
 from pt_invite_watcher.scanner import AlreadyScanningError
 from pt_invite_watcher.site_list_sync import sync_site_list_summary
 from pt_invite_watcher.site_templates import SITE_TEMPLATES, default_paths_for_template, infer_template, normalize_template, validate_template_for_domain
+from pt_invite_watcher.utils.asyncio_tasks import create_task_logged
 from pt_invite_watcher.utils.parse import safe_dict
 
 
@@ -282,7 +283,12 @@ async def api_sites_put(
                 except Exception:
                     pass
 
-        asyncio.create_task(_kick(), name=f"sites_auto_scan_{domain}")
+        create_task_logged(
+            _kick(),
+            logger=logger,
+            name=f"sites_auto_scan_{domain}",
+            label="sites auto scan",
+        )
 
     return {"ok": True, "scan_triggered": scan_triggered, "scan_reason": scan_reason}
 
