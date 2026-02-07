@@ -87,12 +87,21 @@ class CookieCloudService:
         async with self._lock:
             if self._fetch_task is None or self._fetch_fp != fp:
                 self._fetch_fp = fp
-                self._fetch_task = asyncio.create_task(client.fetch_cookie_items())
+                self._fetch_task = asyncio.create_task(
+                    client.fetch_cookie_items(),
+                    name="cookiecloud_fetch_cookie_items",
+                )
             task = self._fetch_task
 
         try:
             cookies = await task
             fetched_at = datetime.now(timezone.utc)
+        except asyncio.CancelledError:
+            async with self._lock:
+                if self._fetch_task is task:
+                    self._fetch_task = None
+                    self._fetch_fp = ""
+            raise
         except Exception:
             async with self._lock:
                 if self._fetch_task is task:
