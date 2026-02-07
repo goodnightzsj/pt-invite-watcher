@@ -218,10 +218,11 @@ async def list_events(
                 raw = str(detail_value)
                 stripped = raw.lstrip()
                 parsed: Any | None = None
-                try:
-                    parsed = ast.literal_eval(stripped)
-                except Exception:
-                    parsed = None
+                if stripped[:1] in {"{", "["}:
+                    try:
+                        parsed = ast.literal_eval(stripped)
+                    except Exception:
+                        parsed = None
                 if isinstance(parsed, (dict, list)):
                     item["detail"] = parsed
                 else:
