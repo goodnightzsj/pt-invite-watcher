@@ -4,9 +4,6 @@ import logging
 import sys
 from typing import Optional
 
-import uvicorn
-
-from pt_invite_watcher.app import app
 from pt_invite_watcher.config import load_settings
 
 
@@ -39,6 +36,10 @@ async def _check_once(config_path: Optional[str]) -> None:
 def main(argv: Optional[list[str]] = None) -> None:
     args = _parse_args(argv or sys.argv[1:])
     if args.cmd == "run":
+        import uvicorn
+
+        from pt_invite_watcher.app import app
+
         settings = load_settings()
         host = args.host or settings.web.host
         port = args.port or settings.web.port
