@@ -20,6 +20,7 @@ def ensure_scan_log_flusher(store: Any) -> None:
         scan_log_flush_loop(store),
         logger=logger,
         name="scan_log_flush_loop",
+        label="scan log flush loop",
     )
 
 

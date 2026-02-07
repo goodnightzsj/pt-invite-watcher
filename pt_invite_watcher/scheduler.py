@@ -55,6 +55,7 @@ async def start_scheduler(
         ),
         logger=logger,
         name="scheduler_loop",
+        label="scheduler loop",
     )
 
 
@@ -67,7 +68,7 @@ async def stop_scheduler(task: Optional[asyncio.Task[Any]]) -> None:
     except asyncio.CancelledError:
         pass
     except Exception:
-        logger.exception("scheduler task ended with error")
+        pass
 
 
 async def _scheduler_loop(
