@@ -60,14 +60,14 @@ async def lifespan(app: FastAPI):
         ws_broadcaster.publish({"type": WS_LOGS_APPEND, "data": event})
 
     ctx.store.on_event(_on_log_event)
-    if hasattr(ctx.store, "on_logs_resync"):
+    on_logs_resync = getattr(ctx.store, "on_logs_resync", None)
+    if callable(on_logs_resync):
         # Ask clients to resync logs when the store detects log buffering issues.
         def _on_logs_resync(reason: str) -> None:
             ws_broadcaster.publish({"type": WS_LOGS_UPDATE, "data": {"reason": reason}})
 
-        ctx.store.on_logs_resync(_on_logs_resync)  # type: ignore[attr-defined]
+        on_logs_resync(_on_logs_resync)
 
-    scan_task: Optional[asyncio.Task[Any]] = None
     scan_task = await start_scheduler(ctx, broadcast_dashboard_update=broadcast_dashboard_update)
     yield
     await stop_scheduler(scan_task)
