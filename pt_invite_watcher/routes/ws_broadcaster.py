@@ -92,7 +92,17 @@ class WebSocketBroadcaster:
     def _ensure_pump(self) -> None:
         if self._pump_task is not None and not self._pump_task.done():
             return
-        self._pump_task = asyncio.create_task(self._pump())
+        self._pump_task = asyncio.create_task(self._pump(), name="ws_broadcaster_pump")
+
+        def _done(t: asyncio.Task[None]) -> None:
+            try:
+                t.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                logger.exception("ws broadcaster pump task failed")
+
+        self._pump_task.add_done_callback(_done)
 
     async def _pump(self) -> None:
         while True:
