@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from typing import Awaitable, Callable, Optional, Set, Tuple, TypeVar
 
 import httpx
@@ -37,6 +38,8 @@ async def request_with_retry(
             resp = await request_fn()
             last_resp = resp
             if is_retryable_status(resp.status_code, retry_statuses) and attempt < used_attempts - 1:
+                with suppress(Exception):
+                    await resp.aclose()
                 if wait_seconds:
                     await asyncio.sleep(wait_seconds)
                 continue
