@@ -8,7 +8,8 @@ from typing import Any
 logger = logging.getLogger("pt_invite_watcher.storage.event_hooks")
 
 def _create_task_logged(coro: Any) -> None:
-    task = asyncio.create_task(coro)
+    task_name = "event_hook"
+    task = asyncio.create_task(coro, name=task_name)
 
     def _done(t: asyncio.Task[Any]) -> None:
         try:
@@ -16,7 +17,7 @@ def _create_task_logged(coro: Any) -> None:
         except asyncio.CancelledError:
             return
         except Exception:
-            logger.exception("event hook task failed")
+            logger.exception("event hook task failed (task=%s)", task_name)
 
     task.add_done_callback(_done)
 
