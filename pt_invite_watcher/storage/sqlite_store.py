@@ -42,7 +42,8 @@ from pt_invite_watcher.storage.site_state_store import (
 logger = logging.getLogger("pt_invite_watcher.storage")
 
 def _create_task_logged(coro: Any, *, label: str) -> None:
-    task = asyncio.create_task(coro)
+    task_name = f"sqlite_store_{str(label or 'task').strip().replace(' ', '_')}"
+    task = asyncio.create_task(coro, name=task_name)
 
     def _done(t: asyncio.Task[Any]) -> None:
         try:
@@ -50,7 +51,7 @@ def _create_task_logged(coro: Any, *, label: str) -> None:
         except asyncio.CancelledError:
             return
         except Exception:
-            logger.exception("%s task failed", label)
+            logger.exception("%s task failed (task=%s)", label, task_name)
 
     task.add_done_callback(_done)
 
