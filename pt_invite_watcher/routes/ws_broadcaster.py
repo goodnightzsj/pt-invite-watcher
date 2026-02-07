@@ -42,8 +42,12 @@ class WebSocketBroadcaster:
         self._stopped = True
         if self._pump_task is not None:
             self._pump_task.cancel()
-            with suppress(asyncio.CancelledError):
+            try:
                 await self._pump_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("ws pump task failed on stop")
             self._pump_task = None
 
         while not self._queue.empty():
