@@ -24,6 +24,7 @@ class AppContext:
     notifier: NotifierManager
     runtime_config: RuntimeConfigCache
     effective_sites: EffectiveSitesService
+    cookiecloud: CookieCloudService
     deps: DepsService
 
 
@@ -56,5 +57,6 @@ async def build_context(settings: Settings) -> AppContext:
         notifier=notifier,
         runtime_config=runtime_config,
         effective_sites=effective_sites,
+        cookiecloud=cookiecloud,
         deps=deps,
     )

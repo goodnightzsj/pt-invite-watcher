@@ -30,6 +30,7 @@ async def _check_once(config_path: Optional[str]) -> None:
     try:
         await ctx.scanner.run_once()
     finally:
+        await ctx.cookiecloud.close()
         await ctx.store.close()
 
 

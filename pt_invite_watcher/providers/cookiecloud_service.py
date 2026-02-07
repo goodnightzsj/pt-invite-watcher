@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -58,6 +59,19 @@ class CookieCloudService:
         self._cache_fp = ""
         self._cache_at: Optional[datetime] = None
         self._cache: Optional[list[dict[str, Any]]] = None
+
+    async def close(self) -> None:
+        task: Optional[asyncio.Task[list[dict[str, Any]]]] = None
+        async with self._lock:
+            task = self._fetch_task
+            self._fetch_task = None
+            self._fetch_fp = ""
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
     async def _load_runtime_config(self) -> Any:
         return await get_runtime_config(self._settings, self._store, runtime_config=self._runtime_config)

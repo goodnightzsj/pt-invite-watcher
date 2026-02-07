@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
     yield
     await stop_scheduler(scan_task)
     await ws_broadcaster.stop()
+    await ctx.cookiecloud.close()
     await ctx.store.close()
 
 
