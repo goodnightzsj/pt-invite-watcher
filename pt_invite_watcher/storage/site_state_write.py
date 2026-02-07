@@ -25,7 +25,7 @@ async def save_site_result(
         changed_at_value = None
 
     if conn is not None:
-        await conn.execute(
+        cur = await conn.execute(
             """
             INSERT INTO site_state (
               domain, name, url, engine,
@@ -60,6 +60,7 @@ async def save_site_result(
                 evidence_json,
             ),
         )
+        await cur.close()
         if commit:
             await conn.commit()
         return
@@ -67,7 +68,7 @@ async def save_site_result(
     write_txn = getattr(store, "write_transaction", None)
     if callable(write_txn) and commit:
         async with write_txn() as c:
-            await c.execute(
+            cur = await c.execute(
                 """
                 INSERT INTO site_state (
                   domain, name, url, engine,
@@ -102,6 +103,7 @@ async def save_site_result(
                     evidence_json,
                 ),
             )
+            await cur.close()
         return
 
     require_conn = getattr(store, "require_conn", None)
@@ -109,7 +111,7 @@ async def save_site_result(
         c = require_conn()
     else:
         c = store._require_conn()
-    await c.execute(
+    cur = await c.execute(
         """
         INSERT INTO site_state (
           domain, name, url, engine,
@@ -144,6 +146,7 @@ async def save_site_result(
             evidence_json,
         ),
     )
+    await cur.close()
     if commit:
         await c.commit()
 
@@ -152,7 +155,8 @@ async def reset_site_states(store: SupportsConn) -> None:
     write_txn = getattr(store, "write_transaction", None)
     if callable(write_txn):
         async with write_txn() as conn:
-            await conn.execute("DELETE FROM site_state")
+            cur = await conn.execute("DELETE FROM site_state")
+            await cur.close()
         return
 
     require_conn = getattr(store, "require_conn", None)
@@ -160,7 +164,8 @@ async def reset_site_states(store: SupportsConn) -> None:
         conn = require_conn()
     else:
         conn = store._require_conn()
-    await conn.execute("DELETE FROM site_state")
+    cur = await conn.execute("DELETE FROM site_state")
+    await cur.close()
     await conn.commit()
 
 
