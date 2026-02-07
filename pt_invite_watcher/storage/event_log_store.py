@@ -205,6 +205,7 @@ async def list_events(
 
     cur = await conn.execute(sql, tuple(params))
     rows = await cur.fetchall()
+    await cur.close()
     items: list[dict[str, Any]] = []
     for r in rows:
         item = dict(r)
@@ -276,6 +277,7 @@ async def get_log_domains(store: Any) -> list[str]:
         conn = store._require_conn()
     cur = await conn.execute("SELECT DISTINCT domain FROM event_log WHERE domain IS NOT NULL AND domain != '' ORDER BY domain")
     rows = await cur.fetchall()
+    await cur.close()
     return [str(r[0]) for r in rows if r[0]]
 
 
