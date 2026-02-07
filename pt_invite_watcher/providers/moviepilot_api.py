@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -195,6 +196,8 @@ class MoviePilotClient:
                 raise MoviePilotError(f"list sites failed: {type(err).__name__} {str(err)[:200]}")
             assert resp is not None
             if resp.status_code == 401:
+                with suppress(Exception):
+                    await resp.aclose()
                 token = await self._login(client)
                 headers = {"Authorization": f"Bearer {token}"}
                 resp, err, used = await request_with_retry(
