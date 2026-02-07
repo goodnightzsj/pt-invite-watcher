@@ -20,6 +20,7 @@ from pt_invite_watcher.providers.deps_status import (
 )
 from pt_invite_watcher.runtime_config_cache import RuntimeConfigCache
 from pt_invite_watcher.runtime_config_loader import get_runtime_config
+from pt_invite_watcher.utils.asyncio_tasks import create_task_logged
 from pt_invite_watcher.utils.parse import format_error_detail
 
 
@@ -137,7 +138,12 @@ class CookieCloudService:
                     except asyncio.CancelledError:
                         pass
                     try:
-                        asyncio.create_task(_finalize_fetch_task(t), name="cookiecloud_finalize_fetch")
+                        create_task_logged(
+                            _finalize_fetch_task(t),
+                            logger=logger,
+                            name="cookiecloud_finalize_fetch",
+                            label="cookiecloud finalize fetch",
+                        )
                     except RuntimeError:
                         # Event loop is closing; nothing meaningful to do.
                         return
