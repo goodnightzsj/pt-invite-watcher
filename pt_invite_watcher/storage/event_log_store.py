@@ -79,7 +79,7 @@ async def add_event(
             should_cleanup = True
 
         if should_cleanup:
-            await c.execute(
+            cleanup_cur = await c.execute(
                 """
                 DELETE FROM event_log
                 WHERE id <= (
@@ -88,6 +88,7 @@ async def add_event(
                 """,
                 (keep,),
             )
+            await cleanup_cur.close()
 
         evt: dict[str, Any] = {
             "id": row_id,
@@ -243,7 +244,8 @@ async def clear_events(store: Any) -> None:
     write_txn = getattr(store, "write_transaction", None)
     if callable(write_txn):
         async with write_txn() as conn:
-            await conn.execute("DELETE FROM event_log")
+            cur = await conn.execute("DELETE FROM event_log")
+            await cur.close()
         return
 
     lock = getattr(store, "_write_lock", None)
@@ -261,11 +263,13 @@ async def clear_events(store: Any) -> None:
 
     if lock is not None:
         async with lock:
-            await conn.execute("DELETE FROM event_log")
+            cur = await conn.execute("DELETE FROM event_log")
+            await cur.close()
             await conn.commit()
         return
 
-    await conn.execute("DELETE FROM event_log")
+    cur = await conn.execute("DELETE FROM event_log")
+    await cur.close()
     await conn.commit()
 
 
