@@ -94,13 +94,16 @@ class CookieCloudService:
             task = self._fetch_task
 
         try:
-            cookies = await task
+            cookies = await asyncio.shield(task)
             fetched_at = datetime.now(timezone.utc)
         except asyncio.CancelledError:
-            async with self._lock:
-                if self._fetch_task is task:
-                    self._fetch_task = None
-                    self._fetch_fp = ""
+            # Don't let a cancelled waiter kill the shared in-flight fetch.
+            # If the shared task itself was cancelled, clear it so future calls can retry.
+            if task.cancelled():
+                async with self._lock:
+                    if self._fetch_task is task:
+                        self._fetch_task = None
+                        self._fetch_fp = ""
             raise
         except Exception:
             async with self._lock:

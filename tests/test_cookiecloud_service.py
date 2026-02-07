@@ -51,6 +51,55 @@ def _settings(*, refresh_interval_seconds: int = 300, source: str = "auto") -> S
 
 
 class CookieCloudServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_waiter_does_not_cancel_single_flight_fetch(self) -> None:
+        store = _FakeStore()
+        settings = _settings(refresh_interval_seconds=300, source="auto")
+        rc_cache = RuntimeConfigCache(settings, store)
+        svc = CookieCloudService(settings, store, runtime_config=rc_cache)
+
+        started = asyncio.Event()
+        finish = asyncio.Event()
+
+        cookies = [
+            {
+                "name": "sid",
+                "value": "1",
+                "domain": ".example.com",
+                "expires": (datetime.now(timezone.utc) + timedelta(days=1)).timestamp(),
+            }
+        ]
+
+        class _FakeClient:
+            calls = 0
+
+            def __init__(self, **kwargs: Any):
+                pass
+
+            async def fetch_cookie_items(self):
+                _FakeClient.calls += 1
+                started.set()
+                await finish.wait()
+                return list(cookies)
+
+        now = datetime.now(timezone.utc)
+        deps_status = {"version": 1}
+
+        with patch("pt_invite_watcher.providers.cookiecloud_service.CookieCloudClient", _FakeClient):
+            t1 = asyncio.create_task(svc.access(now=now, deps_status=deps_status, require_enabled=False, force_fetch=True))
+            t2 = asyncio.create_task(svc.access(now=now, deps_status=deps_status, require_enabled=False, force_fetch=True))
+
+            await started.wait()
+
+            t1.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await t1
+
+            finish.set()
+            res2 = await t2
+            self.assertTrue(res2.cookies)
+
+        self.assertEqual(_FakeClient.calls, 1)
+
     async def test_concurrent_access_is_single_flight(self) -> None:
         store = _FakeStore()
         settings = _settings(refresh_interval_seconds=300, source="auto")
