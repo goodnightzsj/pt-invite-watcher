@@ -70,8 +70,14 @@ class CookieCloudService:
             return
         if not task.done():
             task.cancel()
-        with suppress(asyncio.CancelledError):
+        try:
             await task
+        except asyncio.CancelledError:
+            if task.cancelled():
+                return
+            raise
+        except Exception:
+            logger.exception("cookiecloud fetch task failed on close")
 
     async def _load_runtime_config(self) -> Any:
         return await get_runtime_config(self._settings, self._store, runtime_config=self._runtime_config)
