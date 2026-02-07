@@ -84,13 +84,42 @@ class CookieCloudService:
         *,
         fp: str,
     ) -> tuple[list[dict[str, Any]], datetime]:
+        async def _finalize_fetch_task(task: asyncio.Task[list[dict[str, Any]]]) -> None:
+            try:
+                async with self._lock:
+                    if self._fetch_task is not task:
+                        return
+                    self._fetch_task = None
+                    self._fetch_fp = ""
+                    if task.cancelled():
+                        return
+                    try:
+                        cookies = task.result()
+                    except Exception:
+                        return
+                    fetched_at = datetime.now(timezone.utc)
+                    self._cache_fp = fp
+                    self._cache_at = fetched_at
+                    self._cache = cookies
+            except Exception:
+                return
+
         async with self._lock:
             if self._fetch_task is None or self._fetch_fp != fp:
                 self._fetch_fp = fp
-                self._fetch_task = asyncio.create_task(
+                task = asyncio.create_task(
                     client.fetch_cookie_items(),
                     name="cookiecloud_fetch_cookie_items",
                 )
+                def _on_fetch_done(t: asyncio.Task[list[dict[str, Any]]]) -> None:
+                    try:
+                        t.exception()
+                    except asyncio.CancelledError:
+                        pass
+                    asyncio.create_task(_finalize_fetch_task(t), name="cookiecloud_finalize_fetch")
+
+                task.add_done_callback(_on_fetch_done)
+                self._fetch_task = task
             task = self._fetch_task
 
         try:
