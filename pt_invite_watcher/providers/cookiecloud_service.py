@@ -116,7 +116,11 @@ class CookieCloudService:
                         t.exception()
                     except asyncio.CancelledError:
                         pass
-                    asyncio.create_task(_finalize_fetch_task(t), name="cookiecloud_finalize_fetch")
+                    try:
+                        asyncio.create_task(_finalize_fetch_task(t), name="cookiecloud_finalize_fetch")
+                    except RuntimeError:
+                        # Event loop is closing; nothing meaningful to do.
+                        return
 
                 task.add_done_callback(_on_fetch_done)
                 self._fetch_task = task
