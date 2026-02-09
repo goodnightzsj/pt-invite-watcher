@@ -36,28 +36,21 @@ class WebSocketBroadcasterQueueFullTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(broadcaster, "_ensure_pump", return_value=None) as ensure:
             broadcaster.publish({"type": WS_LOGS_APPEND, "data": {"id": 1}})
             ensure.assert_not_called()
-            self.assertEqual(broadcaster._queue.qsize(), 0)  # type: ignore[attr-defined]
+            q = getattr(broadcaster, "_queue", None)
+            if q is not None:
+                self.assertEqual(q.qsize(), 0)  # type: ignore[attr-defined]
 
 
 class WebSocketBroadcasterBestEffortTest(unittest.TestCase):
     def test_publish_best_effort_without_running_loop(self) -> None:
-        # asyncio.Lock/Queue in Python 3.9 require a current event loop, but we
-        # intentionally avoid a *running* loop so `asyncio.create_task` fails.
-        import asyncio
+        broadcaster = WebSocketBroadcaster(queue_size=1)
 
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            broadcaster = WebSocketBroadcaster(queue_size=1)
+        # publish() short-circuits when there are no clients; we don't need a real WebSocket here.
+        broadcaster._clients.append(object())  # type: ignore[attr-defined]
 
-            # publish() short-circuits when there are no clients; we don't need a real WebSocket here.
-            broadcaster._clients.append(object())  # type: ignore[attr-defined]
-
-            broadcaster.publish({"type": WS_LOGS_APPEND, "data": {"id": 1}})
-            self.assertEqual(broadcaster._queue.qsize(), 0)  # type: ignore[attr-defined]
-        finally:
-            asyncio.set_event_loop(None)
-            loop.close()
+        # No running loop: should be best-effort no-op (no exception, no queue init).
+        broadcaster.publish({"type": WS_LOGS_APPEND, "data": {"id": 1}})
+        self.assertIsNone(getattr(broadcaster, "_queue", None))
 
 
 if __name__ == "__main__":

@@ -16,26 +16,43 @@ logger = logging.getLogger("pt_invite_watcher")
 class WebSocketBroadcaster:
     def __init__(self, *, queue_size: int = 200):
         self._clients: list[WebSocket] = []
-        self._clients_lock = asyncio.Lock()
-        self._broadcast_lock = asyncio.Lock()
-        self._queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=max(1, int(queue_size or 0)))
+        self._queue_size = max(1, int(queue_size or 0))
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._clients_lock: Optional[asyncio.Lock] = None
+        self._broadcast_lock: Optional[asyncio.Lock] = None
+        self._queue: Optional[asyncio.Queue[dict]] = None
         self._pump_task: Optional[asyncio.Task[None]] = None
         self._logs_update_enqueued = False
         self._stopped = False
 
+    def _ensure_inited(self) -> None:
+        if self._queue is not None and self._clients_lock is not None and self._broadcast_lock is not None:
+            return
+
+        # Python 3.9 asyncio primitives are bound to the event loop at creation time.
+        # Create them lazily inside the *running* loop to avoid "attached to a different loop".
+        loop = asyncio.get_running_loop()
+        self._loop = loop
+        self._clients_lock = asyncio.Lock()
+        self._broadcast_lock = asyncio.Lock()
+        self._queue = asyncio.Queue(maxsize=self._queue_size)
+
     async def connect(self, websocket: WebSocket):
+        self._ensure_inited()
         await websocket.accept()
-        async with self._clients_lock:
+        async with self._clients_lock:  # type: ignore[union-attr]
             if websocket not in self._clients:
                 self._clients.append(websocket)
 
     async def disconnect(self, websocket: WebSocket):
-        async with self._clients_lock:
+        self._ensure_inited()
+        async with self._clients_lock:  # type: ignore[union-attr]
             if websocket in self._clients:
                 self._clients.remove(websocket)
 
     async def start(self) -> None:
         self._stopped = False
+        self._ensure_inited()
         self._ensure_pump()
 
     async def stop(self) -> None:
@@ -50,13 +67,20 @@ class WebSocketBroadcaster:
                 logger.exception("ws pump task failed on stop")
             self._pump_task = None
 
-        while not self._queue.empty():
-            with suppress(asyncio.QueueEmpty, RuntimeError):
-                self._queue.get_nowait()
-                self._queue.task_done()
+        q = self._queue
+        if q is not None:
+            while not q.empty():
+                with suppress(asyncio.QueueEmpty, RuntimeError):
+                    q.get_nowait()
+                    q.task_done()
         self._logs_update_enqueued = False
-        async with self._clients_lock:
-            self._clients.clear()
+        if self._clients_lock is not None:
+            async with self._clients_lock:
+                self._clients.clear()
+        self._clients_lock = None
+        self._broadcast_lock = None
+        self._queue = None
+        self._loop = None
 
     def publish(self, message: dict) -> None:
         """
@@ -72,8 +96,12 @@ class WebSocketBroadcaster:
         if message.get("type") == WS_LOGS_UPDATE and self._logs_update_enqueued:
             return
         try:
+            self._ensure_inited()
             self._ensure_pump()
-            self._queue.put_nowait(message)
+            q = self._queue
+            if q is None:
+                return
+            q.put_nowait(message)
             if message.get("type") == WS_LOGS_UPDATE:
                 self._logs_update_enqueued = True
         except RuntimeError:
@@ -86,15 +114,18 @@ class WebSocketBroadcaster:
             if self._logs_update_enqueued:
                 return
             # Drop backlog and ask clients to resync once.
-            while not self._queue.empty():
+            q = self._queue
+            if q is None:
+                return
+            while not q.empty():
                 with suppress(asyncio.QueueEmpty, RuntimeError):
-                    self._queue.get_nowait()
-                    self._queue.task_done()
+                    q.get_nowait()
+                    q.task_done()
             with suppress(asyncio.QueueFull, RuntimeError):
                 if msg_type == WS_LOGS_UPDATE:
-                    self._queue.put_nowait(message)
+                    q.put_nowait(message)
                 else:
-                    self._queue.put_nowait({"type": WS_LOGS_UPDATE, "data": {"reason": "ws_queue_full"}})
+                    q.put_nowait({"type": WS_LOGS_UPDATE, "data": {"reason": "ws_queue_full"}})
                 self._logs_update_enqueued = True
 
     def _ensure_pump(self) -> None:
@@ -108,8 +139,11 @@ class WebSocketBroadcaster:
         )
 
     async def _pump(self) -> None:
+        q = self._queue
+        if q is None:
+            return
         while True:
-            msg = await self._queue.get()
+            msg = await q.get()
             try:
                 try:
                     await self.broadcast(msg)
@@ -120,11 +154,12 @@ class WebSocketBroadcaster:
             finally:
                 if msg.get("type") == WS_LOGS_UPDATE:
                     self._logs_update_enqueued = False
-                self._queue.task_done()
+                q.task_done()
 
     async def broadcast(self, message: dict):
-        async with self._broadcast_lock:
-            async with self._clients_lock:
+        self._ensure_inited()
+        async with self._broadcast_lock:  # type: ignore[union-attr]
+            async with self._clients_lock:  # type: ignore[union-attr]
                 clients = list(self._clients)
             if not clients:
                 return
