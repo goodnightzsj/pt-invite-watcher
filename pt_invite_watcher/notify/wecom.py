@@ -94,14 +94,21 @@ class WeComNotifier:
             with suppress(Exception):
                 await resp.aclose()
 
-    async def send_detail(self, text: str) -> tuple[bool, str, dict]:
-        async with httpx.AsyncClient(timeout=15) as client:
-            token, token_msg, token_detail = await self._get_token_detail(client)
+    async def send_detail(self, text: str, *, client: Optional[httpx.AsyncClient] = None) -> tuple[bool, str, dict]:
+        """Send message to WeCom.
+
+        Args:
+            text: Message text to send.
+            client: Optional shared httpx.AsyncClient. If None, creates a new one.
+        """
+
+        async def _do_send(c: httpx.AsyncClient) -> tuple[bool, str, dict]:
+            token, token_msg, token_detail = await self._get_token_detail(c)
             if not token:
                 return False, token_msg, token_detail
             try:
                 agentid = int(str(self._agent_id).strip())
-            except Exception:
+            except (ValueError, TypeError):
                 return (
                     False,
                     f"invalid agent_id: {self._agent_id}",
@@ -109,7 +116,7 @@ class WeComNotifier:
                 )
             url = f"{self._base_url}/cgi-bin/message/send"
             resp, err, _ = await request_with_retry(
-                lambda: client.post(
+                lambda: c.post(
                     url,
                     params={"access_token": token},
                     json={
@@ -150,6 +157,12 @@ class WeComNotifier:
             finally:
                 with suppress(Exception):
                     await resp.aclose()
+
+        if client is not None:
+            return await _do_send(client)
+
+        async with httpx.AsyncClient(timeout=15) as new_client:
+            return await _do_send(new_client)
 
     async def send(self, text: str) -> bool:
         ok, _, _ = await self.send_detail(text)

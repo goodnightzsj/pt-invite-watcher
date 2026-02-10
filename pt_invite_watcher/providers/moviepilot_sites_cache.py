@@ -25,7 +25,7 @@ def _parse_dt(value: Any) -> Optional[datetime]:
         return None
     try:
         dt = datetime.fromisoformat(s)
-    except Exception:
+    except ValueError:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)

@@ -43,7 +43,7 @@ async def _try_acquire_lease_with_conn(conn: Any, key: str, *, owner: str, ttl_s
             return None
         try:
             dt = datetime.fromisoformat(raw)
-        except Exception:
+        except ValueError:
             return None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
@@ -62,7 +62,7 @@ async def _try_acquire_lease_with_conn(conn: Any, key: str, *, owner: str, ttl_s
     if row is not None:
         try:
             existing = json.loads(row["value"])
-        except Exception:
+        except json.JSONDecodeError:
             existing = None
         if isinstance(existing, dict):
             existing_owner = str(existing.get("owner") or "").strip()
@@ -143,7 +143,7 @@ async def _release_lease_with_conn(conn: Any, key: str, *, owner: str) -> None:
 
         try:
             existing = json.loads(row["value"])
-        except Exception:
+        except json.JSONDecodeError:
             existing = None
 
         if isinstance(existing, dict) and str(existing.get("owner") or "").strip() == owner_id:

@@ -75,7 +75,7 @@ async def add_event(
         try:
             rid = int(row_id or 0)
             should_cleanup = rid <= 0 or (rid % cleanup_every == 0)
-        except Exception:
+        except (ValueError, TypeError):
             should_cleanup = True
 
         if should_cleanup:
@@ -214,7 +214,7 @@ async def list_events(
         if detail_value:
             try:
                 item["detail"] = json.loads(detail_value)
-            except Exception:
+            except json.JSONDecodeError:
                 # Legacy/dirty rows may store non-JSON payloads (e.g. Python literal dicts).
                 # Best-effort: parse via ast.literal_eval (safe) so WebUI can render structured details.
                 raw = str(detail_value)
@@ -223,7 +223,7 @@ async def list_events(
                 if stripped[:1] in {"{", "["}:
                     try:
                         parsed = ast.literal_eval(stripped)
-                    except Exception:
+                    except (ValueError, SyntaxError):
                         parsed = None
                 if isinstance(parsed, (dict, list)):
                     item["detail"] = parsed

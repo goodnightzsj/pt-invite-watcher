@@ -38,7 +38,7 @@ async def get_site_state(store: SupportsConn, domain: str, *, state_cls: Any) ->
             reach = payload.get("reachability")
             if isinstance(reach, dict):
                 reachability_state = str(reach.get("state") or "unknown")
-    except Exception:
+    except json.JSONDecodeError:
         reachability_state = "unknown"
     return state_cls(
         domain=row["domain"],
@@ -95,7 +95,7 @@ async def get_reachability_states(store: SupportsConn, domains: list[str]) -> di
             reach = payload.get("reachability") if isinstance(payload, dict) else None
             if isinstance(reach, dict):
                 state = str(reach.get("state") or "unknown")
-        except Exception:
+        except json.JSONDecodeError:
             state = "unknown"
         states[domain] = state
 
@@ -114,7 +114,7 @@ def _extract_invite_uid(url: str) -> Optional[str]:
             return None
         s = str(value).strip()
         return s if s.isdigit() else None
-    except Exception:
+    except ValueError:
         return None
 
 
@@ -154,7 +154,7 @@ async def get_sites_extras(store: SupportsConn, domains: list[str]) -> dict[str,
                 ev = inv.get("evidence")
                 if isinstance(ev, dict):
                     invite_uid = _extract_invite_uid(str(ev.get("url") or ""))
-        except Exception:
+        except json.JSONDecodeError:
             reachability_state = "unknown"
             invite_uid = None
         extras[domain] = {"reachability_state": reachability_state, "invite_uid": invite_uid}
@@ -168,7 +168,7 @@ def _parse_dt(value: Any) -> Optional[datetime]:
         return None
     try:
         dt = datetime.fromisoformat(s)
-    except Exception:
+    except ValueError:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -216,7 +216,7 @@ async def load_sites_snapshot(store: SupportsConn) -> tuple[Optional[datetime], 
                     parsed_id = safe_int(site_payload.get("id"))
                     if parsed_id is not None:
                         site_id = parsed_id
-        except Exception:
+        except json.JSONDecodeError:
             pass
 
         sites.append(

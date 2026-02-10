@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from typing import Optional
 
 import httpx
 
@@ -21,11 +22,18 @@ class TelegramNotifier:
         self._retry_attempts = max(1, int(retry_attempts or DEFAULT_REQUEST_RETRY_ATTEMPTS))
         self._retry_delay_seconds = max(0, int(retry_delay_seconds or 0))
 
-    async def send(self, text: str) -> bool:
+    async def send(self, text: str, *, client: Optional[httpx.AsyncClient] = None) -> bool:
+        """Send message to Telegram.
+
+        Args:
+            text: Message text to send.
+            client: Optional shared httpx.AsyncClient. If None, creates a new one.
+        """
         url = f"https://api.telegram.org/bot{self._token}/sendMessage"
-        async with httpx.AsyncClient(timeout=15) as client:
+
+        async def _do_send(c: httpx.AsyncClient) -> bool:
             resp, err, _ = await request_with_retry(
-                lambda: client.post(
+                lambda: c.post(
                     url,
                     json={
                         "chat_id": self._chat_id,
@@ -43,3 +51,9 @@ class TelegramNotifier:
             with suppress(Exception):
                 await resp.aclose()
             return ok
+
+        if client is not None:
+            return await _do_send(client)
+
+        async with httpx.AsyncClient(timeout=15) as new_client:
+            return await _do_send(new_client)

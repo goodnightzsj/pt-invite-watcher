@@ -33,7 +33,7 @@ def cfg_int(value: Any, default: int, min_value: int, max_value: int) -> int:
         return default
     try:
         parsed = int(str(value).strip())
-    except Exception:
+    except (ValueError, TypeError):
         return default
     return max(min_value, min(max_value, parsed))
 
@@ -67,6 +67,6 @@ def safe_int(value: Any) -> Optional[int]:
         return None
     try:
         return int(value)
-    except Exception:
+    except (ValueError, TypeError):
         return None
 

@@ -94,7 +94,7 @@ def _parse_invite_count(text: str) -> tuple[Optional[int], Optional[str]]:
             continue
         try:
             return int(m.group(1)), m.group(0)
-        except Exception:
+        except ValueError:
             continue
     return None, None
 
@@ -127,7 +127,7 @@ def _parse_home_invite_quota(text: str) -> tuple[Optional[int], Optional[int], O
             permanent = int(m.group(1))
             temporary = int(m.group(2)) if m.group(2) else 0
             return permanent, temporary, m.group(0)
-        except Exception:
+        except ValueError:
             continue
     return None, None, None
 

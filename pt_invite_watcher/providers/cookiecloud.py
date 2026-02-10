@@ -30,7 +30,7 @@ def _is_expired(expires: Any) -> bool:
         return False
     try:
         exp = float(expires)
-    except Exception:
+    except (ValueError, TypeError):
         return False
     if exp <= 0:
         return False

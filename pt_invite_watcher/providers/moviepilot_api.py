@@ -68,14 +68,14 @@ def _jwt_expires_at(token: str) -> Optional[datetime]:
         padded = payload_b64 + "=" * (-len(payload_b64) % 4)
         decoded = base64.urlsafe_b64decode(padded.encode("ascii"))
         obj = json.loads(decoded.decode("utf-8"))
-    except Exception:
+    except (ValueError, json.JSONDecodeError):
         return None
     if not isinstance(obj, dict):
         return None
     exp = obj.get("exp")
     try:
         exp_ts = int(exp)
-    except Exception:
+    except (ValueError, TypeError):
         return None
     if exp_ts <= 0:
         return None
@@ -96,7 +96,7 @@ def _domain_from_url(url: str) -> str:
     try:
         host = urlparse(url).hostname
         return (host or "").lower()
-    except Exception:
+    except ValueError:
         return ""
 
 

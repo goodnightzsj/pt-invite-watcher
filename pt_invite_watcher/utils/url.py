@@ -37,7 +37,7 @@ def page_kind_from_url(url: str) -> Optional[str]:
     try:
         parsed = urlparse(str(url))
         path = (parsed.path or "/").strip("/").lower()
-    except Exception:
+    except ValueError:
         return None
 
     if not path:

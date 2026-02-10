@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from contextlib import suppress
@@ -44,7 +45,7 @@ def _coerce_int(value: Any) -> Optional[int]:
         if re.fullmatch(r"\d+", s):
             try:
                 return int(s)
-            except Exception:
+            except ValueError:
                 return None
     return None
 
@@ -220,7 +221,7 @@ class MTeamDetector:
 
             try:
                 payload = resp.json()
-            except Exception as e:
+            except json.JSONDecodeError as e:
                 detail = _truncate_detail(str(e))
                 return AspectResult(
                     state="unknown",

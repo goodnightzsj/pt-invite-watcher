@@ -99,13 +99,88 @@ async with httpx.AsyncClient() as client:
 
 **重要：** 必须关闭响应对象防止资源泄漏。
 
+**可选客户端参数模式：**
+
+允许调用者传入共享客户端以复用连接：
+
+```python
+async def send(self, text: str, *, client: Optional[httpx.AsyncClient] = None) -> bool:
+    async def _do_send(c: httpx.AsyncClient) -> bool:
+        # 实际发送逻辑
+        ...
+
+    if client is not None:
+        return await _do_send(client)
+
+    async with httpx.AsyncClient(timeout=15) as new_client:
+        return await _do_send(new_client)
+```
+
+**Location:** `notify/telegram.py`, `notify/wecom.py`
+
 ### 错误处理
+
+**原则：使用具体异常类型，避免 `except Exception:`**
+
+| 操作 | 推荐异常 |
+|-----|---------|
+| `json.loads()` | `json.JSONDecodeError` |
+| `datetime.fromisoformat()` | `ValueError` |
+| `int()`, `float()` | `(ValueError, TypeError)` |
+| `urlparse()` | `ValueError` |
+| `ast.literal_eval()` | `(ValueError, SyntaxError)` |
+| `resp.json()` (httpx) | `json.JSONDecodeError` |
+
+**示例：**
+
+```python
+# 好 - 具体异常类型
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError:
+    data = {}
+
+try:
+    dt = datetime.fromisoformat(s)
+except ValueError:
+    return None
+
+try:
+    value = int(input_str)
+except (ValueError, TypeError):
+    value = default
+```
+
+**保留 `except Exception:` 的场景：**
+
+- Hook/回调执行（防止崩溃）
+- 资源清理代码（确保释放）
+- 最佳努力操作（允许失败）
+
+```python
+# 可接受 - 最佳努力清理
+try:
+    await conn.rollback()
+except Exception:
+    pass
+
+# 可接受 - Hook 执行
+try:
+    hook(event)
+except Exception:
+    logger.exception("hook failed")
+```
+
+**网络请求错误处理：**
 
 ```python
 try:
     result = await some_operation()
 except httpx.TimeoutException:
     logger.warning("Operation timed out")
+    return default_value
+except httpx.ConnectError:
+    logger.warning("Connection failed")
     return default_value
 except Exception as e:
     logger.exception("Unexpected error")
