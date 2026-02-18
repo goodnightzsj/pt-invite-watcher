@@ -63,6 +63,10 @@ class SqliteStore:
         self._write_lock = asyncio.Lock()
         self._lease_conn: Optional[aiosqlite.Connection] = None
         self._lease_lock = asyncio.Lock()
+        # sqlite3 "timeout" is seconds; PRAGMA busy_timeout is milliseconds.
+        # Keep them aligned so cross-connection writes (and other processes) wait instead of failing fast.
+        self._sqlite_timeout_seconds = 30.0
+        self._sqlite_busy_timeout_ms = 30_000
         self._event_hooks: list[Callable[[dict[str, Any]], Any]] = []
         self._logs_resync_hooks: list[Callable[[str], Any]] = []
         self._logs_resync_last_sent = 0.0
@@ -85,6 +89,19 @@ class SqliteStore:
         self._scan_log_flush_failures_last_log = 0.0
         self._scan_log_flush_failures_suppressed = 0
         self._scan_log_flush_count = 0
+
+    async def _open_conn(self) -> aiosqlite.Connection:
+        conn = await aiosqlite.connect(self._path.as_posix(), timeout=self._sqlite_timeout_seconds)
+        conn.row_factory = aiosqlite.Row
+
+        # Apply PRAGMAs per connection.
+        cur = await conn.execute("PRAGMA journal_mode=WAL;")
+        await cur.close()
+        cur = await conn.execute("PRAGMA synchronous=NORMAL;")
+        await cur.close()
+        cur = await conn.execute(f"PRAGMA busy_timeout={int(self._sqlite_busy_timeout_ms)};")
+        await cur.close()
+        return conn
 
     def on_event(self, hook: Callable[[dict[str, Any]], Any]) -> None:
         self._event_hooks.append(hook)
@@ -134,30 +151,15 @@ class SqliteStore:
 
     async def init(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = await aiosqlite.connect(self._path.as_posix())
-        self._conn.row_factory = aiosqlite.Row
-        cur = await self._conn.execute("PRAGMA journal_mode=WAL;")
-        await cur.close()
-        cur = await self._conn.execute("PRAGMA synchronous=NORMAL;")
-        await cur.close()
+        self._conn = await self._open_conn()
 
         # Use a dedicated connection + lock for write transactions so we can batch
         # related writes without risking interleaving across coroutines.
-        self._write_conn = await aiosqlite.connect(self._path.as_posix())
-        self._write_conn.row_factory = aiosqlite.Row
-        cur = await self._write_conn.execute("PRAGMA journal_mode=WAL;")
-        await cur.close()
-        cur = await self._write_conn.execute("PRAGMA synchronous=NORMAL;")
-        await cur.close()
+        self._write_conn = await self._open_conn()
 
         # Use a dedicated connection for lease operations so cross-process locking
         # logic isn't affected by concurrent writes on the main connection.
-        self._lease_conn = await aiosqlite.connect(self._path.as_posix())
-        self._lease_conn.row_factory = aiosqlite.Row
-        cur = await self._lease_conn.execute("PRAGMA journal_mode=WAL;")
-        await cur.close()
-        cur = await self._lease_conn.execute("PRAGMA synchronous=NORMAL;")
-        await cur.close()
+        self._lease_conn = await self._open_conn()
 
         cur = await self._conn.execute(
             """
@@ -329,8 +331,22 @@ class SqliteStore:
 
     @asynccontextmanager
     async def lease_operation(self) -> Any:
-        async with self._lease_lock:
-            yield self._require_lease_conn()
+        # Serialize lease writes with normal write transactions.
+        #
+        # Without this, `_write_conn` (scan persistence/event logs) and `_lease_conn`
+        # (scan/scheduler leases via BEGIN IMMEDIATE) may contend for the single SQLite
+        # writer slot, causing "database is locked" and leaving a connection stuck in a
+        # transaction ("cannot start a transaction within a transaction").
+        async with self._write_lock:
+            async with self._lease_lock:
+                conn = self._require_lease_conn()
+                if conn.in_transaction:
+                    logger.warning("sqlite lease_conn has an open transaction; rolling back before lease operation")
+                    try:
+                        await conn.rollback()
+                    except Exception:
+                        logger.exception("failed to rollback lease_conn before lease operation")
+                yield conn
 
     def dispatch_event_hooks(self, evt: dict[str, Any]) -> None:
         hooks = list(self._event_hooks)
@@ -356,7 +372,13 @@ class SqliteStore:
     async def write_transaction(self) -> Any:
         async with self._write_lock:
             conn = self._require_write_conn()
-            cur = await conn.execute("BEGIN")
+            if conn.in_transaction:
+                logger.warning("sqlite write_conn has an open transaction; rolling back before write transaction")
+                try:
+                    await conn.rollback()
+                except Exception:
+                    logger.exception("failed to rollback write_conn before write transaction")
+            cur = await conn.execute("BEGIN IMMEDIATE")
             await cur.close()
             try:
                 yield conn
@@ -365,7 +387,7 @@ class SqliteStore:
                 try:
                     await conn.rollback()
                 except Exception:
-                    pass
+                    logger.exception("failed to rollback sqlite write transaction")
                 raise
 
     def _ensure_scan_log_flusher(self) -> None:
