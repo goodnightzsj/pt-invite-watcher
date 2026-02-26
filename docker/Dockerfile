@@ -1,4 +1,4 @@
-FROM node:18-slim AS webui
+FROM --platform=$BUILDPLATFORM node:18-slim AS webui
 
 WORKDIR /app
 
