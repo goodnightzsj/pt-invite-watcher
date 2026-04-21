@@ -13,6 +13,28 @@ const listeners: Map<WSEventType, Set<(data?: any) => void>> = new Map();
 let socket: WebSocket | null = null;
 let reconnectTimer: number | undefined;
 let pingTimer: number | undefined;
+let retryCount = 0;
+
+// Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s.
+function nextBackoffMs(): number {
+    const base = Math.min(30000, 1000 * Math.pow(2, Math.min(retryCount, 6)));
+    // ±25% jitter to avoid thundering herd
+    const jitter = base * (Math.random() * 0.5 - 0.25);
+    return Math.max(500, Math.round(base + jitter));
+}
+
+function scheduleReconnect() {
+    if (reconnectTimer) return;
+    const delay = nextBackoffMs();
+    retryCount++;
+    reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = undefined;
+        // Skip reconnect if the page is hidden — will retry on visibilitychange.
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+        if (listeners.size === 0) return;
+        connect();
+    }, delay);
+}
 
 function connect() {
     if (socket) return;
@@ -21,10 +43,15 @@ function connect() {
     const host = window.location.host;
     const url = `${proto}//${host}/ws/events`;
 
-    socket = new WebSocket(url);
+    try {
+        socket = new WebSocket(url);
+    } catch (e) {
+        scheduleReconnect();
+        return;
+    }
 
     socket.onopen = () => {
-        // console.log("WS connected");
+        retryCount = 0;
         startPing();
         if (reconnectTimer) {
             window.clearTimeout(reconnectTimer);
@@ -33,6 +60,7 @@ function connect() {
     };
 
     socket.onmessage = (event) => {
+        lastInboundAt = Date.now();
         try {
             const msg: WSMessage = JSON.parse(event.data);
             if (msg.type === WS_PING) return; // Ignore pong/ping echo if any
@@ -48,8 +76,7 @@ function connect() {
 
     socket.onclose = () => {
         cleanupSocket();
-        // Reconnect after 3 seconds
-        reconnectTimer = window.setTimeout(connect, 3000);
+        if (listeners.size > 0) scheduleReconnect();
     };
 
     socket.onerror = (e) => {
@@ -58,11 +85,26 @@ function connect() {
     };
 }
 
+// Track the last time we saw any traffic from the server (a pong message resets it).
+// If we go too long without traffic, force a reconnect — covers the case where the
+// underlying TCP connection died but neither side noticed (no FIN/RST received).
+let lastInboundAt = 0;
+const STALE_TIMEOUT_MS = 90_000; // 3× ping interval
+
 function startPing() {
     stopPing();
+    lastInboundAt = Date.now();
     pingTimer = window.setInterval(() => {
-        if (socket && socket.readyState === WebSocket.OPEN) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        if (Date.now() - lastInboundAt > STALE_TIMEOUT_MS) {
+            // Server hasn't responded to our pings in a while — force a reconnect cycle.
+            try { socket.close(); } catch { /* ignore */ }
+            return;
+        }
+        try {
             socket.send("ping");
+        } catch (e) {
+            // Socket may have transitioned; onclose will handle reconnect.
         }
     }, 30000);
 }
@@ -81,7 +123,7 @@ function cleanupSocket() {
         socket.onerror = null;
         socket.onmessage = null;
         socket.onopen = null;
-        socket.close();
+        try { socket.close(); } catch { /* ignore */ }
         socket = null;
     }
 }
@@ -91,7 +133,23 @@ function disconnect() {
         window.clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
     }
+    retryCount = 0;
     cleanupSocket();
+}
+
+// Reconnect eagerly when the tab becomes visible again.
+if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState !== "visible") return;
+        if (listeners.size === 0) return;
+        if (socket && socket.readyState === WebSocket.OPEN) return;
+        if (reconnectTimer) {
+            window.clearTimeout(reconnectTimer);
+            reconnectTimer = undefined;
+        }
+        retryCount = 0;
+        connect();
+    });
 }
 
 export function onWS(eventType: WSEventType, callback: (data?: any) => void) {
