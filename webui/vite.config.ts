@@ -24,5 +24,14 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, "../pt_invite_watcher/webui_dist"),
     emptyOutDir: true,
+    // Split big vendor bundles so the initial JS payload streams faster on slow networks.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ["vue", "vue-router"],
+          icons: ["lucide-vue-next"],
+        },
+      },
+    },
   },
 });
