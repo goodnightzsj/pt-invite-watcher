@@ -71,6 +71,26 @@ async def stop_scheduler(task: Optional[asyncio.Task[Any]]) -> None:
         pass
 
 
+async def _emit_scheduler_event(
+    ctx: Any, *, level: str, action: str, message: str, detail: dict[str, Any] | None = None
+) -> None:
+    add_event = getattr(ctx.store, "add_event", None)
+    if not callable(add_event):
+        return
+    try:
+        await add_event(
+            category="scan",
+            level=level,
+            action=action,
+            message=message,
+            detail=detail or {},
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("failed to write scheduler event (action=%s)", action)
+
+
 async def _scheduler_loop(
     ctx: Any,
     *,
@@ -91,14 +111,31 @@ async def _scheduler_loop(
     except Exception:
         pass
     lease_ttl = scheduler_lease_ttl_seconds(interval_seconds=interval, timeout_seconds=timeout)
+    # Track consecutive failures so we can surface a louder alert (event log + WARNING) when
+    # the loop has silently failed for several cycles in a row.
+    # We alert at fixed milestones (3rd, 10th, 30th, 100th, …) instead of every cycle so the log
+    # stays readable but operators still see ongoing problems escalate.
+    consecutive_failures = 0
+    consecutive_lease_failures = 0
+    failure_alert_milestones = (3, 10, 30, 100, 300)
     try:
         while True:
             try:
                 is_leader = await lease.ensure_leader(ttl_seconds=lease_ttl)
+                consecutive_lease_failures = 0
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                logger.exception("ensure_leader failed")
+            except Exception as e:
+                consecutive_lease_failures += 1
+                logger.exception("ensure_leader failed (consecutive=%d)", consecutive_lease_failures)
+                if consecutive_lease_failures in failure_alert_milestones:
+                    await _emit_scheduler_event(
+                        ctx,
+                        level="error",
+                        action="scheduler_lease_alert",
+                        message=f"scheduler leader-lock acquisition failed {consecutive_lease_failures} times in a row",
+                        detail={"owner": owner, "error": str(e)[:500]},
+                    )
                 await asyncio.sleep(5)
                 continue
             if not is_leader:
@@ -118,18 +155,37 @@ async def _scheduler_loop(
             try:
                 status = await ctx.scanner.run_once_scheduled()
                 logger.info("scan status: %s", status)
+                if consecutive_failures >= failure_alert_milestones[0]:
+                    # Recovered — note it so operators see the loop healed.
+                    await _emit_scheduler_event(
+                        ctx,
+                        level="info",
+                        action="scheduler_recovered",
+                        message=f"scheduler recovered after {consecutive_failures} consecutive failures",
+                        detail={"owner": owner},
+                    )
+                consecutive_failures = 0
                 try:
                     await broadcast_dashboard_update()
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    pass
+                    logger.exception("broadcast_dashboard_update failed")
             except asyncio.CancelledError:
                 raise
             except AlreadyScanningError as e:
                 logger.info("scan skipped: %s", str(e))
-            except Exception:
-                logger.exception("scan cycle failed")
+            except Exception as e:
+                consecutive_failures += 1
+                logger.exception("scan cycle failed (consecutive=%d)", consecutive_failures)
+                if consecutive_failures in failure_alert_milestones:
+                    await _emit_scheduler_event(
+                        ctx,
+                        level="error",
+                        action="scheduler_failure_alert",
+                        message=f"scheduler scan failed {consecutive_failures} times in a row",
+                        detail={"owner": owner, "error": str(e)[:500]},
+                    )
 
             interval = int(ctx.settings.scan.interval_seconds or 600)
             timeout = int(ctx.settings.scan.timeout_seconds or timeout or 20)
