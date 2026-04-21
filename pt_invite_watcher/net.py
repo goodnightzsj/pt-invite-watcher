@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from contextlib import suppress
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional, Set, Tuple, TypeVar
 
 import httpx
@@ -12,12 +15,59 @@ DEFAULT_REQUEST_RETRY_DELAY_SECONDS = 30
 
 RETRYABLE_STATUS_CODES: Set[int] = {408, 429, *range(500, 600)}
 
+# Upper bound for any single wait between retries. PT sites occasionally send absurd Retry-After
+# values (hours); we never want a single scan cycle to block for that long.
+_MAX_WAIT_SECONDS = 300
+
+# When we hit a connection-level error (DNS, TCP), a few-second retry is almost always right —
+# a full retry_delay (often 30s) would waste the scan cycle budget.
+_CONNECT_RETRY_BASE_SECONDS = 1
+
 TResponse = TypeVar("TResponse", bound=httpx.Response)
 
 
 def is_retryable_status(status_code: int, retry_statuses: Optional[Set[int]] = None) -> bool:
     statuses = RETRYABLE_STATUS_CODES if retry_statuses is None else retry_statuses
     return int(status_code) in statuses
+
+
+def _parse_retry_after(value: str) -> Optional[int]:
+    """Parse an HTTP Retry-After header (RFC 7231) — either an integer second count or a date.
+
+    Returns the wait in seconds, or None if the header is missing/unparseable.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    # Integer form (seconds)
+    try:
+        secs = int(raw)
+        return max(0, min(secs, _MAX_WAIT_SECONDS))
+    except ValueError:
+        pass
+    # HTTP-date form
+    try:
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    delta = (when - datetime.now(timezone.utc)).total_seconds()
+    if delta <= 0:
+        return 0
+    return min(int(delta), _MAX_WAIT_SECONDS)
+
+
+def _backoff_seconds(attempt: int, base_delay: int) -> int:
+    """Exponential backoff with ±25% jitter. Attempt is 0-indexed."""
+    base = max(1, int(base_delay or 1))
+    exponent = min(attempt, 6)  # cap growth (2^6 = 64x)
+    scaled = base * (2 ** exponent)
+    scaled = min(scaled, _MAX_WAIT_SECONDS)
+    jitter = random.uniform(-scaled * 0.25, scaled * 0.25)
+    return max(0, int(scaled + jitter))
 
 
 async def request_with_retry(
@@ -38,19 +88,40 @@ async def request_with_retry(
             resp = await request_fn()
             last_resp = resp
             if is_retryable_status(resp.status_code, retry_statuses) and attempt < used_attempts - 1:
+                # Respect Retry-After from the server (covers 429 / 503 rate limiting & maintenance).
+                headers = getattr(resp, "headers", None)
+                retry_after_raw = ""
+                if headers is not None:
+                    try:
+                        retry_after_raw = headers.get("Retry-After", "") or ""
+                    except Exception:
+                        retry_after_raw = ""
+                retry_after = _parse_retry_after(retry_after_raw)
                 with suppress(Exception):
                     await resp.aclose()
-                if wait_seconds:
-                    await asyncio.sleep(wait_seconds)
+                if retry_after is not None:
+                    sleep_for = min(retry_after, _MAX_WAIT_SECONDS)
+                else:
+                    sleep_for = _backoff_seconds(attempt, wait_seconds)
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
                 continue
             return resp, None, attempt + 1
         except asyncio.CancelledError:
             raise
+        except httpx.ConnectError as e:
+            # Transient TCP/DNS failures — retry quickly, these rarely need 30s cooling.
+            last_exc = e
+            if attempt < used_attempts - 1:
+                await asyncio.sleep(_backoff_seconds(attempt, _CONNECT_RETRY_BASE_SECONDS))
+                continue
+            return None, e, attempt + 1
         except httpx.RequestError as e:
             last_exc = e
             if attempt < used_attempts - 1:
-                if wait_seconds:
-                    await asyncio.sleep(wait_seconds)
+                sleep_for = _backoff_seconds(attempt, wait_seconds)
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
                 continue
             return None, e, attempt + 1
         except Exception as e:
