@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import Badge from "../components/Badge.vue";
 import Modal from "../components/Modal.vue";
@@ -12,12 +13,17 @@ import PageHeader from "../components/PageHeader.vue";
 	import { showToast } from "../toast";
 	import { WS_LOGS_APPEND, WS_LOGS_UPDATE } from "../ws_events";
 
+const route = useRoute();
+const router = useRouter();
+
 const loading = ref(false);
 const items = ref<LogItem[]>([]);
 
-const category = ref("all");
-const domain = ref("");  // New: site filter
-const keyword = ref("");
+// Initial filter/page values read from URL query so reload/deep-link keeps context.
+const q0 = route.query as Record<string, string | undefined>;
+const category = ref(typeof q0.category === "string" && q0.category ? q0.category : "all");
+const domain = ref(typeof q0.domain === "string" ? q0.domain : "");
+const keyword = ref(typeof q0.keyword === "string" ? q0.keyword : "");
 const limit = ref(0); // 0 means unlimited
 const pendingLogs = ref<LogItem[]>([]);
 
@@ -37,12 +43,26 @@ async function loadDomains() {
 // Pagination
 const STORAGE_PAGE_SIZE = "ptiw_logs_page_size";
 const pageSizeOptions = [10, 20, 50, 100];
-const pageSize = ref(parseInt(localStorage.getItem(STORAGE_PAGE_SIZE) || "20", 10));
-const currentPage = ref(1);
+
+function readStoredPageSize(): number {
+  try {
+    return parseInt(localStorage.getItem(STORAGE_PAGE_SIZE) || "20", 10);
+  } catch {
+    return 20;
+  }
+}
+
+const pageSize = ref(readStoredPageSize());
+const initialPage = Number(route.query.page);
+const currentPage = ref(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1);
 
 function setPageSize(size: number) {
   pageSize.value = size;
-  localStorage.setItem(STORAGE_PAGE_SIZE, String(size));
+  try {
+    localStorage.setItem(STORAGE_PAGE_SIZE, String(size));
+  } catch {
+    /* private mode / quota — ignore */
+  }
   resetPage();
 }
 
@@ -117,31 +137,30 @@ function getLocalizedAction(action: string) {
   return actionMap[action] || action;
 }
 
-// Throttle logs: Process one log every 500ms to create a stream/typewriter effect
-let streamTimer: number | undefined;
-streamTimer = window.setInterval(() => {
-  if (pendingLogs.value.length > 0) {
-    // Take the OLDEST pending log (FIFO from the pending queue)
-    // pendingLogs.push adds to end. So pendingLogs[0] is the oldest.
-    // Processing in order: Log1 -> Log2 -> Log3
-    // Each gets unshifted to items, resulting in: [Log3, Log2, Log1, ...oldItems]
-    // This is correct: newest at top.
-    const item = pendingLogs.value.shift();
-    if (item) {
-      items.value.unshift(item);
+// Batched drain via rAF: flush up to MAX_PER_FRAME pending logs per frame, preserving order.
+// Only auto-jump to page 1 on the first batch when user is already on page 1 (don't hijack pagination).
+let rafHandle: number | undefined;
+const MAX_ITEMS = 10000;
+const MAX_PER_FRAME = 50;
 
-      // Auto-scroll to page 1 so user sees new logs at top
-      if (currentPage.value !== 1) {
-        currentPage.value = 1;
-      }
-
-      // Safety cap 10k
-      if (items.value.length > 10000) {
-        items.value.pop(); // Remove from end
-      }
-    }
+function drainPendingLogs() {
+  rafHandle = undefined;
+  if (pendingLogs.value.length === 0) return;
+  const batch = pendingLogs.value.splice(0, MAX_PER_FRAME);
+  // batch[0] is oldest pending; unshift from oldest->newest so newest ends up at items[0].
+  for (const item of batch) {
+    items.value.unshift(item);
   }
-}, 500);
+  if (items.value.length > MAX_ITEMS) {
+    items.value.splice(MAX_ITEMS);
+  }
+  if (pendingLogs.value.length > 0) scheduleDrain();
+}
+
+function scheduleDrain() {
+  if (rafHandle != null) return;
+  rafHandle = window.requestAnimationFrame(drainPendingLogs);
+}
 
 async function load(opts: { toast?: boolean } = {}) {
   loading.value = true;
@@ -209,16 +228,35 @@ function resetPage() {
   currentPage.value = 1;
 }
 
+// Mirror filters + page into the URL so refresh / share preserves context.
+// Use replace() so we don't pollute the history stack with every keystroke.
+let syncingQuery = false;
+function syncQueryToRoute() {
+  if (syncingQuery) return;
+  syncingQuery = true;
+  const q: Record<string, string> = {};
+  if (category.value && category.value !== "all") q.category = category.value;
+  if (domain.value) q.domain = domain.value;
+  if (keyword.value) q.keyword = keyword.value;
+  if (currentPage.value > 1) q.page = String(currentPage.value);
+  router
+    .replace({ query: q })
+    .catch(() => { /* NavigationDuplicated is safe to ignore */ })
+    .finally(() => { syncingQuery = false; });
+}
+watch([category, domain, keyword, currentPage], syncQueryToRoute, { flush: "post" });
+
 onMounted(() => {
   loadDomains();
   load();
 });
 
 onUnmounted(() => {
-  if (streamTimer) {
-    window.clearInterval(streamTimer);
-    streamTimer = undefined;
+  if (rafHandle != null) {
+    window.cancelAnimationFrame(rafHandle);
+    rafHandle = undefined;
   }
+  pendingLogs.value = [];
 });
 
 	// WS real-time updates
@@ -248,8 +286,9 @@ onUnmounted(() => {
     if (!txt.includes(kw)) return;
   }
 
-  // Buffer the log instead of direct unshift
+  // Buffer the log; drain on next animation frame (batched) to avoid reactive storm.
   pendingLogs.value.push(evt);
+  scheduleDrain();
 });
 </script>
 
@@ -299,12 +338,13 @@ onUnmounted(() => {
           <div class="md:hidden p-4 space-y-3">
             <div v-for="item in paginatedItems" :key="item.id"
               class="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50 p-4 active:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/30 dark:active:bg-slate-800"
+              style="content-visibility: auto; contain-intrinsic-size: 0 160px;"
               @click="openDetail(item)">
               <div class="flex items-start justify-between gap-2">
                 <div class="flex flex-col gap-1">
                   <div class="flex items-center gap-2">
                     <Badge :label="item.level" :tone="toneForLevel(item.level) as any" />
-                    <span class="font-mono text-xs text-slate-400 dark:text-slate-500">{{ formatTime(item.ts) }}</span>
+                    <span class="font-mono text-xs text-slate-400 dark:text-slate-400">{{ formatTime(item.ts) }}</span>
                   </div>
                   <div class="text-sm font-medium text-slate-800 dark:text-slate-100 break-all line-clamp-2">
                     {{ item.message }}
@@ -319,7 +359,7 @@ onUnmounted(() => {
                 <span v-if="domainLabel(item) !== '-'" class="text-slate-600 dark:text-slate-300">{{ domainLabel(item)
                   }}</span>
                 <span v-if="pageLabel(item)"
-                  class="rounded bg-slate-200/50 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-400">{{
+                  class="rounded bg-slate-200/50 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{
                     pageLabel(item) }}</span>
                 <Badge :label="item.category" :tone="toneForCategory(item.category) as any" class="ml-auto" />
               </div>
@@ -329,7 +369,7 @@ onUnmounted(() => {
           <!-- Desktop View -->
           <table class="hidden md:table min-w-full text-left text-sm relative border-collapse">
             <thead
-              class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-400">
+              class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-300">
               <tr>
                 <th class="px-6 py-4">时间</th>
                 <th class="px-6 py-4">分类</th>
@@ -342,8 +382,9 @@ onUnmounted(() => {
               <TransitionGroup name="list">
                 <tr v-for="item in paginatedItems" :key="item.id"
                   class="table-row-hover group cursor-pointer transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30"
+                  style="content-visibility: auto; contain-intrinsic-size: 0 64px;"
                   @click="openDetail(item)" :title="item.detail ? '点击查看详情' : ''">
-                  <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-400 font-mono">{{ formatDateTime(item.ts)
+                  <td class="px-6 py-4 text-xs text-slate-500 dark:text-slate-300 font-mono">{{ formatDateTime(item.ts)
                     }}
                   </td>
                   <td class="px-6 py-4">
@@ -356,7 +397,7 @@ onUnmounted(() => {
                     <div class="flex flex-col gap-1">
                       <span v-if="domainLabel(item) !== '-'">{{ domainLabel(item) }}</span>
                       <span v-if="pageLabel(item)"
-                        class="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400 w-fit">
+                        class="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300 w-fit">
                         {{ pageLabel(item) }}
                       </span>
                       <span v-if="domainLabel(item) === '-' && !pageLabel(item)">-</span>
@@ -366,7 +407,7 @@ onUnmounted(() => {
                     <div class="text-sm font-medium text-slate-800 dark:text-slate-100">
                       {{ item.message }}
                     </div>
-                    <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-300">
                       {{ item.action }}
                     </div>
                   </td>
@@ -379,7 +420,7 @@ onUnmounted(() => {
         <!-- Pagination -->
         <div v-if="totalPages > 1 || items.length > 10"
           class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
-          <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-300">
             <span>每页</span>
             <div class="w-[88px]">
               <FormSelect v-model="pageSize" dense
@@ -405,7 +446,7 @@ onUnmounted(() => {
     </Card>
 
     <Modal :open="showDetail" :title="detailTitle" @close="showDetail = false">
-      <div v-if="!detailContent" class="text-sm text-slate-500 dark:text-slate-400">无详情</div>
+      <div v-if="!detailContent" class="text-sm text-slate-500 dark:text-slate-300">无详情</div>
       <pre
         v-else
         v-text="detailContent"
