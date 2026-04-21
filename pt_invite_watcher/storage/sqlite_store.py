@@ -101,6 +101,10 @@ class SqliteStore:
         await cur.close()
         cur = await conn.execute(f"PRAGMA busy_timeout={int(self._sqlite_busy_timeout_ms)};")
         await cur.close()
+        # Cap the WAL file size: with continuous scan logging the -wal sidecar can grow into the
+        # GB range before SQLite naturally checkpoints. 1000 pages ≈ 4MB, a sane upper bound.
+        cur = await conn.execute("PRAGMA wal_autocheckpoint=1000;")
+        await cur.close()
         return conn
 
     def on_event(self, hook: Callable[[dict[str, Any]], Any]) -> None:
@@ -203,6 +207,14 @@ class SqliteStore:
             """
         )
         await cur.close()
+        # Indexes accelerate the most common Logs queries (filter by category/domain, distinct domain, recency).
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_event_log_category ON event_log(category);",
+            "CREATE INDEX IF NOT EXISTS idx_event_log_domain ON event_log(domain);",
+            "CREATE INDEX IF NOT EXISTS idx_event_log_id_desc ON event_log(id DESC);",
+        ):
+            cur = await self._conn.execute(index_sql)
+            await cur.close()
         await self._conn.commit()
 
         await self._ensure_default_notifications()
