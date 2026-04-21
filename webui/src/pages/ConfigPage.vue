@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
 import { Download, Upload, FileJson, ShieldAlert, UploadCloud, Info, RefreshCw } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
@@ -243,6 +244,11 @@ async function save() {
     else if (clearFlags.cc_password) payload.cookie.cookiecloud.clear_password = true;
 
     await api.configPut(payload);
+    // Clear in-memory secret fields immediately so they don't linger after a successful save —
+    // load() refreshes view state but doesn't reset the bound inputs unless the user re-enters them.
+    model.moviepilot.password = "";
+    model.moviepilot.otp_password = "";
+    model.cookie.cookiecloud.password = "";
     showToast("已保存（下一轮扫描生效）", "success");
     await load();
   } catch (e: any) {
@@ -287,17 +293,28 @@ function _backupFilename() {
 }
 
 function _readAutoRefreshPrefs() {
-  const enabled = localStorage.getItem(STORAGE_REFRESH_ENABLED) === "1";
-  const minutes = Number(localStorage.getItem(STORAGE_REFRESH_MINUTES) || "10");
-  return { enabled, minutes: Number.isFinite(minutes) ? minutes : 10 };
+  let enabled = false;
+  let minutes = 10;
+  try {
+    enabled = localStorage.getItem(STORAGE_REFRESH_ENABLED) === "1";
+    const raw = Number(localStorage.getItem(STORAGE_REFRESH_MINUTES) || "10");
+    if (Number.isFinite(raw)) minutes = raw;
+  } catch {
+    /* private mode / disabled — fall back to defaults */
+  }
+  return { enabled, minutes };
 }
 
 function _applyAutoRefreshPrefs(prefs: any) {
   const enabled = !!prefs?.enabled;
   const minutes = Number(prefs?.minutes ?? 10);
-  localStorage.setItem(STORAGE_REFRESH_ENABLED, enabled ? "1" : "0");
-  if (Number.isFinite(minutes) && minutes > 0) {
-    localStorage.setItem(STORAGE_REFRESH_MINUTES, String(Math.round(minutes)));
+  try {
+    localStorage.setItem(STORAGE_REFRESH_ENABLED, enabled ? "1" : "0");
+    if (Number.isFinite(minutes) && minutes > 0) {
+      localStorage.setItem(STORAGE_REFRESH_MINUTES, String(Math.round(minutes)));
+    }
+  } catch {
+    /* ignore quota / disabled storage */
   }
 }
 
@@ -355,7 +372,15 @@ async function importBackup() {
   try {
     showToast("正在导入…", "info", 1600);
     const text = await importFile.value.text();
-    const parsed = JSON.parse(text);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("文件不是合法的 JSON");
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("备份格式无效（应为 JSON 对象）");
+    }
     if (parsed?.ui?.auto_refresh) {
       _applyAutoRefreshPrefs(parsed.ui.auto_refresh);
     }
@@ -374,14 +399,32 @@ async function importBackup() {
   }
 }
 
-onMounted(() => load());
+function beforeUnloadHandler(e: BeforeUnloadEvent) {
+  if (!isDirty.value) return;
+  e.preventDefault();
+  e.returnValue = "";
+}
+
+onMounted(() => {
+  load();
+  window.addEventListener("beforeunload", beforeUnloadHandler);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", beforeUnloadHandler);
+});
+
+onBeforeRouteLeave(() => {
+  if (!isDirty.value) return true;
+  return window.confirm("有未保存的修改，确定离开吗？");
+});
 </script>
 
 <template>
   <div class="space-y-6">
     <PageHeader title="配置管理">
       <template #description>
-        <div class="mt-2 flex items-center gap-3 text-base text-slate-500 dark:text-slate-400">
+        <div class="mt-2 flex items-center gap-3 text-base text-slate-500 dark:text-slate-300">
           <span>修改后需保存生效</span>
           <span v-if="isDirty" class="animate-pulse font-medium text-amber-600 dark:text-amber-400">
             ● 有未保存修改
@@ -414,20 +457,20 @@ onMounted(() => load());
               class="group relative flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:bg-brand-50/30 hover:shadow-md active:translate-y-0 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-brand-700/50 dark:hover:bg-brand-900/20"
               :disabled="backupBusy" @click="exportBackup(false)">
               <FileJson
-                class="h-6 w-6 text-slate-400 transition-colors group-hover:text-brand-500 dark:text-slate-500" />
+                class="h-6 w-6 text-slate-400 transition-colors group-hover:text-brand-500 dark:text-slate-400" />
               <div class="text-center">
                 <div class="text-sm font-medium text-slate-700 dark:text-slate-200">仅配置 (脱敏)</div>
-                <div class="text-[10px] text-slate-400 dark:text-slate-500">不含密钥/密码</div>
+                <div class="text-[10px] text-slate-400 dark:text-slate-400">不含密钥/密码</div>
               </div>
             </button>
             <button
               class="group relative flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:-translate-y-0.5 hover:border-rose-200 hover:bg-rose-50/30 hover:shadow-md active:translate-y-0 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-rose-700/50 dark:hover:bg-rose-900/20"
               :disabled="backupBusy" @click="exportBackup(true)">
               <ShieldAlert
-                class="h-6 w-6 text-slate-400 transition-colors group-hover:text-rose-500 dark:text-slate-500" />
+                class="h-6 w-6 text-slate-400 transition-colors group-hover:text-rose-500 dark:text-slate-400" />
               <div class="text-center">
                 <div class="text-sm font-medium text-slate-700 dark:text-slate-200">完整导出</div>
-                <div class="text-[10px] text-slate-400 dark:text-slate-500">含敏感密钥信息</div>
+                <div class="text-[10px] text-slate-400 dark:text-slate-400">含敏感密钥信息</div>
               </div>
             </button>
           </div>
@@ -471,7 +514,7 @@ onMounted(() => load());
       </div>
 
       <div
-        class="mt-6 flex items-start gap-2 rounded-lg bg-slate-100/50 p-3 text-xs text-slate-500 dark:bg-slate-900/30 dark:text-slate-400">
+        class="mt-6 flex items-start gap-2 rounded-lg bg-slate-100/50 p-3 text-xs text-slate-500 dark:bg-slate-900/30 dark:text-slate-300">
         <Info class="h-4 w-4 shrink-0 mt-0.5 text-slate-400" />
         备份文件额外包含浏览器本地的“自动刷新”偏好；导入后将写入当前浏览器配置。
       </div>
@@ -523,7 +566,7 @@ onMounted(() => load());
               <div v-if="clearFlags.mp_password" class="text-xs font-medium text-amber-600 dark:text-amber-400">
                 将清除已保存 password（回退到 config.yaml/env）
               </div>
-              <div v-else class="text-xs text-slate-500 dark:text-slate-400"></div>
+              <div v-else class="text-xs text-slate-500 dark:text-slate-300"></div>
               <Button v-if="view?.moviepilot.password_configured" variant="ghost" size="sm" @click="clearFlags.mp_password = !clearFlags.mp_password">
                 {{ clearFlags.mp_password ? "取消清除" : "清除已保存密码" }}
               </Button>
@@ -537,7 +580,7 @@ onMounted(() => load());
               <div v-if="clearFlags.mp_otp_password" class="text-xs font-medium text-amber-600 dark:text-amber-400">
                 将清除已保存 OTP（回退到 config.yaml/env）
               </div>
-              <div v-else class="text-xs text-slate-500 dark:text-slate-400"></div>
+              <div v-else class="text-xs text-slate-500 dark:text-slate-300"></div>
               <Button v-if="view?.moviepilot.otp_configured" variant="ghost" size="sm" @click="clearFlags.mp_otp_password = !clearFlags.mp_otp_password">
                 {{ clearFlags.mp_otp_password ? "取消清除" : "清除已保存 OTP" }}
               </Button>
@@ -547,7 +590,7 @@ onMounted(() => load());
             <label class="block text-sm font-medium">站点列表缓存 TTL（秒）</label>
             <input v-model.number="model.moviepilot.sites_cache_ttl_seconds" type="number" min="60" max="604800"
               class="mt-1 ui-input" />
-            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">MoviePilot 拉取失败时，未过期缓存可用于继续扫描。</div>
+            <div class="mt-1 text-xs text-slate-500 dark:text-slate-300">MoviePilot 拉取失败时，未过期缓存可用于继续扫描。</div>
           </div>
         </div>
       </Card>
@@ -580,7 +623,7 @@ onMounted(() => load());
                   <div v-if="clearFlags.cc_password" class="text-xs font-medium text-amber-600 dark:text-amber-400">
                     将清除已保存密码（回退到 config.yaml/env）
                   </div>
-                  <div v-else class="text-xs text-slate-500 dark:text-slate-400"></div>
+                  <div v-else class="text-xs text-slate-500 dark:text-slate-300"></div>
                   <Button v-if="view?.cookie.cookiecloud.password_configured" variant="ghost" size="sm"
                     @click="clearFlags.cc_password = !clearFlags.cc_password">
                     {{ clearFlags.cc_password ? "取消清除" : "清除已保存密码" }}
@@ -614,7 +657,7 @@ onMounted(() => load());
           <FormSelect v-model="model.connectivity.retry_interval_seconds" label="依赖重试间隔（MoviePilot / CookieCloud）"
             :options="RETRY_INTERVAL_OPTIONS">
             <template #help>
-              <div class="mt-1 text-xs text-slate-600 dark:text-slate-400">依赖连接失败时会优先使用缓存，并按此间隔重新尝试恢复连接。</div>
+              <div class="mt-1 text-xs text-slate-600 dark:text-slate-300">依赖连接失败时会优先使用缓存，并按此间隔重新尝试恢复连接。</div>
             </template>
           </FormSelect>
         </div>
@@ -622,7 +665,7 @@ onMounted(() => load());
           <FormSelect v-model="model.connectivity.request_retry_delay_seconds" label="网络请求失败重试延迟（站点探测 / 通知）"
             :options="REQUEST_RETRY_DELAY_OPTIONS">
             <template #help>
-              <div class="mt-1 text-xs text-slate-600 dark:text-slate-400">遇到网络异常/5xx/429/408 时会按此间隔重试（最多 3 次）。</div>
+              <div class="mt-1 text-xs text-slate-600 dark:text-slate-300">遇到网络异常/5xx/429/408 时会按此间隔重试（最多 3 次）。</div>
             </template>
           </FormSelect>
         </div>
@@ -666,14 +709,14 @@ onMounted(() => load());
               <span v-if="accent === color" class="h-2.5 w-2.5 rounded-full bg-white shadow-sm" />
             </button>
           </div>
-          <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">选择您喜欢的品牌色调，即时生效。</div>
+          <div class="mt-1 text-xs text-slate-500 dark:text-slate-300">选择您喜欢的品牌色调，即时生效。</div>
         </div>
 
         <div class="flex items-center gap-3">
           <Toggle v-model="model.ui.allow_state_reset" />
           <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>
         </div>
-        <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
+        <div class="mt-1 text-xs text-slate-500 dark:text-slate-300">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
       </div>
     </Card>
   </div>
