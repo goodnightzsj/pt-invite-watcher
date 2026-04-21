@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Annotated
 
 from fastapi import APIRouter, Body, Depends
@@ -21,6 +22,7 @@ from pt_invite_watcher.utils.parse import safe_dict
 
 
 router = APIRouter()
+logger = logging.getLogger("pt_invite_watcher.routes.config_api")
 
 
 @router.get("/api/config", dependencies=[Depends(require_auth)])
@@ -189,7 +191,9 @@ async def api_config_put(
     try:
         ctx.runtime_config.invalidate()
     except Exception:
-        pass
+        # Cache invalidation is best-effort, but we log it: silently swallowing means a stale
+        # config can keep driving the scheduler indefinitely without operator visibility.
+        logger.exception("runtime_config.invalidate() failed after config update")
     await ctx.store.add_event(
         category="config",
         level="info",
@@ -200,7 +204,7 @@ async def api_config_put(
     try:
         await broadcast_dashboard_update()
     except Exception:
-        pass
+        logger.exception("broadcast_dashboard_update() failed after config update")
     return {"ok": True}
 
 
