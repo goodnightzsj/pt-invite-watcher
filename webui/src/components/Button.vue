@@ -22,20 +22,20 @@ const props = withDefaults(
 );
 
 const classes = computed(() => {
-  const base = 'inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
+  const base = 'inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
 
   const variants: Record<Variant, string> = {
     // Primary: Vibrant Gradient + Soft Shadow
-    primary: 'bg-gradient-to-br from-brand-500 to-brand-600 hover:to-brand-500 text-white shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 active:scale-[0.98] border border-transparent ring-offset-white dark:ring-offset-slate-900',
+    primary: 'bg-gradient-to-br from-brand-500 to-brand-600 hover:to-brand-500 text-white shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 active:scale-[0.98] border border-transparent focus-visible:ring-brand-500 ring-offset-white dark:ring-offset-slate-900',
 
     // Secondary: Clean White/Dark + Subtle Border
-    secondary: 'bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-slate-200 shadow-sm hover:shadow active:scale-[0.98] dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-750 ring-offset-white dark:ring-offset-slate-900',
+    secondary: 'bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-slate-200 shadow-sm hover:shadow active:scale-[0.98] dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-750 focus-visible:ring-brand-500 ring-offset-white dark:ring-offset-slate-900',
 
     // Danger: Rose Gradient
-    danger: 'bg-gradient-to-br from-rose-500 to-rose-600 hover:to-rose-500 text-white shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 active:scale-[0.98] border border-transparent ring-offset-white dark:ring-offset-slate-900',
+    danger: 'bg-gradient-to-br from-rose-500 to-rose-600 hover:to-rose-500 text-white shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 active:scale-[0.98] border border-transparent focus-visible:ring-rose-500 ring-offset-white dark:ring-offset-slate-900',
 
     // Ghost: Minimalist
-    ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-[0.98] dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-200 ring-offset-white dark:ring-offset-slate-900',
+    ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-[0.98] dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-slate-200 focus-visible:ring-brand-500 ring-offset-white dark:ring-offset-slate-900',
   };
 
   const sizes: Record<Size, string> = {

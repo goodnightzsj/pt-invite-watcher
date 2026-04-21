@@ -52,17 +52,27 @@ function updatePosition() {
   const rect = el.getBoundingClientRect();
   const margin = 8;
   const width = rect.width;
-  const maxHeight = Math.min(320, Math.max(160, window.innerHeight - margin * 2));
+  const viewportH = window.innerHeight;
+  const viewportW = window.innerWidth;
+
+  // Compute available space above/below first, then pick the side with more room
+  // and clamp maxHeight so the panel never overflows the viewport (fixes mobile clipping).
+  const spaceBelow = Math.max(0, viewportH - rect.bottom - margin);
+  const spaceAbove = Math.max(0, rect.top - margin);
+  const preferred = Math.min(320, Math.max(160, viewportH - margin * 2));
+
+  const placeAbove = spaceBelow < Math.min(preferred, 200) && spaceAbove > spaceBelow;
+  const available = placeAbove ? spaceAbove : spaceBelow;
+  const maxHeight = Math.max(120, Math.min(preferred, available || preferred));
 
   let left = rect.left;
-  const maxLeft = window.innerWidth - margin - width;
+  const maxLeft = viewportW - margin - width;
   if (left > maxLeft) left = Math.max(margin, maxLeft);
+  if (left < margin) left = margin;
 
-  const preferBelow = rect.bottom + margin;
-  const preferAbove = rect.top - margin - maxHeight;
-  const shouldPlaceAbove = preferBelow + maxHeight > window.innerHeight - margin && preferAbove >= margin;
-
-  const top = shouldPlaceAbove ? rect.top - margin - maxHeight : preferBelow;
+  const top = placeAbove
+    ? Math.max(margin, rect.top - margin - maxHeight)
+    : Math.min(viewportH - margin - maxHeight, rect.bottom + margin);
 
   panelStyle.value = {
     position: "fixed",
@@ -139,11 +149,11 @@ onUnmounted(() => teardownGlobalListeners());
     >
       <span
         class="min-w-0 flex-1 truncate"
-        :class="selected ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'"
+        :class="selected ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-300'"
       >
         {{ selected ? selected.label : props.placeholder }}
       </span>
-      <ChevronDown class="h-4 w-4 text-slate-500 dark:text-slate-400" aria-hidden="true" />
+      <ChevronDown class="h-4 w-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
     </button>
 
     <slot name="help" />
@@ -175,7 +185,7 @@ onUnmounted(() => teardownGlobalListeners());
             >
               <div class="min-w-0 flex-1">
                 <div class="font-medium text-slate-900 dark:text-slate-100">{{ opt.label }}</div>
-                <div v-if="opt.help" class="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{{ opt.help }}</div>
+                <div v-if="opt.help" class="mt-0.5 text-xs text-slate-600 dark:text-slate-300">{{ opt.help }}</div>
               </div>
               <Check
                 v-if="opt.value === props.modelValue"

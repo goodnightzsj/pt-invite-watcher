@@ -98,7 +98,7 @@ onMounted(async () => {
     <div class="fixed bottom-24 right-5 z-50 flex flex-col-reverse gap-2 sm:bottom-5">
       <transition-group name="list">
         <Toast v-for="t in toasts" :key="t.id" :kind="t.kind" @close="removeToast(t.id)">
-          {{ t.message }}
+          {{ t.message }}<span v-if="t.count > 1" class="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-black/10 px-1.5 text-[11px] font-semibold tabular-nums dark:bg-white/15">×{{ t.count }}</span>
         </Toast>
       </transition-group>
       <!-- Global Confirm Dialog -->
