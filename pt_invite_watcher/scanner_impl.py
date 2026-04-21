@@ -9,7 +9,7 @@ import os
 import socket
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import httpx
 
@@ -88,6 +88,9 @@ class Scanner:
         self._detector = NexusPhpDetector()
         self._mteam = MTeamDetector()
         self._in_flight: dict[str, asyncio.Task[Any]] = {}
+        # Optional callback for streaming "scanned N/M" progress to WebSocket clients.
+        # Injected by the app layer so the scanner doesn't depend on routes/websocket modules.
+        self._progress_broadcast: Optional[Callable[[dict], None]] = None
         self._ctx_builder = ScanContextBuilder(
             settings,
             store,
@@ -98,6 +101,14 @@ class Scanner:
 
     def in_flight_domains(self) -> set[str]:
         return set(self._in_flight.keys())
+
+    def set_progress_broadcast(self, broadcast: Optional[Callable[[dict], None]]) -> None:
+        """Install a callback invoked as sites finish scanning.
+
+        Payload shape: ``{total, scanned, in_flight, domain, phase}``. Errors inside the callback
+        are swallowed — progress is best-effort and must not break a scan.
+        """
+        self._progress_broadcast = broadcast
 
     async def probe_dependencies(self) -> Dict[str, Any]:
         async with self._deps_lock:
@@ -250,6 +261,7 @@ class Scanner:
                 check_one=self._check_one,
                 format_error_detail=_format_error_detail,
                 normalize_domain=_normalize_domain,
+                progress_broadcast=self._progress_broadcast,
             )
             if result.clear_hint:
                 await self._clear_scan_hint()

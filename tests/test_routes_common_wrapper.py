@@ -13,7 +13,7 @@ class RoutesCommonWrapperTest(unittest.TestCase):
         }
         class_names = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
 
-        self.assertEqual(func_names, {"broadcast_dashboard_update"})
+        self.assertEqual(func_names, {"broadcast_dashboard_update", "broadcast_scan_progress"})
         self.assertEqual(class_names, set())
 
 

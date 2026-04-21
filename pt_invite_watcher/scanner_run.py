@@ -46,6 +46,7 @@ async def run_once_locked(
     check_one: Callable[..., Awaitable[None]],
     format_error_detail: Callable[[Exception], str],
     normalize_domain: Callable[[str], str],
+    progress_broadcast: Optional[Callable[[dict], None]] = None,
 ) -> ScanRunResult:
     sites = prepared.sites
     cookie_mgr = prepared.cookie_mgr
@@ -101,6 +102,24 @@ async def run_once_locked(
     manual_count = sum(1 for s in sites if getattr(s, "id", None) is None)
     tasks: list[asyncio.Task[Any]] = []
     task_errors_count = 0
+    # Atomic counter for per-site completion — spans the gather() and is mutated from runners.
+    progress_state = {"completed": 0, "total": 0}
+
+    def _emit_progress(dom: str, ok: bool) -> None:
+        if progress_broadcast is None:
+            return
+        try:
+            progress_broadcast({
+                "total": progress_state["total"],
+                "completed": progress_state["completed"],
+                "domain": dom,
+                "ok": ok,
+            })
+        except Exception:
+            # Progress must never fail a scan; ws_broadcaster.publish is already best-effort
+            # but we guard the callable itself too.
+            logger.debug("progress_broadcast raised; dropping", exc_info=True)
+
     async with new_http_client(prepared.scan_timeout, prepared.scan_trust_env) as client:
         for site in to_scan:
             dom = normalize_domain(site.domain)
@@ -111,6 +130,7 @@ async def run_once_locked(
                 continue
 
             async def _runner(site=site, dom=dom):
+                ok = True
                 try:
                     await check_one(
                         client,
@@ -123,6 +143,7 @@ async def run_once_locked(
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
+                    ok = False
                     nonlocal task_errors_count
                     task_errors_count += 1
                     err_detail = format_error_detail(e)
@@ -141,6 +162,8 @@ async def run_once_locked(
                 finally:
                     if in_flight.get(dom) is asyncio.current_task():
                         in_flight.pop(dom, None)
+                    progress_state["completed"] += 1
+                    _emit_progress(dom, ok)
 
             task = asyncio.create_task(_runner(), name=f"scan_{dom}")
             in_flight[dom] = task
@@ -160,6 +183,19 @@ async def run_once_locked(
                 },
                 clear_hint=False,
             )
+
+        progress_state["total"] = len(tasks)
+        # Emit an initial "0/N started" frame so WebUI can render the progress bar immediately.
+        if progress_broadcast is not None and progress_state["total"] > 0:
+            try:
+                progress_broadcast({
+                    "total": progress_state["total"],
+                    "completed": 0,
+                    "domain": "",
+                    "ok": True,
+                })
+            except Exception:
+                logger.debug("progress_broadcast initial frame raised", exc_info=True)
 
         logger.info(
             "scan start: %d sites (moviepilot=%d manual=%d skipped_in_flight=%d)",

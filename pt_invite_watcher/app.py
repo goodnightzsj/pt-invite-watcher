@@ -14,7 +14,7 @@ from pt_invite_watcher.config import load_settings
 from pt_invite_watcher import __version__
 from pt_invite_watcher.scheduler import start_scheduler, stop_scheduler
 from pt_invite_watcher.routes import ASSETS_DIR, router, ws_broadcaster
-from pt_invite_watcher.routes.common import broadcast_dashboard_update
+from pt_invite_watcher.routes.common import broadcast_dashboard_update, broadcast_scan_progress
 from pt_invite_watcher.ws_events import WS_LOGS_APPEND, WS_LOGS_UPDATE
 
 
@@ -67,6 +67,11 @@ async def lifespan(app: FastAPI):
             ws_broadcaster.publish({"type": WS_LOGS_UPDATE, "data": {"reason": reason}})
 
         on_logs_resync(_on_logs_resync)
+
+    # Stream per-site scan progress to WebSocket clients.
+    scanner_set_progress = getattr(ctx.scanner, "set_progress_broadcast", None)
+    if callable(scanner_set_progress):
+        scanner_set_progress(broadcast_scan_progress)
 
     scan_task = await start_scheduler(ctx, broadcast_dashboard_update=broadcast_dashboard_update)
     yield

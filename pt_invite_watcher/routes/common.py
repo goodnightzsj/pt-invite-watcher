@@ -14,7 +14,7 @@ from pt_invite_watcher.routes.deps import (
 from pt_invite_watcher.routes.site_helpers import domain_from_url, relative_path_from_page_url, site_entry_view
 from pt_invite_watcher.routes.ws_broadcaster import WebSocketBroadcaster, ws_broadcaster
 from pt_invite_watcher.utils.parse import cfg_bool, cfg_int, cfg_str, normalize_domain, safe_dict
-from pt_invite_watcher.ws_events import WS_DASHBOARD_UPDATE
+from pt_invite_watcher.ws_events import WS_DASHBOARD_UPDATE, WS_SCAN_PROGRESS
 
 
 DIST_DIR = Path(__file__).resolve().parent.parent / "webui_dist"
@@ -25,6 +25,15 @@ BACKUP_VERSION = 1
 
 async def broadcast_dashboard_update() -> None:
     await ws_broadcaster.broadcast({"type": WS_DASHBOARD_UPDATE})
+
+
+def broadcast_scan_progress(payload: dict) -> None:
+    """Fire-and-forget scan progress event (non-blocking).
+
+    Called from inside the scanner hot loop — we enqueue via ``publish`` rather than awaiting
+    ``broadcast`` so slow WS clients can't slow down a live scan.
+    """
+    ws_broadcaster.publish({"type": WS_SCAN_PROGRESS, "data": dict(payload or {})})
 
 
 # Explicit aliases to reduce confusion with similarly named store-level helpers.
@@ -40,6 +49,7 @@ __all__ = [
     "WebSocketBroadcaster",
     "basic_security",
     "broadcast_dashboard_update",
+    "broadcast_scan_progress",
     "cfg_bool",
     "cfg_int",
     "cfg_str",

@@ -12,6 +12,7 @@ WS_PING = "ping"
 WS_DASHBOARD_UPDATE = "dashboard_update"
 WS_LOGS_UPDATE = "logs_update"
 WS_LOGS_APPEND = "logs_append"
+WS_SCAN_PROGRESS = "scan_progress"
 
 __all__ = [
     "WS_CONNECTED",
@@ -19,5 +20,6 @@ __all__ = [
     "WS_DASHBOARD_UPDATE",
     "WS_LOGS_UPDATE",
     "WS_LOGS_APPEND",
+    "WS_SCAN_PROGRESS",
 ]
 
