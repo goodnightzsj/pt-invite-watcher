@@ -262,17 +262,67 @@ onUnmounted(() => {
     window.clearInterval(scanPollTimer);
     scanPollTimer = undefined;
   }
+  if (wsRefreshRaf != null) {
+    window.cancelAnimationFrame(wsRefreshRaf);
+    wsRefreshRaf = undefined;
+  }
+  if (scanProgressClearTimer) {
+    window.clearTimeout(scanProgressClearTimer);
+    scanProgressClearTimer = undefined;
+  }
 });
 
-// WS real-time updates
+// WS real-time updates — coalesce bursts within one animation frame to avoid flicker.
 import { useWS } from "../ws";
-import { WS_DASHBOARD_UPDATE } from "../ws_events";
+import { WS_DASHBOARD_UPDATE, WS_SCAN_PROGRESS } from "../ws_events";
+let wsRefreshRaf: number | undefined;
 useWS(WS_DASHBOARD_UPDATE, () => {
-  refresh({ silent: true });
+  if (wsRefreshRaf != null) return;
+  wsRefreshRaf = window.requestAnimationFrame(() => {
+    wsRefreshRaf = undefined;
+    refresh({ silent: true });
+  });
 });
+
+// Per-site scan progress — updates a small counter without refetching the whole dashboard.
+const scanProgress = ref<{ total: number; completed: number; domain: string } | null>(null);
+let scanProgressClearTimer: number | undefined;
+useWS(WS_SCAN_PROGRESS, (data: any) => {
+  if (!data) return;
+  const total = Number(data.total || 0);
+  if (total <= 0) {
+    scanProgress.value = null;
+    return;
+  }
+  scanProgress.value = {
+    total,
+    completed: Math.min(total, Number(data.completed || 0)),
+    domain: String(data.domain || ""),
+  };
+  if (scanProgressClearTimer) window.clearTimeout(scanProgressClearTimer);
+  if (scanProgress.value.completed >= total) {
+    // Hold the final frame for a beat, then let it fade.
+    scanProgressClearTimer = window.setTimeout(() => {
+      scanProgress.value = null;
+    }, 1500);
+  }
+});
+
+type FilterMode = "all" | "unreachable" | "openReg" | "openInvite";
+const filterMode = ref<FilterMode>("all");
+
+function toggleFilter(mode: FilterMode) {
+  filterMode.value = filterMode.value === mode ? "all" : mode;
+}
 
 const hasRows = computed(() => rows.value.length > 0);
-const sortedRows = computed(() => sortedSiteRows(rows.value));
+const filteredRows = computed(() => {
+  if (filterMode.value === "unreachable") return rows.value.filter((r) => r.reachability_state === "down");
+  if (filterMode.value === "openReg") return rows.value.filter((r) => r.registration_state === "open");
+  if (filterMode.value === "openInvite") return rows.value.filter((r) => r.invites_state === "open");
+  return rows.value;
+});
+const sortedRows = computed(() => sortedSiteRows(filteredRows.value));
 
 const stats = computed(() => {
   const r = rows.value;
@@ -302,34 +352,55 @@ const stats = computed(() => {
       </template>
     </PageHeader>
 
-    <!-- Stat Grid -->
+    <!-- Stat Grid — each card acts as a toggle filter for the site list below. -->
     <div v-if="hasRows || loading" class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <Card :hoverable="false" class="relative overflow-hidden">
-        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">总站点</div>
-        <div class="relative z-10 mt-2 text-3xl font-bold text-slate-900 dark:text-white">{{ stats.total }}</div>
-        <Globe
-          class="absolute -bottom-3 -right-3 h-16 w-16 text-slate-400 opacity-10 dark:text-slate-200 dark:opacity-10" />
-      </Card>
-      <Card :hoverable="false" class="relative overflow-hidden">
-        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">开放注册</div>
-        <div class="relative z-10 mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">{{ stats.openReg }}
-        </div>
-        <UserPlus
-          class="absolute -bottom-3 -right-3 h-16 w-16 text-emerald-500 opacity-10 dark:text-emerald-400 dark:opacity-10" />
-      </Card>
-      <Card :hoverable="false" class="relative overflow-hidden">
-        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">开放邀请</div>
-        <div class="relative z-10 mt-2 text-3xl font-bold text-blue-600 dark:text-blue-400">{{ stats.openInvite }}</div>
-        <Ticket
-          class="absolute -bottom-3 -right-3 h-16 w-16 text-blue-500 opacity-10 dark:text-blue-400 dark:opacity-10" />
-      </Card>
-      <Card :hoverable="false" class="relative overflow-hidden">
-        <div class="text-sm font-medium text-slate-500 dark:text-slate-400">异常站点</div>
-        <div class="relative z-10 mt-2 text-3xl font-bold text-rose-600 dark:text-rose-400">{{ stats.unreachable }}
-        </div>
-        <AlertTriangle
-          class="absolute -bottom-3 -right-3 h-16 w-16 text-rose-500 opacity-10 dark:text-rose-400 dark:opacity-10" />
-      </Card>
+      <button type="button" @click="toggleFilter('all')"
+        class="text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded-2xl">
+        <Card :hoverable="true" class="relative overflow-hidden" :class="filterMode === 'all' ? 'ring-2 ring-brand-400/40' : ''">
+          <div class="text-sm font-medium text-slate-500 dark:text-slate-300">总站点</div>
+          <div :key="stats.total" class="count-number relative z-10 mt-2 text-3xl font-bold tabular-nums text-slate-900 dark:text-white">{{ stats.total }}</div>
+          <Globe class="absolute -bottom-3 -right-3 h-16 w-16 text-slate-400 opacity-10 dark:text-slate-200 dark:opacity-10" />
+        </Card>
+      </button>
+      <button type="button" @click="toggleFilter('openReg')"
+        class="text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded-2xl">
+        <Card :hoverable="true" class="relative overflow-hidden" :class="filterMode === 'openReg' ? 'ring-2 ring-emerald-400/50' : ''">
+          <div class="text-sm font-medium text-slate-500 dark:text-slate-300">开放注册</div>
+          <div :key="stats.openReg" class="count-number relative z-10 mt-2 text-3xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{{ stats.openReg }}</div>
+          <UserPlus class="absolute -bottom-3 -right-3 h-16 w-16 text-emerald-500 opacity-10 dark:text-emerald-400 dark:opacity-10" />
+        </Card>
+      </button>
+      <button type="button" @click="toggleFilter('openInvite')"
+        class="text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded-2xl">
+        <Card :hoverable="true" class="relative overflow-hidden" :class="filterMode === 'openInvite' ? 'ring-2 ring-blue-400/50' : ''">
+          <div class="text-sm font-medium text-slate-500 dark:text-slate-300">开放邀请</div>
+          <div :key="stats.openInvite" class="count-number relative z-10 mt-2 text-3xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{{ stats.openInvite }}</div>
+          <Ticket class="absolute -bottom-3 -right-3 h-16 w-16 text-blue-500 opacity-10 dark:text-blue-400 dark:opacity-10" />
+        </Card>
+      </button>
+      <button type="button" @click="toggleFilter('unreachable')"
+        class="text-left outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded-2xl">
+        <Card :hoverable="true" class="relative overflow-hidden transition-shadow"
+          :class="[
+            stats.unreachable > 0 ? 'ring-2 ring-rose-500/40 shadow-rose-500/20' : '',
+            filterMode === 'unreachable' ? 'ring-2 ring-rose-500/70' : '',
+          ]">
+          <div class="text-sm font-medium" :class="stats.unreachable > 0 ? 'text-rose-700 dark:text-rose-200' : 'text-slate-500 dark:text-slate-300'">异常站点</div>
+          <div :key="stats.unreachable" class="count-number relative z-10 mt-2 text-3xl font-bold tabular-nums" :class="stats.unreachable > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'">{{ stats.unreachable }}</div>
+          <AlertTriangle class="absolute -bottom-3 -right-3 h-16 w-16 opacity-10"
+            :class="stats.unreachable > 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-400 dark:text-slate-200'" />
+        </Card>
+      </button>
+    </div>
+
+    <!-- Active filter pill -->
+    <div v-if="hasRows && filterMode !== 'all'" class="flex items-center gap-2 text-sm">
+      <span class="text-slate-500 dark:text-slate-300">已筛选：</span>
+      <span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        {{ filterMode === 'unreachable' ? '异常站点' : filterMode === 'openReg' ? '开放注册' : '开放邀请' }}
+        <button class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-100" @click="filterMode = 'all'" title="清除筛选" aria-label="清除筛选">×</button>
+      </span>
+      <span class="text-xs text-slate-400 dark:text-slate-400">{{ sortedRows.length }} / {{ rows.length }} 站点</span>
     </div>
 
     <div v-if="scanHint"
@@ -351,7 +422,7 @@ const stats = computed(() => {
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div class="text-base font-semibold">扫描状态</div>
-          <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <div class="mt-1 text-sm text-slate-500 dark:text-slate-300">
             最后运行：{{ scanStatus.last_run_at || "-" }} · 站点数：{{ scanStatus.site_count || 0 }}
           </div>
         </div>
@@ -374,15 +445,26 @@ const stats = computed(() => {
     <Card v-else padding="none" :hoverable="false">
       <div class="overflow-hidden rounded-2xl">
         <div
-          class="border-b border-slate-200/60 bg-slate-50/50 px-4 py-4 text-sm font-medium text-slate-500 backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-slate-400">
+          class="border-b border-slate-200/60 bg-slate-50/50 px-4 py-4 text-sm font-medium text-slate-500 backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-slate-300">
           <span v-if="loading && !hasRows">加载中…</span>
           <span v-else>共 {{ rows.length }} 个站点</span>
         </div>
 
-        <!-- Scanning progress bar -->
-        <div v-if="scanRunning || hasInflightScan" class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-          <div
-            class="h-full w-full animate-scan-progress bg-gradient-to-r from-brand-500 via-purple-500 to-brand-500" />
+        <!-- Scanning progress bar: determinate if we have live progress, otherwise indeterminate. -->
+        <div v-if="scanRunning || hasInflightScan || scanProgress" class="relative">
+          <div class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+            <div
+              v-if="scanProgress && scanProgress.total > 0"
+              class="h-full bg-gradient-to-r from-brand-500 via-purple-500 to-brand-500 transition-[width] duration-300 ease-out"
+              :style="{ width: `${Math.min(100, Math.round((scanProgress.completed / scanProgress.total) * 100))}%` }"
+            />
+            <div v-else class="h-full w-full animate-scan-progress bg-gradient-to-r from-brand-500 via-purple-500 to-brand-500" />
+          </div>
+          <div v-if="scanProgress && scanProgress.total > 0"
+            class="pointer-events-none absolute right-3 top-1 flex items-center gap-2 text-[11px] font-medium text-slate-500 tabular-nums dark:text-slate-300">
+            <span>{{ scanProgress.completed }} / {{ scanProgress.total }}</span>
+            <span v-if="scanProgress.domain" class="max-w-[12rem] truncate text-slate-400 dark:text-slate-400">{{ scanProgress.domain }}</span>
+          </div>
         </div>
 
         <!-- Skeleton loading -->
@@ -402,7 +484,7 @@ const stats = computed(() => {
         <div v-if="hasRows || (!loading && !hasRows)" class="hidden md:block overflow-x-auto max-h-[calc(100vh-300px)]">
           <table class="min-w-full text-left text-sm relative border-collapse">
             <thead
-              class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-400">
+              class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-300">
               <tr>
                 <th class="px-6 py-4 min-w-[180px] max-w-[280px]">站点 / 域名</th>
                 <th class="hidden md:table-cell px-6 py-4 w-24">引擎</th>
@@ -416,7 +498,8 @@ const stats = computed(() => {
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
               <TransitionGroup name="list" appear>
                 <tr v-for="(row, index) in sortedRows" :key="row.domain" :style="{ '--i': index }"
-                  class="group table-row-hover transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
+                  class="group table-row-hover transition-colors duration-150 hover:bg-brand-50/40 dark:hover:bg-brand-950/20"
+                  :class="row.scanning ? 'row-scanning' : ''">
                   <!-- Site & Domain Combined -->
                   <td class="px-6 py-4">
                     <div class="flex items-center gap-3">
@@ -443,7 +526,8 @@ const stats = computed(() => {
                     <div class="flex items-center gap-2">
                       <Badge class="shrink-0" :label="reachabilityBadge(row).label"
                         :tone="reachabilityBadge(row).tone as any" />
-                      <span v-if="row.reachability_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400"
+                      <span v-if="row.reachability_note" class="status-note line-clamp-1 max-w-[120px]"
+                        :class="reachabilityBadge(row).tone === 'red' ? 'danger' : reachabilityBadge(row).tone === 'green' ? 'success' : 'warning'"
                         :title="row.reachability_note">
                         {{ row.reachability_note }}
                       </span>
@@ -458,7 +542,8 @@ const stats = computed(() => {
                       </a>
                       <Badge v-else class="shrink-0" :label="row.registration_state"
                         :tone="toneForState(row.registration_state) as any" />
-                      <span v-if="row.registration_note" class="line-clamp-1 max-w-[120px] text-xs text-slate-400"
+                      <span v-if="row.registration_note" class="status-note line-clamp-1 max-w-[120px]"
+                        :class="toneForState(row.registration_state) === 'green' ? 'success' : toneForState(row.registration_state) === 'red' ? 'danger' : 'warning'"
                         :title="row.registration_note">
                         {{ row.registration_note }}
                       </span>
@@ -474,14 +559,14 @@ const stats = computed(() => {
                       <Badge v-else class="shrink-0" :label="row.invites_state"
                         :tone="toneForState(row.invites_state) as any" />
                       <span v-if="row.invites_state === 'open' && row.invites_display"
-                        class="line-clamp-1 max-w-[120px] text-xs text-slate-400">
+                        class="status-note success line-clamp-1 max-w-[120px] tabular-nums">
                         {{ row.invites_display }}
                       </span>
                     </div>
                   </td>
 
                   <td class="hidden lg:table-cell px-6 py-4">
-                    <div class="text-xs text-slate-500 dark:text-slate-400">
+                    <div class="text-xs text-slate-500 dark:text-slate-300">
                       <div>最新检查：{{ formatRelativeTime(row.last_checked_at) }}</div>
                       <div class="mt-0.5 scale-90 origin-left opacity-60">上次变更时间：{{ formatChangedAt(row) }}</div>
                     </div>
@@ -518,7 +603,7 @@ const stats = computed(() => {
     <SiteDetailModal :open="!!selectedSite" :site="selectedSite" @close="selectedSite = null" />
 
     <Modal :open="errorModalOpen" :title="errorModalTitle" @close="errorModalOpen = false">
-      <div v-if="!errorModalErrors.length" class="text-sm text-slate-500 dark:text-slate-400">无异常</div>
+      <div v-if="!errorModalErrors.length" class="text-sm text-slate-500 dark:text-slate-300">无异常</div>
       <ul v-else class="space-y-2">
         <li v-for="(err, i) in errorModalErrors" :key="i"
           class="rounded-xl border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-800 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200">
