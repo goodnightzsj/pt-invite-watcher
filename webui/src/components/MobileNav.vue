@@ -18,7 +18,7 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <nav class="fixed bottom-0 z-40 flex w-full justify-around border-t border-white/20 bg-white/80 pb-safe pt-2 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/80 sm:hidden">
+  <nav class="fixed bottom-0 z-40 flex w-full justify-around border-t border-white/20 bg-white/80 pb-safe pt-2 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/80 md:hidden">
     <RouterLink
       v-for="item in items"
       :key="item.to"
@@ -27,7 +27,7 @@ function isActive(to: string) {
       :class="
         isActive(item.to)
           ? 'text-brand-600 dark:text-brand-400'
-          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+          : 'text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-200'
       "
     >
       <div 

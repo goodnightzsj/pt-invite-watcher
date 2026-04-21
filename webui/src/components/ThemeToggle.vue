@@ -24,7 +24,7 @@ const themeLabels: Record<ThemeMode, string> = {
 
 <template>
   <button
-    class="theme-toggle-btn relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+    class="theme-toggle-btn relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-200"
     :title="`当前主题: ${themeLabels[theme]}`"
     @click="cycleTheme"
     aria-label="切换主题"

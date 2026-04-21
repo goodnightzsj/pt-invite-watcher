@@ -3,34 +3,30 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Default Brand: Modern Indigo-Violet */
-  --color-brand-50: 236 242 255;
-  --color-brand-100: 219 230 255;
-  --color-brand-200: 191 211 254;
-  --color-brand-300: 147 187 253;
-  --color-brand-400: 96 165 250;
-  --color-brand-500: 59 130 246;
-  /* Blue-ish base */
-  --color-brand-600: 37 99 235;
-  --color-brand-700: 29 78 216;
-  --color-brand-800: 30 64 175;
-  --color-brand-900: 30 58 138;
-  --color-brand-950: 23 37 84;
+/* If the Google Fonts CDN is slow/blocked (e.g. on restricted networks), the system font stack
+   defined on `html` (Inter, system-ui, …) renders immediately while the webfont swaps in. */
 
-  /* Overriding with user requested 'Pro Max' Aurora Vibe (Vibrant Indigo-Violet) */
+:root {
+  /* Brand palette: Vibrant Indigo (single source of truth — runtime overridable via theme.ts setAccentColor). */
   --color-brand-50: 238 244 255;
   --color-brand-100: 224 231 255;
   --color-brand-200: 199 210 254;
   --color-brand-300: 165 180 252;
   --color-brand-400: 129 140 248;
   --color-brand-500: 99 102 241;
-  /* Vibrant Indigo */
   --color-brand-600: 79 70 229;
   --color-brand-700: 67 56 202;
   --color-brand-800: 55 48 163;
   --color-brand-900: 49 46 129;
   --color-brand-950: 30 27 75;
+
+  /* Radius scale — give the UI an explicit hierarchy instead of rounding everything to 2xl. */
+  --radius-xs: 6px;   /* badges, tags */
+  --radius-sm: 8px;   /* small controls, chips */
+  --radius-md: 10px;  /* inputs, dense buttons */
+  --radius-lg: 14px;  /* buttons, list items */
+  --radius-xl: 18px;  /* cards */
+  --radius-2xl: 22px; /* modals, hero panels */
 
   /* Glassmorphism utilities */
   --glass-bg: rgba(255, 255, 255, 0.65);
@@ -145,9 +141,9 @@ body {
   @apply bg-slate-700/50 hover:bg-slate-600/60;
 }
 
-/* Base Transitions */
+/* Base Transitions — keep card hovers subtle (shadow only) so visual layering doesn't fight every interaction. */
 .card-hover {
-  @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-glow hover:bg-dark-card/80;
+  @apply transition-shadow duration-200 hover:shadow-glow;
 }
 
 /* Vue Transitions */
@@ -191,6 +187,22 @@ body {
   .ui-select:disabled {
     @apply cursor-not-allowed opacity-60;
   }
+
+  /* Touch target — interactive controls should clear the WCAG 2.5.5 minimum on mobile.
+     Kept opt-in (apply via class) so dense table action icons can still use compact padding. */
+  .tap-target {
+    @apply inline-flex min-h-[44px] min-w-[44px] items-center justify-center;
+  }
+
+  /* Status note variants — keep informational notes color-coded with their status badge so
+     scanning the table doesn't require reading every line. */
+  .status-note {
+    @apply text-xs font-medium leading-snug;
+  }
+  .status-note.success { @apply text-emerald-700/80 dark:text-emerald-300/80; }
+  .status-note.warning { @apply text-amber-700/80 dark:text-amber-300/80; }
+  .status-note.danger  { @apply text-rose-700/80 dark:text-rose-300/80; }
+  .status-note.muted   { @apply text-slate-500 dark:text-slate-300; }
 }
 
 @layer utilities {
@@ -273,6 +285,25 @@ body {
 .animate-scan-progress {
   animation: scan-progress 1.5s ease-in-out infinite;
   background-size: 200% 100%;
+}
+
+/* Per-row scan indicator — gentle ring pulse so users can spot the actively scanning site. */
+@keyframes row-scanning-pulse {
+  0%, 100% { box-shadow: inset 3px 0 0 0 rgb(var(--color-brand-500) / 0.85); }
+  50%      { box-shadow: inset 3px 0 0 0 rgb(var(--color-brand-500) / 0.35); }
+}
+.row-scanning {
+  animation: row-scanning-pulse 1.6s ease-in-out infinite;
+  background: linear-gradient(90deg, rgb(var(--color-brand-500) / 0.04), transparent 60%);
+}
+
+/* Stat number reveal — subtle slide-up so KPI updates feel intentional. */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.count-number {
+  animation: count-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Hide scrollbar for mobile nav */

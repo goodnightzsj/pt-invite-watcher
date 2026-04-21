@@ -32,7 +32,7 @@ function formatRawTime(ts: string | null | undefined): string {
       <!-- Top Meta -->
       <div class="flex flex-col gap-4 sm:flex-row sm:justify-between">
         <div class="space-y-1">
-          <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">基本信息</div>
+          <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">基本信息</div>
           <div class="flex items-center gap-2">
             <a :href="site.url" target="_blank" class="text-sm text-brand-600 hover:underline dark:text-brand-400">
               {{ site.url }}
@@ -54,12 +54,12 @@ function formatRawTime(ts: string | null | undefined): string {
       <!-- Dates -->
       <div class="grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-800/50">
         <div>
-          <div class="text-xs text-slate-500 dark:text-slate-400">上次检查</div>
+          <div class="text-xs text-slate-500 dark:text-slate-300">上次检查</div>
           <div class="font-mono text-sm">{{ formatRelativeTime(site.last_checked_at) }}</div>
           <div class="text-[10px] text-slate-400">{{ formatRawTime(site.last_checked_at) }}</div>
         </div>
         <div>
-          <div class="text-xs text-slate-500 dark:text-slate-400">状态变更</div>
+          <div class="text-xs text-slate-500 dark:text-slate-300">状态变更</div>
           <div class="font-mono text-sm">{{ formatRelativeTime(site.last_changed_at) }}</div>
           <div class="text-[10px] text-slate-400">{{ formatRawTime(site.last_changed_at) }}</div>
         </div>

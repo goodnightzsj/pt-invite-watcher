@@ -14,7 +14,7 @@ const props = withDefaults(
 <template>
   <div class="animate-pulse">
     <table class="min-w-full text-left text-sm">
-      <thead class="border-b border-slate-200/70 bg-slate-50 text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
+      <thead class="border-b border-slate-200/70 bg-slate-50 text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
         <tr>
           <th v-for="c in props.cols" :key="c" class="px-6 py-4">
             <div class="h-3 w-16 rounded bg-slate-200 dark:bg-slate-700" />

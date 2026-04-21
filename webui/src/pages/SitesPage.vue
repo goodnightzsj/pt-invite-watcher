@@ -252,7 +252,7 @@ onMounted(() => load());
   <div class="space-y-5">
     <PageHeader title="站点管理">
       <template #description>
-        <div class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <div class="mt-1 text-sm text-slate-500 dark:text-slate-300">
           手动新增/覆盖只写入本服务 SQLite，不会覆盖 MoviePilot。
         </div>
         <div v-if="moviepilotError" class="mt-2 text-xs font-medium text-danger-600 dark:text-danger-300">
@@ -297,7 +297,7 @@ onMounted(() => load());
             </div>
           </div>
 
-          <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-300">
             <div>
               <span class="opacity-60">来源:</span> {{ site.source }}
             </div>
@@ -319,14 +319,14 @@ onMounted(() => load());
       <Card class="hidden sm:block" padding="none" :hoverable="false">
         <div class="overflow-hidden rounded-2xl">
           <div
-            class="border-b border-slate-100 px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            class="border-b border-slate-100 px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
             共 {{ items.length }} 个站点（MoviePilot + 手动/覆盖）
           </div>
 
           <div class="overflow-x-auto overflow-y-auto h-[calc(100vh-200px)] relative">
             <table class="min-w-full text-left text-sm relative border-collapse">
               <thead
-                class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-400">
+                class="sticky top-0 z-10 border-b border-white/10 bg-white/40 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-300">
                 <tr>
                   <th class="px-6 py-4">站点</th>
                   <th class="px-6 py-4">域名</th>
@@ -376,7 +376,7 @@ onMounted(() => load());
                     </td>
                     <td class="px-6 py-4">
                       <a v-if="item.registration_url"
-                        class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
+                        class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-300 dark:hover:text-brand-400"
                         :href="item.registration_url" target="_blank" rel="noreferrer">
                         {{ displayPath(item.registration_url) }}
                       </a>
@@ -384,7 +384,7 @@ onMounted(() => load());
                     </td>
                     <td class="px-6 py-4">
                       <a v-if="item.invite_url"
-                        class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
+                        class="text-xs text-slate-500 hover:text-brand-600 dark:text-slate-300 dark:hover:text-brand-400"
                         :href="item.invite_url" target="_blank" rel="noreferrer">
                         {{ displayInvitePath(item) }}
                       </a>
@@ -421,7 +421,7 @@ onMounted(() => load());
           <div>
             <FormInput label="Domain（域名，唯一键）" :model-value="computedDomain || '-'" disabled>
               <template #help>
-                <div v-if="form.mode === 'manual'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <div v-if="form.mode === 'manual'" class="mt-1 text-xs text-slate-500 dark:text-slate-300">
                   手动站点：domain 默认从 URL 自动解析。
                 </div>
               </template>
@@ -452,7 +452,7 @@ onMounted(() => load());
             <FormInput label="Registration URL（注册页链接）" v-model="form.registration_url"
               placeholder="https://kp.m-team.cc/signup" />
             <FormInput label="Invite URL（邀请页链接）" v-model="form.invite_url" placeholder="https://kp.m-team.cc/invite" />
-            <div class="text-xs text-slate-500 dark:text-slate-400">
+            <div class="text-xs text-slate-500 dark:text-slate-300">
               将从 URL 中解析出页面路径（保留 query），用于后续检测。
             </div>
           </div>

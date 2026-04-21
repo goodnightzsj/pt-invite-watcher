@@ -24,11 +24,11 @@ const paddingClass: Record<Padding, string> = {
 
 <template>
   <div
-    class="relative glass rounded-2xl border-0 bg-white/5 shadow-xl backdrop-blur-md transition-all duration-300 dark:bg-slate-900/40 dark:border-white/5"
+    class="relative glass rounded-2xl border-0 bg-white/5 shadow-lg backdrop-blur-md transition-shadow duration-200 dark:bg-slate-900/40 dark:border-white/5"
     :class="[
         paddingClass[props.padding],
         (props.hoverable && !props.noHover)
-          ? 'hover:-translate-y-1 hover:shadow-brand-500/20 hover:border-white/20'
+          ? 'hover:shadow-xl hover:shadow-brand-500/10'
           : '',
       ].join(' ')
       ">

@@ -39,7 +39,8 @@ const inviteState = computed(() => {
 
 <template>
   <div
-    class="group relative overflow-hidden rounded-2xl border border-white/20 bg-white/5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-white/30 hover:shadow-xl hover:shadow-brand-500/10 active:scale-[0.98] dark:border-white/10 dark:bg-slate-900/40 p-5"
+    class="group relative overflow-hidden rounded-2xl border border-white/20 bg-white/5 p-5 shadow-md backdrop-blur-md transition-shadow duration-200 hover:shadow-lg hover:shadow-brand-500/10 active:scale-[0.99] dark:border-white/10 dark:bg-slate-900/40"
+    :class="site.scanning ? 'row-scanning' : ''"
     @click="emit('click')"
   >
       <div class="flex items-start justify-between">
@@ -50,7 +51,7 @@ const inviteState = computed(() => {
           </div>
           <div>
             <div class="font-semibold text-slate-900 dark:text-slate-100">{{ site.name || site.domain }}</div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">{{ site.domain }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-300">{{ site.domain }}</div>
           </div>
         </div>
 
@@ -67,7 +68,7 @@ const inviteState = computed(() => {
 
       <!-- Footer: Time -->
       <div
-        class="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-400"
+        class="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300"
       >
         <div>{{ site.engine }}</div>
         <div>{{ formatRelativeTime(site.last_checked_at) }} 更新</div>
