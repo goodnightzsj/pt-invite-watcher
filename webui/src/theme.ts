@@ -3,8 +3,26 @@ export type ThemeMode = "system" | "light" | "dark";
 const STORAGE_KEY = "ptiw_theme";
 const STORAGE_ACCENT_KEY = "ptiw_accent";
 
+// localStorage throws in private browsing, when the quota is exceeded, or when storage is disabled.
+// Wrap so a hostile environment can never crash theme/accent initialization.
+function safeGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
+
 function getPreferredTheme(): ThemeMode {
-  const raw = (localStorage.getItem(STORAGE_KEY) || "system").toLowerCase();
+  const raw = (safeGet(STORAGE_KEY) || "system").toLowerCase();
   if (raw === "light" || raw === "dark" || raw === "system") return raw;
   return "system";
 }
@@ -91,8 +109,8 @@ export const PALETTES: Record<AccentColor, Record<number, string>> = {
 };
 
 export function getAccentColor(): AccentColor {
-  const raw = localStorage.getItem(STORAGE_ACCENT_KEY) as AccentColor;
-  if (PALETTES[raw]) return raw;
+  const raw = safeGet(STORAGE_ACCENT_KEY) as AccentColor | null;
+  if (raw && PALETTES[raw]) return raw;
   return "indigo";
 }
 
@@ -105,7 +123,7 @@ export function setAccentColor(color: AccentColor) {
     root.style.setProperty(`--color-brand-${shade}`, value);
   });
 
-  localStorage.setItem(STORAGE_ACCENT_KEY, color);
+  safeSet(STORAGE_ACCENT_KEY, color);
 }
 
 export function initTheme() {
@@ -125,7 +143,6 @@ export function getThemeMode(): ThemeMode {
 }
 
 export function setThemeMode(mode: ThemeMode) {
-  localStorage.setItem(STORAGE_KEY, mode);
+  safeSet(STORAGE_KEY, mode);
   applyTheme(mode);
 }
-

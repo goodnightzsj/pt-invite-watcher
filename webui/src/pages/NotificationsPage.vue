@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
 import { Send, MessageSquare } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
@@ -132,7 +133,25 @@ async function test(channel: "telegram" | "wecom") {
   }
 }
 
-onMounted(() => load());
+function beforeUnloadHandler(e: BeforeUnloadEvent) {
+  if (!isDirty.value) return;
+  e.preventDefault();
+  e.returnValue = "";
+}
+
+onMounted(() => {
+  load();
+  window.addEventListener("beforeunload", beforeUnloadHandler);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", beforeUnloadHandler);
+});
+
+onBeforeRouteLeave(() => {
+  if (!isDirty.value) return true;
+  return window.confirm("有未保存的修改，确定离开吗？");
+});
 </script>
 
 <template>
