@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Optional
 
 from pt_invite_watcher.config import Settings
@@ -29,6 +30,16 @@ if TYPE_CHECKING:
 
 
 class NotifierManager:
+    # Minimum gap between two notifications with the same (title, text). Short network flaps
+    # (one failed scan followed by a successful retry) used to produce back-to-back "down"
+    # and "up" messages; this window swallows duplicate or bounce-back events while still
+    # letting genuine state changes through. Keep well under the scan interval so real
+    # changes between two cycles are not suppressed.
+    _NOTIFY_COOLDOWN_SECONDS = 300
+    # Reap old cooldown entries whenever the map grows past this size to avoid unbounded
+    # memory growth on hosts with thousands of unique domains / change kinds.
+    _NOTIFY_COOLDOWN_MAX_ENTRIES = 2000
+
     def __init__(self, store: SqliteStore, settings: Settings, *, runtime_config: RuntimeConfigCache | None = None):
         self._store = store
         self._settings = settings
@@ -36,6 +47,26 @@ class NotifierManager:
         self._wecom: Optional[WeComNotifier] = None
         self._wecom_key: Optional[tuple[str, str, str, str, str, str, int]] = None
         self._wecom_lock = asyncio.Lock()
+        # Map message-hash -> last-sent monotonic timestamp. Used by send() to throttle
+        # duplicates; not shared across processes (the scheduler leader lock already ensures
+        # only one process is sending notifications at a time).
+        self._cooldown: dict[str, float] = {}
+        self._cooldown_lock = asyncio.Lock()
+
+    async def _should_send(self, title: str, text: str) -> bool:
+        """Return False when an identical message was sent within the cooldown window."""
+        key = hashlib.sha256(f"{title}\n{text}".encode("utf-8", errors="replace")).hexdigest()
+        now = time.monotonic()
+        async with self._cooldown_lock:
+            last = self._cooldown.get(key)
+            if last is not None and (now - last) < self._NOTIFY_COOLDOWN_SECONDS:
+                return False
+            self._cooldown[key] = now
+            # Opportunistic cleanup so the map doesn't grow forever.
+            if len(self._cooldown) > self._NOTIFY_COOLDOWN_MAX_ENTRIES:
+                cutoff = now - self._NOTIFY_COOLDOWN_SECONDS
+                self._cooldown = {k: v for k, v in self._cooldown.items() if v > cutoff}
+        return True
 
     async def _request_retry_delay_seconds(self) -> int:
         try:
@@ -120,6 +151,16 @@ class NotifierManager:
         return False, "unknown channel"
 
     async def send(self, title: str, text: str) -> None:
+        if not await self._should_send(title, text):
+            await self._store.add_event(
+                category="notify",
+                level="info",
+                action="notify_suppressed",
+                message=f"suppressed duplicate notification within cooldown: {title}",
+                detail={"title": title, "cooldown_seconds": self._NOTIFY_COOLDOWN_SECONDS},
+            )
+            return
+
         cfg = await self._store.get_json(NOTIFICATIONS_KEY, default={})
         retry_delay = await self._request_retry_delay_seconds()
 
