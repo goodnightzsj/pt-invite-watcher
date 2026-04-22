@@ -6,6 +6,7 @@ from contextlib import suppress
 
 import httpx
 
+from pt_invite_watcher.engines.engine_signatures import detect_engine
 from pt_invite_watcher.engines.redirect_guard import (
     GuardedResponse,
     RedirectedAwayError,
@@ -28,14 +29,19 @@ def _format_error_detail(exc: Exception) -> str:
 
 
 def engine_hint_from_html(html: str) -> Optional[str]:
-    h = (html or "").lower()
-    if not h:
+    """Best-effort engine guess from a landing-page HTML body.
+
+    Delegates to the multi-engine signature detector so NexusPHP, Unit3D,
+    Gazelle, Discuz, TNode and M-Team all get a fair shot instead of
+    everything coded as "nexusphp or nothing". Returns None when the
+    aggregated signal strength is too weak to commit.
+    """
+    if not html:
         return None
-    if "nexusphp" in h:
-        return "nexusphp"
-    if any(token in h for token in ("torrents.php", "userdetails.php", "takesignup.php", "takeinvite.php", "login.php")):
-        return "nexusphp"
-    return None
+    detection = detect_engine(html=html)
+    if detection is None or detection.score < 3:
+        return None
+    return detection.engine
 
 
 async def probe_reachability(

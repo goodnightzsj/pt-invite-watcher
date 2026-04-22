@@ -15,6 +15,11 @@ class SiteTemplateDefinition:
     registration_default_path: str
     invite_default_path: str
     allowed_domain_suffixes: tuple[str, ...] = ()
+    # When False, the scanner reports reachability + engine label but returns
+    # AspectResult(state="unknown", reason="engine_not_supported") for the
+    # registration / invite probes. Keeps the UI honest until a full parser
+    # lands for each engine.
+    fully_supported: bool = True
 
     def allowed_for_domain(self, domain: str) -> bool:
         if not self.allowed_domain_suffixes:
@@ -28,17 +33,51 @@ SITE_TEMPLATES: dict[str, SiteTemplateDefinition] = {
         name="nexusphp",
         registration_default_path="signup.php",
         invite_default_path="invite.php",
+        fully_supported=True,
     ),
     "custom": SiteTemplateDefinition(
         name="custom",
+        # Users who pick "custom" provide their own registration/invite URLs; we
+        # still keep NexusPHP-shaped defaults so that an unconfigured field
+        # gets a reasonable guess.
         registration_default_path="signup.php",
         invite_default_path="invite.php",
+        fully_supported=True,
     ),
     "mteam": SiteTemplateDefinition(
         name="mteam",
         registration_default_path="signup",
         invite_default_path="invite",
         allowed_domain_suffixes=(MTEAM_DOMAIN_SUFFIX,),
+        fully_supported=True,
+    ),
+    # --- New engines (identification only, honest unknown on reg/invite) ---
+    # See engines/engine_signatures.py for detection signatures. Registration
+    # and invite paths here reflect the *conventional* paths for each framework,
+    # taken from the PT-Plugin-Plus / PT-depiler / ptool schema libraries.
+    "unit3d": SiteTemplateDefinition(
+        name="unit3d",
+        registration_default_path="register",
+        invite_default_path="invites",
+        fully_supported=False,
+    ),
+    "gazelle": SiteTemplateDefinition(
+        name="gazelle",
+        registration_default_path="register.php",
+        invite_default_path="user.php?action=invite",
+        fully_supported=False,
+    ),
+    "discuz": SiteTemplateDefinition(
+        name="discuz",
+        registration_default_path="member.php?mod=register",
+        invite_default_path="plugin.php?id=invite",
+        fully_supported=False,
+    ),
+    "tnode": SiteTemplateDefinition(
+        name="tnode",
+        registration_default_path="auth/register",
+        invite_default_path="invite",
+        fully_supported=False,
     ),
 }
 
@@ -70,9 +109,15 @@ def default_paths_for_template(template: str) -> tuple[str, str]:
     return spec.registration_default_path, spec.invite_default_path
 
 
+def template_fully_supported(template: str) -> bool:
+    tpl = normalize_template(template)
+    if not tpl:
+        return True  # unknown → trust caller; keeps old behaviour
+    return SITE_TEMPLATES[tpl].fully_supported
+
+
 def validate_template_for_domain(template: str, domain: str) -> bool:
     tpl = normalize_template(template)
     if not tpl:
         return False
     return SITE_TEMPLATES[tpl].allowed_for_domain(domain)
-

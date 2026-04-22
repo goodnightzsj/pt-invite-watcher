@@ -9,7 +9,11 @@ import httpx
 
 from pt_invite_watcher.engines.mteam import MTeamDetector
 from pt_invite_watcher.engines.nexusphp import NexusPhpDetector
-from pt_invite_watcher.engines.engine_selector import engine_for_site
+from pt_invite_watcher.engines.engine_selector import (
+    default_paths_for_engine,
+    engine_for_site,
+    engine_fully_supported,
+)
 from pt_invite_watcher.models import AspectResult, Evidence, Site, SiteCheckResult
 from pt_invite_watcher.providers.cookiecloud import CookieManager
 from pt_invite_watcher.scanner_invites import check_invites_for_site
@@ -60,9 +64,13 @@ async def check_one_site(
     )
     engine = engine_for_site(site, hint=engine_hint)
     is_mteam = engine == "mteam"
+    has_parser = engine in {"nexusphp", "custom", "mteam"} and engine_fully_supported(engine)
 
-    reg_path = (getattr(site, "registration_path", None) or "").strip() or "signup.php"
-    inv_path = (getattr(site, "invite_path", None) or "").strip() or "invite.php"
+    # Use the engine-specific conventional paths (e.g. Unit3D's /register & /invites)
+    # instead of hard-coding NexusPHP's .php endpoints; explicit site overrides still win.
+    default_reg, default_inv = default_paths_for_engine(engine)
+    reg_path = (getattr(site, "registration_path", None) or "").strip() or default_reg
+    inv_path = (getattr(site, "invite_path", None) or "").strip() or default_inv
 
     if reachability.state != "up":
         await log_step(site, "home", "site_unreachable", f"站点无法访问: {reachability.evidence.reason}")
@@ -85,6 +93,25 @@ async def check_one_site(
     manual_no_cookie_skip = getattr(site, "id", None) is None and not cookie_header_for_invites and not is_mteam
 
     async def _run_registration() -> AspectResult:
+        # For engines where we don't yet have a full parser (unit3d / gazelle / …),
+        # refuse to feed their HTML through the NexusPHP parser — that would produce
+        # bogus "closed" verdicts from misread markup. Report an honest "unknown" with
+        # a reason string users can read in the Logs page.
+        if not has_parser:
+            await log_step(
+                site,
+                "signup",
+                "check_registration",
+                f"{engine} 引擎的注册探测暂未完整适配，标记为未知",
+            )
+            return AspectResult(
+                state="unknown",
+                evidence=Evidence(
+                    url=join_url(site.url, reg_path),
+                    http_status=None,
+                    reason=f"registration_engine_unsupported:{engine}",
+                ),
+            )
         await log_step(site, "signup", "check_registration", "正在检测注册状态")
         try:
             return await detector.check_registration(client, site, ua, retry_delay_seconds=retry_delay_seconds)
@@ -103,6 +130,21 @@ async def check_one_site(
             )
 
     async def _run_invites() -> AspectResult:
+        if not has_parser:
+            await log_step(
+                site,
+                "invite",
+                "check_invites",
+                f"{engine} 引擎的邀请探测暂未完整适配，标记为未知",
+            )
+            return AspectResult(
+                state="unknown",
+                evidence=Evidence(
+                    url=join_url(site.url, inv_path),
+                    http_status=None,
+                    reason=f"invites_engine_unsupported:{engine}",
+                ),
+            )
         if is_mteam:
             await log_step(site, "invite", "check_invites", "正在检测邀请 (M-Team)")
         elif not manual_no_cookie_skip:
