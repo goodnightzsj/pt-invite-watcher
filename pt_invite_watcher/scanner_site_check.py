@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Optional
@@ -76,52 +77,65 @@ async def check_one_site(
         await persist_and_notify(site, result, now)
         return
 
-    try:
-        await log_step(site, "signup", "check_registration", "正在检测注册状态")
-        registration = await detector.check_registration(client, site, ua, retry_delay_seconds=retry_delay_seconds)
-    except Exception as e:
-        logger.exception("registration check failed: %s", site.domain)
-        registration = AspectResult(
-            state="unknown",
-            evidence=Evidence(
-                url=join_url(site.url, reg_path),
-                http_status=None,
-                reason=f"registration_error:{type(e).__name__}",
-                detail=format_error_detail(e),
-            ),
-        )
+    # Once reachability is confirmed, the registration probe and the invites probe share no
+    # data dependency, so run them concurrently. httpx with http2=True multiplexes both
+    # requests over the same TCP+TLS connection to the site; on HTTP/1.1 endpoints they fall
+    # back to two keep-alive connections from the shared pool. Either way per-site wall time
+    # drops from ~(T_reg + T_inv) to ~max(T_reg, T_inv).
+    manual_no_cookie_skip = getattr(site, "id", None) is None and not cookie_header_for_invites and not is_mteam
 
-    try:
-        manual_no_cookie_skip = getattr(site, "id", None) is None and not cookie_header_for_invites and not is_mteam
+    async def _run_registration() -> AspectResult:
+        await log_step(site, "signup", "check_registration", "正在检测注册状态")
+        try:
+            return await detector.check_registration(client, site, ua, retry_delay_seconds=retry_delay_seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception("registration check failed: %s", site.domain)
+            return AspectResult(
+                state="unknown",
+                evidence=Evidence(
+                    url=join_url(site.url, reg_path),
+                    http_status=None,
+                    reason=f"registration_error:{type(e).__name__}",
+                    detail=format_error_detail(e),
+                ),
+            )
+
+    async def _run_invites() -> AspectResult:
         if is_mteam:
             await log_step(site, "invite", "check_invites", "正在检测邀请 (M-Team)")
         elif not manual_no_cookie_skip:
             await log_step(site, "invite", "check_invites", "正在检测邀请/个人中心")
+        try:
+            return await check_invites_for_site(
+                is_mteam=is_mteam,
+                store=store,
+                detector=detector,
+                mteam_detector=mteam_detector,
+                client=client,
+                site=site,
+                user_agent=ua,
+                cookie_header_for_invites=cookie_header_for_invites,
+                inv_path=inv_path,
+                retry_delay_seconds=retry_delay_seconds,
+                domain=normalize_domain(site.domain),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception("invites check failed: %s", site.domain)
+            return AspectResult(
+                state="unknown",
+                evidence=Evidence(
+                    url=join_url(site.url, inv_path),
+                    http_status=None,
+                    reason=f"invites_error:{type(e).__name__}",
+                    detail=format_error_detail(e),
+                ),
+            )
 
-        invites = await check_invites_for_site(
-            is_mteam=is_mteam,
-            store=store,
-            detector=detector,
-            mteam_detector=mteam_detector,
-            client=client,
-            site=site,
-            user_agent=ua,
-            cookie_header_for_invites=cookie_header_for_invites,
-            inv_path=inv_path,
-            retry_delay_seconds=retry_delay_seconds,
-            domain=normalize_domain(site.domain),
-        )
-    except Exception as e:
-        logger.exception("invites check failed: %s", site.domain)
-        invites = AspectResult(
-            state="unknown",
-            evidence=Evidence(
-                url=join_url(site.url, inv_path),
-                http_status=None,
-                reason=f"invites_error:{type(e).__name__}",
-                detail=format_error_detail(e),
-            ),
-        )
+    registration, invites = await asyncio.gather(_run_registration(), _run_invites())
 
     result = SiteCheckResult(
         site=site,
