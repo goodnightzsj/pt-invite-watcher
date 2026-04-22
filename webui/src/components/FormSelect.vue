@@ -115,7 +115,7 @@ function teardownGlobalListeners() {
   window.removeEventListener("scroll", onViewportChange, true);
 }
 
-async function openPicker() {
+async function openPicker(e?: MouseEvent) {
   if (props.disabled) return;
   // Toggle open/close: when the panel is already open, the global pointerdown
   // handler sees the trigger click as "inside the trigger" and skips closing —
@@ -123,6 +123,11 @@ async function openPicker() {
   // mirrors native <select> expectations without fighting the outside-click guard.
   if (open.value) {
     closePicker();
+    // For mouse-driven close (e.detail > 0), drop focus so the `.ui-input:focus-visible`
+    // ring doesn't briefly flash after the panel disappears — the now-closed panel is
+    // all the visual feedback the user needs. Keyboard activations (detail === 0) keep
+    // focus so the user can continue arrow-key / enter navigation.
+    if (e && e.detail > 0) triggerRef.value?.blur();
     return;
   }
   open.value = true;
@@ -151,7 +156,7 @@ onUnmounted(() => teardownGlobalListeners());
       class="ui-input flex w-full items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
       :class="props.dense ? '!rounded-lg !px-2 !py-1.5 !text-sm' : ''"
       :disabled="props.disabled"
-      @click="openPicker"
+      @click="openPicker($event)"
       aria-haspopup="listbox"
       :aria-expanded="open ? 'true' : 'false'"
     >

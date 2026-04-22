@@ -156,13 +156,17 @@ function teardownGlobalListeners() {
     window.removeEventListener("scroll", onViewportChange, true);
 }
 
-async function openPicker() {
+async function openPicker(e?: MouseEvent) {
     if (props.disabled) return;
     if (open.value) {
         // Toggle behavior: a second click on the trigger closes the panel —
         // mirrors native <select> expectations while still being fully
         // keyboard-navigable.
         closePicker();
+        // Mouse-driven close drops focus to avoid a focus-ring flash on the
+        // trigger right as the panel disappears. Keyboard toggles (Enter/Space
+        // produce detail === 0) keep focus for continued navigation.
+        if (e && e.detail > 0) triggerRef.value?.blur();
         return;
     }
     open.value = true;
@@ -210,7 +214,7 @@ const triggerLabel = computed(() => {
             type="button"
             class="ui-input flex w-full items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="props.disabled"
-            @click="openPicker"
+            @click="openPicker($event)"
             aria-haspopup="listbox"
             :aria-expanded="open ? 'true' : 'false'"
         >
@@ -248,17 +252,19 @@ const triggerLabel = computed(() => {
                     :style="panelStyle"
                     role="listbox"
                 >
-                    <div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800/60">
-                        <Search class="h-4 w-4 text-slate-400" aria-hidden="true" />
-                        <input
-                            ref="inputRef"
-                            v-model="query"
-                            type="text"
-                            class="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
-                            :placeholder="props.placeholder"
-                            @keydown.stop="onKeyDown"
-                        />
-                        <span class="shrink-0 text-xs text-slate-400 tabular-nums">{{ filtered.length }} / {{ options.length }}</span>
+                    <div class="border-b border-slate-100 p-2 dark:border-slate-800/60">
+                        <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-1.5 focus-within:border-brand-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand-500/10 dark:border-slate-700/60 dark:bg-slate-800/40 dark:focus-within:border-brand-400 dark:focus-within:bg-slate-900/80">
+                            <Search class="h-4 w-4 text-slate-400" aria-hidden="true" />
+                            <input
+                                ref="inputRef"
+                                v-model="query"
+                                type="text"
+                                class="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                                :placeholder="props.placeholder"
+                                @keydown.stop="onKeyDown"
+                            />
+                            <span class="shrink-0 text-xs text-slate-400 tabular-nums">{{ filtered.length }} / {{ options.length }}</span>
+                        </label>
                     </div>
 
                     <div class="min-h-[60px] flex-1 overflow-auto divide-y divide-slate-100 dark:divide-slate-800/60">
