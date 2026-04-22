@@ -138,6 +138,8 @@ onMounted(() => {
       v-if="displaySrc"
       :src="displaySrc"
       :alt="name || domain"
+      loading="lazy"
+      decoding="async"
       class="h-full w-full object-cover opacity-90 transition-opacity duration-300"
       referrerpolicy="no-referrer"
     />
