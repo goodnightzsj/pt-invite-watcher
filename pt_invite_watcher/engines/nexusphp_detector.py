@@ -3,10 +3,16 @@ import logging
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
 from pt_invite_watcher.engines.nexusphp_sites import NexusPhpSiteAdapter, get_nexusphp_site_adapter
+from pt_invite_watcher.engines.redirect_guard import (
+    RedirectedAwayError,
+    guarded_get,
+    off_site_detail,
+)
 from pt_invite_watcher.engines.nexusphp_parse import (
     _append_retry_detail,
     _extract_html_title,
@@ -49,12 +55,37 @@ async def _get_with_retry(
     *,
     attempts: int = _HTTP_RETRY_ATTEMPTS,
     delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
+    expected_host: Optional[str] = None,
 ) -> tuple[Optional[httpx.Response], Optional[Exception], int]:
-    return await request_with_retry(
-        lambda: client.get(url, headers=headers),
+    """Fetch `url` with retries, routed through the redirect guard.
+
+    When `expected_host` is provided (typically the site's primary domain), any redirect
+    chain leaving that registrable domain, any hit on the decoy blacklist, and any
+    HTML-level meta/JS redirect off-site produce a synthetic `RedirectedAwayError` so
+    call sites that inspect `isinstance(err, httpx.RequestError)` uniformly treat these
+    as network-class failures. Legitimate in-domain redirects (http→https, www→apex,
+    login.php) pass through unchanged.
+    """
+    gr = await guarded_get(
+        client,
+        url,
+        expected_host=expected_host,
+        headers=headers,
         attempts=max(1, int(attempts or 0)),
         delay_seconds=max(0, int(delay_seconds or 0)),
     )
+    if gr.off_site_reason and gr.response is None:
+        err = RedirectedAwayError(reason=gr.off_site_reason, host=gr.off_site_host, chain=gr.redirect_chain)
+        return None, err, gr.retries
+    # html_redirect keeps the final response so callers still have a body to inspect,
+    # but we synthesize an error as well so the invite/registration probes don't try to
+    # parse decoy HTML as PT content.
+    if gr.off_site_reason == "html_redirect" and gr.response is not None:
+        with suppress(Exception):
+            await gr.response.aclose()
+        err = RedirectedAwayError(reason=gr.off_site_reason, host=gr.off_site_host, chain=gr.redirect_chain)
+        return None, err, gr.retries
+    return gr.response, gr.error, gr.retries
 
 
 def _looks_like_login(resp: httpx.Response) -> bool:
@@ -77,7 +108,14 @@ async def _probe_user_id_from_usercp(
     retry_delay_seconds: int,
 ) -> Optional[str]:
     url = _join(site_url, "usercp.php")
-    resp, err, _ = await _get_with_retry(client, url, headers={"User-Agent": ua, "Cookie": cookie_header}, delay_seconds=retry_delay_seconds)
+    expected_host = urlparse(site_url).hostname or None
+    resp, err, _ = await _get_with_retry(
+        client,
+        url,
+        headers={"User-Agent": ua, "Cookie": cookie_header},
+        delay_seconds=retry_delay_seconds,
+        expected_host=expected_host,
+    )
     if err or resp is None:
         return None
     try:
@@ -116,9 +154,16 @@ class NexusPhpDetector:
         last_unknown: Optional[AspectResult] = None
         raw_path = (site.registration_path or "").strip()
         paths = [raw_path] if raw_path else ["signup.php"]
+        expected_host = urlparse(site.url).hostname or None
         for path in paths:
             url = _join(site.url, path)
-            resp, err, used = await _get_with_retry(client, url, headers={"User-Agent": ua}, delay_seconds=retry_delay_seconds)
+            resp, err, used = await _get_with_retry(
+                client,
+                url,
+                headers={"User-Agent": ua},
+                delay_seconds=retry_delay_seconds,
+                expected_host=expected_host,
+            )
             if err:
                 last_err = err
                 last_err_url = url
@@ -209,6 +254,7 @@ class NexusPhpDetector:
             )
 
         adapter = get_nexusphp_site_adapter(site)
+        expected_host = urlparse(site.url).hostname or None
 
         # Many NexusPHP sites expose the invite quota in the top nav on homepage:
         # "邀请[发送]: 12(0)" (M-Team may show Traditional).
@@ -217,6 +263,7 @@ class NexusPhpDetector:
             site.url,
             headers={"User-Agent": ua, "Cookie": cookie_header},
             delay_seconds=retry_delay_seconds,
+            expected_host=expected_host,
         )
         if err:
             return AspectResult(
@@ -330,6 +377,7 @@ class NexusPhpDetector:
                 u,
                 headers={"User-Agent": ua, "Cookie": cookie_header},
                 delay_seconds=retry_delay_seconds,
+                expected_host=expected_host,
             )
             if fetch_err:
                 last_err = fetch_err
