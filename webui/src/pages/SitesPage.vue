@@ -10,6 +10,7 @@ import Modal from "../components/Modal.vue";
 import EmptyState from "../components/EmptyState.vue";
 import FormInput from "../components/FormInput.vue";
 import FormSelect from "../components/FormSelect.vue";
+import SitePresetCombobox from "../components/SitePresetCombobox.vue";
 import SiteCard from "../components/SiteCard.vue";
 import { api, type RegistrySite, type SiteConfigItem, type SiteTemplate } from "../api";
 import { showToast } from "../toast";
@@ -334,7 +335,7 @@ onMounted(() => load());
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-3">
               <div class="h-10 w-10">
-                <SiteIcon :url="site.url" :name="site.name || site.domain" />
+                <SiteIcon :url="site.url" :name="site.name || site.domain" :reachability="site.reachability_state" />
               </div>
               <div>
                 <div class="font-semibold text-slate-800 dark:text-slate-100">{{ site.name || site.domain }}</div>
@@ -391,7 +392,7 @@ onMounted(() => load());
                     <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
                       <div class="flex items-center gap-3">
                         <div class="h-8 w-8">
-                          <SiteIcon :url="item.url" :name="item.name || '-'" />
+                          <SiteIcon :url="item.url" :name="item.name || '-'" :reachability="item.reachability_state" />
                         </div>
                         <div class="flex flex-col">
                           <span>{{ item.name || "-" }}</span>
@@ -473,20 +474,14 @@ onMounted(() => load());
               共 {{ registry.length }} 个
             </span>
           </div>
-          <FormSelect
+          <SitePresetCombobox
+            :options="registry"
             :model-value="presetId"
-            :options="[
-              { label: '— 手动填写 —', value: '' },
-              ...registry.map((r) => ({
-                label: `${r.name}${r.tags.length ? '  ·  ' + r.tags.join(' / ') : ''}`,
-                value: r.id,
-                help: `${r.primary_domain}  ·  schema: ${r.schema}${r.notes ? '  ·  ' + r.notes : ''}`,
-              })),
-            ]"
+            placeholder="搜索：名称 / 域名 / 别名（如 byr / 北邮 / ptp）"
             @update:modelValue="(v) => applyPreset(String(v || ''))"
           />
           <div class="mt-1.5 text-xs text-brand-700/80 dark:text-brand-300/80">
-            选中后会自动填写 URL / 站点名 / 模板，可再手动微调。
+            键入关键词即可模糊匹配（支持多关键字）；选中后自动填写 URL / 站点名 / 模板，可再手动微调。
           </div>
         </div>
 
