@@ -419,31 +419,23 @@ onBeforeRouteLeave(() => {
   return window.confirm("有未保存的修改，确定离开吗？");
 });
 
-// Browser-local favicon cache controls. Wiping the localStorage key forces the
-// next SiteIcon render to refetch every site's icon; useful after a site's real
-// icon changes or after we shipped the reachability-aware sourcing fix and want
-// to see the new behavior without waiting 30 days for the cache to expire.
-const ICON_CACHE_KEY = "ptiw_icon_cache";
+// Browser-local favicon cache controls. Clearing bumps a reactive version ref
+// that every mounted <SiteIcon> watches, so icons refetch in place without a
+// page reload. Useful after we ship a sourcing-logic fix (e.g. the redirect-
+// guarded backend proxy) and want the new behavior to take effect immediately.
+import {
+  clearIconCache as _clearIconCache,
+  getIconCacheSize as _getIconCacheSize,
+} from "../icon_cache";
 
-function _readIconCacheSize(): number {
-  try {
-    const raw = localStorage.getItem(ICON_CACHE_KEY);
-    if (!raw) return 0;
-    const obj = JSON.parse(raw);
-    return obj && typeof obj === "object" ? Object.keys(obj).length : 0;
-  } catch {
-    return 0;
-  }
-}
-
-const iconCacheSize = ref(_readIconCacheSize());
+const iconCacheSize = ref(_getIconCacheSize());
 
 async function clearIconCache() {
-  if (!(await confirm("确认清除浏览器本地缓存的所有站点图标吗？\n清除后将在下次渲染时重新抓取。"))) return;
+  if (!(await confirm("确认清除浏览器本地缓存的所有站点图标吗？\n清除后会立即触发当前页面的所有图标重新抓取。"))) return;
   try {
-    localStorage.removeItem(ICON_CACHE_KEY);
+    _clearIconCache();
     iconCacheSize.value = 0;
-    showToast("已清除图标缓存，刷新页面后重新抓取", "success", 2400);
+    showToast("已清除图标缓存，正在重新抓取…", "success", 2400);
   } catch (e: any) {
     showToast(String(e?.message || e || "清除失败"), "error", 4500);
   }
@@ -761,8 +753,8 @@ function reloadPage() {
               <div>
                 <div class="text-sm font-medium text-slate-800 dark:text-slate-100">站点图标缓存</div>
                 <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  当前浏览器缓存：<span class="tabular-nums">{{ iconCacheSize }}</span> 个站点（30 天 TTL）。
-                  站点改图或修复图标抓取逻辑后可手动清除，立即重新获取。
+                  当前浏览器缓存：<span class="tabular-nums">{{ iconCacheSize }}</span> 个站点（30 天 TTL，过期条目下次渲染时自动清理）。
+                  点击“清除缓存”会立即让当前页面所有图标重新抓取——无需刷新页面。
                 </div>
               </div>
             </div>

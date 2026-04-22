@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from "vue";
 import { Globe } from "lucide-vue-next";
+import { ICON_CACHE_KEY as CACHE_KEY, iconCacheVersion, sweepExpiredEntries } from "../icon_cache";
 
 const props = defineProps<{
   url?: string;
@@ -13,9 +14,9 @@ const props = defineProps<{
 // - value === null marks "all sources failed — retry next session"
 // - we persist width/height so we can re-validate and skip sources that returned
 //   a 0-sized transparent/redirect pixel previously.
-const CACHE_KEY = "ptiw_icon_cache";
 const CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
 const MIN_ICON_PX = 8;
+let sweptOnce = false;
 
 type CacheEntry = { src: string; fetchedAt: number; w?: number; h?: number };
 
@@ -145,7 +146,21 @@ watch([() => props.url, () => props.reachability], () => {
   void loadIcons();
 });
 
+// React to a manual "clear icon cache" from the Config page — bumping the
+// shared ref forces every mounted SiteIcon to drop its in-memory src and refetch.
+// No page reload required, no waiting for 30-day TTL.
+watch(iconCacheVersion, () => {
+  displaySrc.value = null;
+  void loadIcons();
+});
+
 onMounted(() => {
+  if (!sweptOnce) {
+    // Best-effort opportunistic GC: on first SiteIcon mount per page load,
+    // remove entries older than the TTL so abandoned domains don't accumulate.
+    sweepExpiredEntries(CACHE_MAX_AGE);
+    sweptOnce = true;
+  }
   void loadIcons();
 });
 </script>
