@@ -41,7 +41,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen relative overflow-x-hidden">
+  <!-- `overflow-x: clip` (not `hidden`) keeps sticky descendants attached to the viewport
+       instead of the layout wrapper — `hidden` turns the wrapper into a scroll container,
+       which pins `sticky top-0` to the wrapper top rather than the window. -->
+  <div class="min-h-screen relative [overflow-x:clip]">
     <div class="ui-aurora" aria-hidden="true"></div>
 
     <header class="sticky top-0 z-50 w-full glass border-x-0 border-t-0 rounded-none">

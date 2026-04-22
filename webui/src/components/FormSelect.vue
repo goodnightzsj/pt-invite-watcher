@@ -117,6 +117,14 @@ function teardownGlobalListeners() {
 
 async function openPicker() {
   if (props.disabled) return;
+  // Toggle open/close: when the panel is already open, the global pointerdown
+  // handler sees the trigger click as "inside the trigger" and skips closing —
+  // the user then perceives the panel as stuck open. Handling toggle here
+  // mirrors native <select> expectations without fighting the outside-click guard.
+  if (open.value) {
+    closePicker();
+    return;
+  }
   open.value = true;
   setupGlobalListeners();
   await nextTick();
