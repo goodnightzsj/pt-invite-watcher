@@ -11,6 +11,7 @@ from pt_invite_watcher.engines.mteam import MTeamDetector
 from pt_invite_watcher.engines.nexusphp import NexusPhpDetector
 from pt_invite_watcher.engines.engine_selector import (
     default_paths_for_engine,
+    default_paths_for_site,
     engine_for_site,
     engine_fully_supported,
 )
@@ -66,9 +67,11 @@ async def check_one_site(
     is_mteam = engine == "mteam"
     has_parser = engine in {"nexusphp", "custom", "mteam"} and engine_fully_supported(engine)
 
-    # Use the engine-specific conventional paths (e.g. Unit3D's /register & /invites)
-    # instead of hard-coding NexusPHP's .php endpoints; explicit site overrides still win.
-    default_reg, default_inv = default_paths_for_engine(engine)
+    # Path resolution: explicit per-site overrides win, then the curated site
+    # registry (handles per-site quirks like renamed endpoints), finally the
+    # engine's generic default. default_paths_for_site encapsulates the last
+    # two steps so scanner_site_check stays focused on the probe flow.
+    default_reg, default_inv = default_paths_for_site(site, engine=engine)
     reg_path = (getattr(site, "registration_path", None) or "").strip() or default_reg
     inv_path = (getattr(site, "invite_path", None) or "").strip() or default_inv
 

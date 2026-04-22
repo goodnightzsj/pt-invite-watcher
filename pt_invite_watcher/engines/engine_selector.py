@@ -8,6 +8,7 @@ from pt_invite_watcher.engines.engine_signatures import (
     get_signature,
     is_fully_supported,
 )
+from pt_invite_watcher.engines.site_registry import find_by_domain as _site_find_by_domain
 from pt_invite_watcher.site_templates import MTEAM_DOMAIN_SUFFIX, normalize_template
 from pt_invite_watcher.utils.parse import normalize_domain
 
@@ -53,10 +54,20 @@ def engine_for_site(
     if template:
         return template
 
-    # 2. Additional domain-suffix shortcuts declared by engine signatures.
-    #    Kept after the template check so only "hard" overrides (mteam above)
-    #    ignore user intent; engines added to the signature table with a
-    #    domain_suffix are treated as strong hints, not absolute rules.
+    # 2. Known-site registry lookup. Most users are adding mainstream PT sites
+    #    we already know about; when a domain matches the curated registry we
+    #    get both the engine and the correct path conventions in one step,
+    #    skipping any guesswork.
+    if domain:
+        site_def = _site_find_by_domain(domain)
+        if site_def is not None:
+            return site_def.schema
+
+    # 3. Additional domain-suffix shortcuts declared by engine signatures.
+    #    Kept after the template/registry checks so only "hard" overrides
+    #    (mteam above) ignore user intent; engines added to the signature
+    #    table with a domain_suffix are treated as strong hints, not absolute
+    #    rules.
     for sig in ENGINES_BY_NAME.values():
         if sig.name == "mteam":
             continue  # already handled above
@@ -95,6 +106,33 @@ def default_paths_for_engine(engine: Optional[str]) -> tuple[str, str]:
     return "signup.php", "invite.php"
 
 
+def default_paths_for_site(site: Any, *, engine: Optional[str] = None) -> tuple[str, str]:
+    """Return (registration_path, invite_path) with site-registry overrides applied.
+
+    Priority:
+    1. Site's domain matches the curated registry AND that entry overrides the
+       relevant path — use the override. Keeps per-site quirks (like a
+       NexusPHP fork that renames ``signup.php``) out of the generic engine
+       defaults.
+    2. Engine defaults (``default_paths_for_engine``).
+
+    The caller is still responsible for honoring the per-Site explicit
+    ``site.registration_path`` / ``site.invite_path`` fields — those are
+    user-owned and beat everything here.
+    """
+    domain = normalize_domain(getattr(site, "domain", "") or "")
+    eng = engine or engine_for_site(site)
+    reg_default, inv_default = default_paths_for_engine(eng)
+    if not domain:
+        return reg_default, inv_default
+    sd = _site_find_by_domain(domain)
+    if sd is None:
+        return reg_default, inv_default
+    reg = sd.registration_path or reg_default
+    inv = sd.invite_path or inv_default
+    return reg, inv
+
+
 def engine_fully_supported(engine: Optional[str]) -> bool:
     """Expose the signature-table ``fully_supported`` flag to pipeline code."""
     return is_fully_supported(engine)
@@ -102,6 +140,7 @@ def engine_fully_supported(engine: Optional[str]) -> bool:
 
 __all__ = [
     "default_paths_for_engine",
+    "default_paths_for_site",
     "engine_for_site",
     "engine_fully_supported",
 ]
