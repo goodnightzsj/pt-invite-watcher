@@ -46,13 +46,21 @@ onMounted(async () => {
 
     <header class="sticky top-0 z-50 w-full glass border-x-0 border-t-0 rounded-none">
       <div class="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-        <!-- Logo -->
-        <RouterLink to="/" class="flex items-center gap-2 transition-opacity hover:opacity-80">
-          <Activity class="h-6 w-6 text-brand-600 dark:text-brand-400" />
-          <h1 class="text-xl font-bold tracking-tight text-slate-800 dark:text-white">
-            PT Invite Watcher
-            <span v-if="version" class="ml-2 text-xs font-medium text-slate-500/80">v{{ version }}</span>
-          </h1>
+        <!-- Logo — the brand chip uses the theme accent with a soft glow so the app identity is
+             present without repeating a heavy gradient on every surface. -->
+        <RouterLink to="/" class="group flex items-center gap-3 transition-opacity hover:opacity-90">
+          <span
+            class="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 text-white shadow-md shadow-brand-500/30 ring-1 ring-inset ring-white/30 dark:ring-white/10"
+          >
+            <Activity class="h-5 w-5" />
+            <span class="pointer-events-none absolute inset-0 rounded-xl bg-white/0 transition-colors duration-200 group-hover:bg-white/10" aria-hidden="true" />
+          </span>
+          <div class="leading-tight">
+            <h1 class="text-base font-bold tracking-tight text-slate-900 dark:text-white">
+              PT Invite Watcher
+            </h1>
+            <div v-if="version" class="mt-0.5 text-[11px] font-medium text-slate-500 tabular-nums dark:text-slate-400">v{{ version }}</div>
+          </div>
         </RouterLink>
 
         <!-- Right Side: Nav (Desktop) + Actions (Global) -->
