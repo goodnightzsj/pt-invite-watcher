@@ -255,11 +255,18 @@ const triggerLabel = computed(() => {
                     <div class="border-b border-slate-100 p-2 dark:border-slate-800/60">
                         <label class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-1.5 focus-within:border-brand-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand-500/10 dark:border-slate-700/60 dark:bg-slate-800/40 dark:focus-within:border-brand-400 dark:focus-within:bg-slate-900/80">
                             <Search class="h-4 w-4 text-slate-400" aria-hidden="true" />
+                            <!--
+                                `focus:outline-none` only suppresses the :focus state; Chrome's default
+                                blue ring is drawn via `:focus-visible { outline: auto -webkit-focus-ring-color }`
+                                so we also need `focus-visible:outline-none` (and a default `outline-none`
+                                for engines that don't honor focus-visible). Without this you get the
+                                inner blue rectangle on top of the outer label's brand ring.
+                            -->
                             <input
                                 ref="inputRef"
                                 v-model="query"
                                 type="text"
-                                class="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
+                                class="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 dark:text-slate-100"
                                 :placeholder="props.placeholder"
                                 @keydown.stop="onKeyDown"
                             />
