@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
@@ -105,16 +106,19 @@ async def run_once_locked(
     # Atomic counter for per-site completion — spans the gather() and is mutated from runners.
     progress_state = {"completed": 0, "total": 0}
 
-    def _emit_progress(dom: str, ok: bool) -> None:
+    def _emit_progress(dom: str, ok: bool, elapsed_ms: Optional[int] = None) -> None:
         if progress_broadcast is None:
             return
         try:
-            progress_broadcast({
+            payload: dict[str, Any] = {
                 "total": progress_state["total"],
                 "completed": progress_state["completed"],
                 "domain": dom,
                 "ok": ok,
-            })
+            }
+            if elapsed_ms is not None:
+                payload["elapsed_ms"] = int(elapsed_ms)
+            progress_broadcast(payload)
         except Exception:
             # Progress must never fail a scan; ws_broadcaster.publish is already best-effort
             # but we guard the callable itself too.
@@ -131,6 +135,7 @@ async def run_once_locked(
 
             async def _runner(site=site, dom=dom):
                 ok = True
+                t0 = time.monotonic()
                 try:
                     await check_one(
                         client,
@@ -155,7 +160,11 @@ async def run_once_locked(
                             action="scan_task_error",
                             message="扫描任务异常",
                             domain=dom,
-                            detail={"error": err_detail, "type": type(e).__name__},
+                            detail={
+                                "error": err_detail,
+                                "type": type(e).__name__,
+                                "elapsed_ms": int((time.monotonic() - t0) * 1000),
+                            },
                         )
                     except Exception:
                         logger.exception("failed to record scan_task_error event")
@@ -163,7 +172,7 @@ async def run_once_locked(
                     if in_flight.get(dom) is asyncio.current_task():
                         in_flight.pop(dom, None)
                     progress_state["completed"] += 1
-                    _emit_progress(dom, ok)
+                    _emit_progress(dom, ok, elapsed_ms=int((time.monotonic() - t0) * 1000))
 
             task = asyncio.create_task(_runner(), name=f"scan_{dom}")
             in_flight[dom] = task

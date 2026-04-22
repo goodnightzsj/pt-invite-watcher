@@ -285,7 +285,7 @@ useWS(WS_DASHBOARD_UPDATE, () => {
 });
 
 // Per-site scan progress — updates a small counter without refetching the whole dashboard.
-const scanProgress = ref<{ total: number; completed: number; domain: string } | null>(null);
+const scanProgress = ref<{ total: number; completed: number; domain: string; elapsedMs: number | null } | null>(null);
 let scanProgressClearTimer: number | undefined;
 useWS(WS_SCAN_PROGRESS, (data: any) => {
   if (!data) return;
@@ -294,10 +294,13 @@ useWS(WS_SCAN_PROGRESS, (data: any) => {
     scanProgress.value = null;
     return;
   }
+  const rawElapsed = data.elapsed_ms;
+  const elapsedMs = typeof rawElapsed === "number" && Number.isFinite(rawElapsed) ? rawElapsed : null;
   scanProgress.value = {
     total,
     completed: Math.min(total, Number(data.completed || 0)),
     domain: String(data.domain || ""),
+    elapsedMs,
   };
   if (scanProgressClearTimer) window.clearTimeout(scanProgressClearTimer);
   if (scanProgress.value.completed >= total) {
@@ -307,6 +310,13 @@ useWS(WS_SCAN_PROGRESS, (data: any) => {
     }, 1500);
   }
 });
+
+function formatElapsed(ms: number | null): string {
+  if (ms == null) return "";
+  if (ms < 1000) return `${ms}ms`;
+  const s = (ms / 1000);
+  return s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
+}
 
 type FilterMode = "all" | "unreachable" | "openReg" | "openInvite";
 const filterMode = ref<FilterMode>("all");
@@ -464,6 +474,7 @@ const stats = computed(() => {
             class="pointer-events-none absolute right-3 top-1 flex items-center gap-2 text-[11px] font-medium text-slate-500 tabular-nums dark:text-slate-300">
             <span>{{ scanProgress.completed }} / {{ scanProgress.total }}</span>
             <span v-if="scanProgress.domain" class="max-w-[12rem] truncate text-slate-400 dark:text-slate-400">{{ scanProgress.domain }}</span>
+            <span v-if="scanProgress.elapsedMs != null" class="text-slate-400 dark:text-slate-500">· {{ formatElapsed(scanProgress.elapsedMs) }}</span>
           </div>
         </div>
 
