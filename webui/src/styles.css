@@ -1,10 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* If the Google Fonts CDN is slow/blocked (e.g. on restricted networks), the system font stack
-   defined on `html` (Inter, system-ui, …) renders immediately while the webfont swaps in. */
+/* Inter is loaded non-blocking from index.html (preload → onload=stylesheet). The system font
+   stack declared on `html` paints immediately and swaps to Inter when available. */
 
 :root {
   /* Brand palette: Vibrant Indigo (single source of truth — runtime overridable via theme.ts setAccentColor). */
@@ -203,6 +202,17 @@ body {
   .status-note.warning { @apply text-amber-700/80 dark:text-amber-300/80; }
   .status-note.danger  { @apply text-rose-700/80 dark:text-rose-300/80; }
   .status-note.muted   { @apply text-slate-500 dark:text-slate-300; }
+
+  /* Type scale — semantic class names anchor a consistent typography hierarchy so future
+     pages don't have to re-derive "what size is a heading" from Tailwind utilities each time. */
+  .type-h1 { @apply text-4xl font-bold tracking-tight text-slate-900 dark:text-white; }
+  .type-h2 { @apply text-3xl font-bold tracking-tight text-slate-900 dark:text-white; }
+  .type-h3 { @apply text-xl font-semibold tracking-tight text-slate-900 dark:text-white; }
+  .type-h4 { @apply text-base font-semibold text-slate-900 dark:text-slate-100; }
+  .type-body    { @apply text-base leading-relaxed text-slate-700 dark:text-slate-200; }
+  .type-body-sm { @apply text-sm  leading-relaxed text-slate-600 dark:text-slate-300; }
+  .type-caption { @apply text-xs font-medium text-slate-500 dark:text-slate-400; }
+  .type-label   { @apply text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400; }
 }
 
 @layer utilities {
