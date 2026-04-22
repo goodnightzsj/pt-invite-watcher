@@ -19,11 +19,15 @@ scanner can recognize by domain. Matching a site gives us:
   defaults (e.g. a NexusPHP fork that renames ``signup.php``).
 - Extra aliases so search boxes can find the site via common nicknames.
 
-Coverage is drawn from the public templates in these upstream projects — most
-of the Chinese NexusPHP universe, M-Team, major Unit3D and Gazelle sites, and
-a handful of Discuz-based trackers. Adding a new site here is a few lines and
-a commit; the dataset is expected to grow over time as the PT ecosystem
-evolves.
+Coverage tracks three upstream sources, in this order of authority:
+
+- ``sagan/ptool/site/tpl/tpl.go`` — definitive schema + URL for each site.
+- ``pt-plugins/PT-Plugin-Plus/resource/sites/`` — cross-check on domains.
+- ``jxxghp/MoviePilot-Wiki/site.md`` — cross-check on supported sites.
+
+Whenever a domain value moves (sites routinely shuffle between .cc / .club /
+.net TLDs) we keep the historical ones as secondary entries in ``domains`` so
+users running older MoviePilot snapshots still match.
 
 When a user's domain doesn't match any entry here, the scanner falls back
 to the engine signature detector — so this list is a convenience layer, not a
@@ -87,7 +91,7 @@ def _np(
 
 
 # Curated set. Each entry carries at least one known domain; aliases and
-# domain overrides come from the upstream ptool / PT-Plugin-Plus tables.
+# domain overrides come from ptool + PT-Plugin-Plus + MoviePilot-Wiki.
 _SITES: tuple[SiteDefinition, ...] = (
     # ======================================================================
     #                       M-Team (API-only engine)
@@ -96,7 +100,7 @@ _SITES: tuple[SiteDefinition, ...] = (
         id="mteam",
         name="馒头",
         aliases=("M-Team", "mteam", "mt"),
-        domains=("m-team.cc", "kp.m-team.cc", "api.m-team.cc", "m-team.io"),
+        domains=("api.m-team.cc", "kp.m-team.cc", "m-team.cc", "m-team.io"),
         schema="mteam",
         tags=("中文", "综合"),
         registration_path="signup",
@@ -105,49 +109,81 @@ _SITES: tuple[SiteDefinition, ...] = (
     ),
 
     # ======================================================================
-    #                       国内 NexusPHP 主流站
+    #                     国内 NexusPHP 主流站（按拼音 slug 排序）
     # ======================================================================
     _np("ptzeroff", "0ff (自由农场)", aliases=("0ff", "pt0ffcc", "自由农场"),
         domains=("pt.0ff.cc",)),
-    _np("1ptba", "1PTA (壹PT吧)", aliases=("1PTBA", "1ptba", "壹PT吧"),
+    _np("13city", "13City", aliases=("13city",),
+        domains=("13city.org",)),
+    _np("1ptba", "1PTA (壹PT吧)", aliases=("1PTBA", "壹PT吧"),
         domains=("1ptba.com",)),
     _np("2xfree", "2xFree", aliases=("2xfree", "pt2xfree"),
         domains=("pt.2xfree.org",)),
+    _np("3wmg", "芒果 (3WMG)", aliases=("3wmg", "芒果"),
+        domains=("www.3wmg.com",)),
     _np("pt52", "52PT", aliases=("52pt",),
         domains=("52pt.site",)),
     _np("audiences", "观众 (Audiences)", aliases=("Audiences", "ad", "观众"),
-        domains=("audiences.me", "cinefiles.info"), tags=("中文", "综合")),
+        domains=("audiences.me", "cinefiles.info")),
     _np("azusa", "梓喵 (Azusa)", aliases=("Azusa", "梓喵"),
         domains=("azusa.wiki", "zimiao.icu")),
+    _np("baozi", "包子PT", aliases=("baozi", "包子"),
+        domains=("p.t-baozi.cc",)),
+    _np("beitai", "备胎 (BeiTai)", aliases=("BeiTai", "备胎"),
+        domains=("www.beitai.pt",)),
+    _np("biho", "必火pt (BiHo)", aliases=("biho", "必火"),
+        domains=("www.biho.xyz",)),
     _np("btschool", "BTSchool (学校)", aliases=("BTSchool", "学校"),
         domains=("pt.btschool.club", "pt.btschool.net")),
-    _np("byrbt", "北邮人 (BYRBT)", aliases=("BYRBT", "byr.pt", "北邮", "北邮人"),
+    _np("byrbt", "北邮人 (BYRBT)", aliases=("BYRBT", "byr", "北邮", "北邮人"),
         domains=("byr.pt",), tags=("中文", "综合", "学校"),
         notes="北京邮电大学 PT"),
+    _np("cangbaoge", "藏宝阁 (CangBaoGe)", aliases=("CangBaoGe", "cbg", "藏宝阁"),
+        domains=("cangbao.ge",)),
     _np("carpt", "CarPT (小车站)", aliases=("CarPT", "小车站"),
         domains=("carpt.net",)),
+    _np("ccfbits", "CCFBits", aliases=("CCFBits",),
+        domains=("ccfbits.org",)),
     _np("chdbits", "CHDBits (彩虹岛)", aliases=("CHDBits", "彩虹岛", "chd", "rainbowisland"),
-        domains=("chdbits.co", "chdbits.xyz", "rainbowisland.co"),
+        domains=("ptchdbits.co", "chdbits.co", "chdbits.xyz", "rainbowisland.co"),
         tags=("中文", "综合", "高清")),
+    _np("crabpt", "蟹黄堡 (CrabPT)", aliases=("CrabPT", "蟹黄堡"),
+        domains=("crabpt.vip",)),
+    _np("cspt", "财神 (CSPT)", aliases=("CSPT", "财神"),
+        domains=("cspt.top",)),
     _np("cyanbug", "大青虫 (CyanBug)", aliases=("CyanBug", "大青虫"),
         domains=("cyanbug.net",)),
     _np("dajiao", "打胶 (DaJiao)", aliases=("dajiao", "打胶"),
         domains=("dajiao.cyou",)),
+    _np("dhtclub", "DHTCLUB", aliases=("DHTClub",),
+        domains=("pt.dhtclub.com",)),
     _np("discfan", "蝶粉 (DiscFan)", aliases=("DiscFan", "蝶粉"),
         domains=("discfan.net",)),
+    _np("dragonhd", "龍之家 (DragonHD)", aliases=("DragonHD", "龙之家"),
+        domains=("www.dragonhd.xyz",)),
+    _np("dubhe", "天枢 (DuBhe)", aliases=("DuBhe", "天枢"),
+        domains=("dubhe.site",)),
     _np("ecust", "ECUST PT (华东理工)", aliases=("ECUST", "ecustpt"),
-        domains=("ecustpt.eu.org",), tags=("中文", "综合", "学校"),
+        domains=("pt.ecust.pp.ua", "ecustpt.eu.org"), tags=("中文", "综合", "学校"),
         notes="华东理工大学 PT"),
     _np("gainbound", "丐帮 (GainBound)", aliases=("GainBound", "丐帮"),
         domains=("gainbound.net",)),
-    _np("gtk", "PT GTK", aliases=("PTGTK", "gtkpw", "gtk"),
-        domains=("pt.gtkpw.xyz",)),
+    _np("gamegamept", "GGPT", aliases=("ggpt", "GameGamePT"),
+        domains=("www.gamegamept.com",)),
+    _np("gamerapt", "駕瞑羅 (GamerAPT)", aliases=("GamerAPT",),
+        domains=("gamerapt.link",)),
+    _np("gtk", "PT GTK", aliases=("PTGTK", "gtkpw"),
+        domains=("pt.gtk.pw", "pt.gtkpw.xyz")),
     _np("haidan", "海胆 (HaiDan)", aliases=("HaiDan", "海胆"),
         domains=("www.haidan.video",)),
     _np("hares", "白兔 (Hares Club)", aliases=("Hares", "HaresClub", "白兔"),
         domains=("club.hares.top",)),
+    _np("hdarea", "高清地带 (HDArea)", aliases=("HDArea", "高清地带"),
+        domains=("hdarea.club",)),
     _np("hdatmos", "阿童木 (HDAtmos)", aliases=("HDAtmos", "阿童木"),
         domains=("hdatmos.club",)),
+    _np("hdclone", "HDClone", aliases=("HDClone",),
+        domains=("pt.hdclone.org",)),
     _np("hdchina", "瓷器 (HDChina)", aliases=("HDChina", "瓷器", "hdc"),
         domains=("hdchina.org",), tags=("中文", "综合", "高清")),
     _np("hdcity", "城市 (HDCity)", aliases=("HDCity", "城市"),
@@ -155,11 +191,11 @@ _SITES: tuple[SiteDefinition, ...] = (
     _np("hddolby", "杜比 (HDDolby)", aliases=("HDDolby", "杜比"),
         domains=("www.hddolby.com", "hddolby.com")),
     _np("hdfans", "红豆饭 (HDFans)", aliases=("HDFans", "红豆饭"),
-        domains=("hdfans.org",)),
+        domains=("hdfans.org", "pt.hd4fans.org")),
     _np("hdhome", "家园 (HDHome)", aliases=("HDHome", "家园"),
         domains=("hdhome.org",), tags=("中文", "综合", "高清")),
     _np("hdkyl", "麒麟 (HDKyl)", aliases=("HDKyl", "HDKylin", "麒麟"),
-        domains=("hdkyl.in",)),
+        domains=("www.hdkyl.in", "hdkyl.in")),
     _np("hdmayi", "蚂蚁 (HDMayi)", aliases=("HDMayi", "蚂蚁"),
         domains=("hdmayi.com",)),
     _np("hdpt", "明教 (HDPT)", aliases=("HDPT", "明教"),
@@ -171,82 +207,154 @@ _SITES: tuple[SiteDefinition, ...] = (
     _np("hdupt", "好多油 (HDUPT)", aliases=("HDUPT", "upxin", "hdu", "好多油"),
         domains=("pt.hdupt.com",)),
     _np("hdvideo", "高清视频 (HDVideo)", aliases=("HDVideo", "高清视频"),
-        domains=("hdvideo.one",)),
-    _np("hdzone", "高清地带 (HDZone)", aliases=("HDArea", "HDZone", "高清地带"),
+        domains=("hdvideo.top", "hdvideo.one")),
+    _np("hdzone", "高清地带 (HDZone)", aliases=("HDZone", "HDFun"),
         domains=("hdzone.me", "hdfun.me")),
     _np("hhanclub", "憨憨 (HHanClub)", aliases=("HHanClub", "hh", "hhan", "憨憨"),
         domains=("hhanclub.top", "hhan.club")),
     _np("htpt", "海棠 (HTPT)", aliases=("HTPT", "海棠"),
-        domains=("htpt.cc",)),
+        domains=("www.htpt.cc", "htpt.cc")),
     _np("hudbt", "蝴蝶 (HUDBT)", aliases=("HUDBT", "蝴蝶"),
         domains=("hudbt.hust.edu.cn",), tags=("中文", "综合", "学校"),
         notes="华中科技大学 PT"),
+    _np("hxpt", "好学 (HXPT)", aliases=("HXPT", "好学"),
+        domains=("www.hxpt.org",)),
+    _np("icc2022", "冰淇淋 (ICC2022)", aliases=("ICC", "ICC2022", "冰淇淋"),
+        domains=("www.icc2022.com",)),
     _np("ihdbits", "iHDBits", aliases=("iHDBits",),
         domains=("ihdbits.me",)),
+    _np("ilolicon", "ilolicon PT", aliases=("ilolicon",),
+        domains=("mua.xloli.cc",)),
+    _np("itzmx", "PT分享站 (ITZMX)", aliases=("ITZMX",),
+        domains=("pt.itzmx.com",)),
     _np("joyhd", "JoyHD", aliases=("JoyHD",),
-        domains=("joyhd.net",)),
+        domains=("www.joyhd.net", "joyhd.net")),
     _np("kamept", "KamePT", aliases=("KamePT", "kame"),
         domains=("kamept.com",)),
     _np("keepfrds", "朋友 (KeepFRDS)", aliases=("KeepFRDS", "frds", "朋友", "月月"),
         domains=("pt.keepfrds.com",)),
+    _np("kufei", "库非 (KuFei)", aliases=("KuFei", "库非"),
+        domains=("kufei.org",)),
+    _np("lajidui", "垃圾堆 (LaJiDui)", aliases=("LaJiDui", "垃圾堆"),
+        domains=("pt.lajidui.top",)),
     _np("leaves", "红叶 (RedLeaves)", aliases=("RedLeaves", "红叶"),
         domains=("leaves.red",)),
     _np("lemonhd", "柠檬 (LemonHD)", aliases=("LemonHD", "leaguehd", "lemon", "柠檬"),
-        domains=("leaguehd.com", "lemonhd.org")),
+        domains=("lemonhd.club", "leaguehd.com", "lemonhd.org")),
+    _np("longpt", "LongPT", aliases=("LongPT",),
+        domains=("longpt.org",)),
+    _np("luckpt", "LuckPT", aliases=("LuckPT",),
+        domains=("pt.luckpt.de",)),
+    _np("march", "March", aliases=("duckboobee",),
+        domains=("duckboobee.org",)),
     _np("nicept", "老师 (NicePT)", aliases=("NicePT", "老师"),
-        domains=("nicept.net",)),
+        domains=("www.nicept.net", "nicept.net")),
+    _np("novahd", "NovaHD", aliases=("NovaHD",),
+        domains=("pt.novahd.top",)),
+    _np("okpt", "OKPT", aliases=("OKPT",),
+        domains=("www.okpt.net",)),
     _np("opencd", "皇后 (OpenCD)", aliases=("OpenCD", "皇后", "开心"),
         domains=("open.cd",)),
+    _np("oshen", "奥申 (Oshen)", aliases=("Oshen", "奥申", "欧神"),
+        domains=("www.oshen.win",)),
     _np("ourbits", "OurBits (我堡)", aliases=("OurBits", "OB", "我堡"),
         domains=("ourbits.club",)),
+    _np("pandapt", "熊猫高清 (PandaPT)", aliases=("PandaPT", "panda", "熊猫"),
+        domains=("pandapt.net",)),
     _np("piggo", "猪猪 (PigGo)", aliases=("PigGo", "猪猪"),
         domains=("piggo.me",)),
+    _np("playletpt", "PlayletPT", aliases=("PlayletPT",),
+        domains=("playletpt.xyz",)),
+    _np("ptcafe", "咖啡 (PTCafe)", aliases=("PTCafe", "咖啡"),
+        domains=("ptcafe.club",)),
+    _np("ptchina", "铂金学院 (PTChina)", aliases=("PTChina", "铂金学院"),
+        domains=("ptchina.org",)),
     _np("pterclub", "猫站 (PTer)", aliases=("PTerClub", "PTer", "猫站"),
-        domains=("pterclub.com",)),
+        domains=("pterclub.net", "pterclub.com")),
     _np("pthome", "铂金家 (PTHome)", aliases=("PTHome", "铂金家"),
         domains=("pthome.net",)),
-    _np("qingwa", "青蛙 (QingWa)", aliases=("QingWa", "qingwa", "青蛙"),
-        domains=("www.qingwa.pro", "qingwapt.com")),
-    _np("skyeysnow", "天雪 (SkyeySnow)", aliases=("SkyeySnow", "天雪"),
-        domains=("skyey.win", "skyey2.com")),  # Note: schema overridden below
+    _np("ptlsp", "PTLSP", aliases=("PTLSP",),
+        domains=("www.ptlsp.com",)),
+    _np("ptsbao", "烧包 (PTSBao)", aliases=("PTSBao", "烧包"),
+        domains=("ptsbao.club",)),
+    _np("ptskit", "PTSKIT", aliases=("PTSKIT",),
+        domains=("www.ptskit.org",)),
+    _np("pttime", "PTTime (PTT)", aliases=("PTT", "PTTime"),
+        domains=("www.pttime.org",)),
+    _np("ptvicomo", "象站 (PTVicomo)", aliases=("PTVicomo", "象站"),
+        domains=("ptvicomo.net",)),
+    _np("ptzone", "PTzone", aliases=("PTzone",),
+        domains=("ptzone.xyz",)),
+    _np("pwtorrents", "PWTorrents", aliases=("PWT", "ProWrestlingTorrents"),
+        domains=("pwtorrents.net",), tags=("English", "综合")),
+    _np("qingwa", "青蛙 (QingWa)", aliases=("QingWa", "青蛙"),
+        domains=("www.qingwapt.com", "qingwapt.com", "www.qingwa.pro")),
+    _np("railgunpt", "RailgunPT", aliases=("RailgunPT", "bilibili"),
+        domains=("bilibili.download",)),
+    _np("raingfh", "雨 (Raingfh)", aliases=("Raingfh", "雨"),
+        domains=("raingfh.top",)),
+    _np("rousi", "Rousi", aliases=("Rousi",),
+        domains=("rousi.zip",)),
+    _np("sharkpt", "鲨鱼 (SharkPT)", aliases=("SharkPT", "鲨鱼"),
+        domains=("sharkpt.net",)),
+    _np("siqi", "思齐 (SiQi)", aliases=("SiQi", "思齐"),
+        domains=("si-qi.xyz",)),
     _np("soulvoice", "聆音 (SoulVoice)", aliases=("SoulVoice", "聆音"),
         domains=("pt.soulvoice.club",)),
-    _np("ssd", "不可说 (SSD)", aliases=("SSD", "SpringSunday", "春天", "不可说"),
+    _np("ssd", "不可说 (SSD)", aliases=("SSD", "SpringSunday", "春天"),
         domains=("springsunday.net",)),
-    _np("tccf", "精品论坛 (TCCF)", aliases=("TCCF", "ET8", "TorrentCCF", "精品论坛", "他吹吹风"),
+    _np("tccf", "精品论坛 (TCCF)", aliases=("TCCF", "ET8", "TorrentCCF", "他吹吹风"),
         domains=("et8.org",)),
     _np("tjupt", "北洋园 (TJUPT)", aliases=("TJUPT", "北洋", "北洋园PT"),
         domains=("tjupt.org",), tags=("中文", "综合", "学校"),
         notes="天津大学 PT"),
     _np("tlfbits", "TLF (吐鲁番)", aliases=("TLF", "TLFBits", "EastGame", "吐鲁番"),
         domains=("pt.eastgame.org",)),
+    _np("tmpt", "唐门 (TMPT)", aliases=("TMPT", "唐门"),
+        domains=("tmpt.top",)),
+    _np("tosky", "ToSky", aliases=("ToSky",),
+        domains=("t.tosky.club",)),
     _np("ttg", "TTG (听听歌)", aliases=("TTG", "ToTheGlory", "听听歌"),
         domains=("totheglory.im",), tags=("中文", "综合", "高清"),
         notes="重度魔改 NP — 部分路径与标准不同"),
+    _np("tu88", "TU88", aliases=("TU88",),
+        domains=("pt.tu88.men",)),
     _np("u2", "U2 (动漫花园)", aliases=("U2", "DMHY", "动漫花园"),
         domains=("u2.dmhy.org", "dmhy.best"), tags=("中文", "动漫"),
         notes="重度魔改 NP — 部分选择器与标准不同"),
-    _np("xingtan", "杏坛 (XingTan)", aliases=("XingTan", "Xinglin", "杏坛", "杏林"),
-        domains=("xinglin.one",)),
+    _np("ubits", "你堡 (UBits)", aliases=("UBits", "ub", "你堡"),
+        domains=("ubits.club",)),
+    _np("ultrahd", "UltraHD", aliases=("UltraHD",),
+        domains=("ultrahd.net",)),
+    _np("uploads", "Uploads (LTD)", aliases=("Uploads", "LTD"),
+        domains=("uploads.ltd",)),
+    _np("wintersakura", "冬樱 (WinterSakura)", aliases=("WinterSakura", "wtsakura", "冬樱"),
+        domains=("wintersakura.net",)),
+    _np("wukongwendao", "悟空问道 (WuKong)", aliases=("WuKong", "悟空问道"),
+        domains=("wukongwendao.top",)),
+    _np("xingyunge", "星陨阁 (XingYunGe)", aliases=("XingYunGe", "星陨阁"),
+        domains=("pt.xingyungept.org",)),
+    _np("xingtan", "杏坛 (XingTan)", aliases=("XingTan", "Xinglin", "杏林"),
+        domains=("xingtan.one", "xinglin.one")),
     _np("zmpt", "织梦 (ZmPT)", aliases=("ZmPT", "织梦"),
         domains=("zmpt.cc",)),
+    _np("zrpt", "自然 (ZRPT)", aliases=("ZRPT", "自然"),
+        domains=("zrpt.cc",)),
 
-    # ---- 国内 NexusPHP 其他（domain 清单来自 PTPP resource/sites）----
+    # ---- 学校/机构 NP (PTPP 目录补充) ----
+    _np("bitpt", "BitPT", aliases=("BitPT",),
+        domains=("bitpt.cn",)),
     _np("nanyangpt", "南洋 (NanyangPT)", aliases=("NanyangPT", "南洋"),
         domains=("nanyangpt.com",), tags=("中文", "综合", "学校"),
         notes="上海交通大学闵行校区"),
-    _np("npupt", "浦园 (NPUPT)", aliases=("NPUPT", "浦园"),
-        domains=("npupt.com",), tags=("中文", "综合", "学校"),
-        notes="南京邮电大学"),
-    _np("pthdbd", "BD之家 (HDBD)", aliases=("HDBD", "pt.hdbd.us"),
-        domains=("pt.hdbd.us",)),
-    _np("ccfbits", "CCFBits", aliases=("CCFBits",),
-        domains=("ccfbits.org",)),
-    _np("bitpt", "BitPT", aliases=("BitPT",),
-        domains=("bitpt.cn",)),
     _np("neubt", "NEUBT", aliases=("NEUBT",),
         domains=("bt.neu6.edu.cn",), tags=("中文", "综合", "学校"),
         notes="东北大学 PT"),
+    _np("npupt", "浦园 (NPUPT)", aliases=("NPUPT", "浦园"),
+        domains=("npupt.com",), tags=("中文", "综合", "学校"),
+        notes="南京邮电大学"),
+    _np("pthdbd", "BD之家 (HDBD)", aliases=("HDBD",),
+        domains=("pt.hdbd.us",)),
     _np("sjtupt", "PT @ SJTU", aliases=("SJTUPT",),
         domains=("pt.sjtu.edu.cn",), tags=("中文", "综合", "学校"),
         notes="上海交通大学 PT"),
@@ -254,19 +362,18 @@ _SITES: tuple[SiteDefinition, ...] = (
     # ======================================================================
     #                       Discuz 论坛型 PT
     # ======================================================================
-    # skyeysnow 其实是 discuz —— _np 错标为 nexusphp，手动覆盖：
     SiteDefinition(
-        id="skyeysnow-dz",
-        name="天雪 (SkyeySnow · Discuz)",
-        aliases=("SkyeySnow-DZ",),
-        domains=("skyey.win", "skyey2.com"),
+        id="skyeysnow",
+        name="天雪 (SkyeySnow)",
+        aliases=("SkyeySnow", "天雪"),
+        domains=("skyeysnow.com", "skyey.win", "skyey2.com"),
         schema="discuz",
         tags=("中文", "综合"),
         notes="Discuz 论坛型",
     ),
 
     # ======================================================================
-    #                       TNode（朱雀系列等）
+    #                       TNode
     # ======================================================================
     SiteDefinition(
         id="zhuque",
@@ -344,7 +451,7 @@ _SITES: tuple[SiteDefinition, ...] = (
     SiteDefinition(
         id="monikadesign",
         name="MonikaDesign (莫妮卡)",
-        aliases=("Monika", "MonikaDesign", "莫妮卡"),
+        aliases=("Monika", "莫妮卡"),
         domains=("monikadesign.uk",),
         schema="unit3d",
         tags=("English", "综合"),
@@ -399,7 +506,7 @@ _SITES: tuple[SiteDefinition, ...] = (
         id="dicmusic",
         name="海豚 (DICMusic)",
         aliases=("DIC", "DICMusic", "海豚"),
-        domains=("dicmusic.club", "52dic.vip", "dicmusic.com"),
+        domains=("dicmusic.com", "dicmusic.club", "52dic.vip"),
         schema="gazelle",
         tags=("中文", "音乐"),
         registration_path="register.php",
@@ -417,28 +524,6 @@ _SITES: tuple[SiteDefinition, ...] = (
         notes="基于 GazellePW 变种",
     ),
 )
-
-
-# Filter out the accidental nexusphp-tagged skyeysnow entry produced by the
-# `_np` factory earlier — we keep the `discuz`-typed one as the canonical
-# registration. The factory call is useful for readability but we have to
-# prune the duplicate since _SITES is a flat tuple.
-def _dedupe_skyeysnow(entries: tuple[SiteDefinition, ...]) -> tuple[SiteDefinition, ...]:
-    seen_domains: set[str] = set()
-    out: list[SiteDefinition] = []
-    # Iterate reversed so the Discuz definition (declared later) wins; that's
-    # the one we actually want when a user types "skyey.win".
-    for sd in reversed(entries):
-        overlapping = {d for d in sd.domains if d in seen_domains}
-        if overlapping:
-            continue
-        for d in sd.domains:
-            seen_domains.add(d)
-        out.append(sd)
-    return tuple(reversed(out))
-
-
-_SITES = _dedupe_skyeysnow(_SITES)
 
 
 # Lookup tables. Primary matching is exact-domain; suffix matching is used so
