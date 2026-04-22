@@ -5,10 +5,17 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Annotated
 
+import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.responses import Response
 
 from pt_invite_watcher.app_context import AppContext
-from pt_invite_watcher.engines.site_registry import find_by_domain as _registry_find_by_domain, list_all as _registry_list_all
+from pt_invite_watcher.engines.redirect_guard import guarded_get
+from pt_invite_watcher.engines.site_registry import (
+    find_by_domain as _registry_find_by_domain,
+    friendly_peers_for,
+    list_all as _registry_list_all,
+)
 from pt_invite_watcher.kv_keys import SITES_KEY
 from pt_invite_watcher.routes.common import (
     broadcast_dashboard_update,
@@ -49,6 +56,91 @@ async def _sync_site_list_summary_after_sites_write(
         await sync_site_list_summary(ctx.store, ctx.notifier, eff.sites, now, notify=True, reason=reason)
     except Exception:
         logger.exception("failed to sync site list summary (%s)", reason)
+
+
+_FAVICON_MAX_BYTES = 256 * 1024  # 256 KB — a favicon should never exceed this
+_FAVICON_TIMEOUT_SECONDS = 6
+_FAVICON_BROWSER_HEADERS = {
+    # Browser-ish headers so anti-bot layers don't serve us an HTML error page.
+    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+}
+
+
+@router.get("/api/sites/icon", dependencies=[Depends(require_auth)])
+async def api_site_icon(domain: str) -> Response:
+    """Server-side favicon proxy with redirect-guard protection.
+
+    The browser's ``<img>`` element silently follows cross-origin redirects, so if a
+    site is hijacked (``xingyunge.org/favicon.ico`` → ``tmdi.pw/favicon.ico``) the
+    frontend ends up caching the hijacker's icon as if it were genuine. Routing the
+    fetch through ``guarded_get`` lets us detect the offsite hop and return 204 —
+    the frontend then falls back to external icon services (DuckDuckGo / Google)
+    which generally keep a record of the site's legitimate icon from its healthy
+    days.
+
+    A 204 (rather than 404) is deliberate: it signals "probed, no valid icon"
+    without polluting the browser's error console.
+    """
+    dom = normalize_domain(domain)
+    if not dom:
+        raise HTTPException(status_code=400, detail="domain required")
+
+    url = f"https://{dom}/favicon.ico"
+    friendly = friendly_peers_for(dom)
+
+    try:
+        async with httpx.AsyncClient(timeout=_FAVICON_TIMEOUT_SECONDS, http2=True) as client:
+            gr = await guarded_get(
+                client,
+                url,
+                expected_host=dom,
+                friendly_hosts=friendly,
+                headers=_FAVICON_BROWSER_HEADERS,
+                attempts=1,
+                delay_seconds=0,
+            )
+    except Exception:
+        logger.exception("favicon proxy failed for %s", dom)
+        return Response(status_code=204)
+
+    # Redirected away from the site's own registrable domain — almost certainly a
+    # hijack / takedown redirect. Don't cache the decoy's icon.
+    if gr.off_site_reason or gr.response is None or gr.error is not None:
+        if gr.response is not None:
+            try:
+                await gr.response.aclose()
+            except Exception:
+                pass
+        return Response(status_code=204)
+
+    resp = gr.response
+    try:
+        if resp.status_code >= 400:
+            return Response(status_code=204)
+        content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        # Some sites serve an HTML 404 page with a 200 status when /favicon.ico is
+        # missing. Treat only real image types as valid.
+        if not (content_type.startswith("image/") or content_type in {"application/octet-stream", "application/x-ico"}):
+            return Response(status_code=204)
+        body = resp.content
+        if not body or len(body) < 32 or len(body) > _FAVICON_MAX_BYTES:
+            return Response(status_code=204)
+        return Response(
+            content=body,
+            media_type=content_type or "image/x-icon",
+            headers={
+                # 12h browser cache is enough to let users see icon refreshes on
+                # the same day, while cutting origin hits by ~99%.
+                "Cache-Control": "public, max-age=43200",
+            },
+        )
+    finally:
+        try:
+            await resp.aclose()
+        except Exception:
+            pass
 
 
 @router.get("/api/sites/registry", dependencies=[Depends(require_auth)])

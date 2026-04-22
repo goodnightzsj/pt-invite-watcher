@@ -64,30 +64,60 @@ const origin = computed(() => {
 });
 
 /**
- * Source ordering is reachability-aware:
+ * Source priority:
  *
- * - When the site is known unreachable (probe flagged redirect/hijack), the
- *   origin's `/favicon.ico` is highly suspect — a parked/redirected page may
- *   serve the hijacker's icon, which we'd then cache for 30 days as the "real"
- *   icon. Skip origin entirely and rely on external icon services that
- *   remember the site's genuine favicon from its healthy days.
- * - For healthy or unknown sites, try origin first (freshest, correct colors).
+ * 1. `/api/sites/icon?domain=…` — server-side proxy that fetches the origin's
+ *    `/favicon.ico` through the redirect guard. When the origin redirects
+ *    off-site (hijack / takedown → someone else's favicon) the backend returns
+ *    204 so this source fails and we fall through. This is the key fix for
+ *    sites like xingyunge that redirect to unrelated domains — the browser's
+ *    `<img>` tag silently follows such redirects, but our proxy doesn't.
+ * 2. DuckDuckGo's icon service — keeps a record of most mainstream PT sites'
+ *    canonical icons, so it's a solid fallback when origin is dead/hijacked.
+ * 3. Google's s2 favicons — final fallback, covers the long tail.
+ *
+ * Unreachable sites still benefit from step 1 because the backend proxy will
+ * either serve the real icon (if probing /favicon.ico works despite the
+ * homepage being flaky) or cleanly 204 so we fall through faster.
  */
 const sources = computed(() => {
   if (!domain.value) return [] as string[];
-  const external = [
+  return [
+    `/api/sites/icon?domain=${encodeURIComponent(domain.value)}`,
     `https://icons.duckduckgo.com/ip3/${domain.value}.ico`,
     `https://www.google.com/s2/favicons?domain=${domain.value}&sz=64`,
   ];
-  if (props.reachability === "down") {
-    return external;
-  }
-  return [`${origin.value}/favicon.ico`, ...external];
 });
 
 const displaySrc = ref<string | null>(null);
 
-function loadIcons() {
+function tryLoad(src: string): Promise<{ src: string; w: number; h: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => {
+      // Validate a real image came back — some hijacks / 404-as-image handlers
+      // return a 1x1 transparent pixel which looks "loaded" but is useless.
+      const w = img.naturalWidth || 0;
+      const h = img.naturalHeight || 0;
+      if (w < MIN_ICON_PX || h < MIN_ICON_PX) resolve(null);
+      else resolve({ src, w, h });
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+/**
+ * Source selection is *sequential*, not parallel: we want the backend proxy's
+ * verdict to take priority over external icon services. Firing all three in
+ * parallel would let a fast DuckDuckGo response beat a proxy that's about to
+ * serve the site's real icon — cache would then lock in the generic external
+ * icon for 30 days. Walking the list one source at a time keeps the ordering
+ * honest at the cost of adding ~the time of one extra HTTP round trip when
+ * the proxy fails.
+ */
+async function loadIcons() {
   const d = domain.value;
   if (!d) {
     displaySrc.value = null;
@@ -100,44 +130,23 @@ function loadIcons() {
     return;
   }
 
-  const list = sources.value;
-  let resolved = false;
-  let pendingFailures = 0;
-
-  list.forEach((src) => {
-    const img = new Image();
-    img.referrerPolicy = "no-referrer";
-    img.onload = () => {
-      if (resolved) return;
-      // Validate a real image came back — some hijacks / 404-as-image handlers
-      // return a 1x1 transparent pixel which looks "loaded" but is useless.
-      const w = img.naturalWidth || 0;
-      const h = img.naturalHeight || 0;
-      if (w < MIN_ICON_PX || h < MIN_ICON_PX) {
-        pendingFailures += 1;
-        if (pendingFailures >= list.length) setCache(d, null);
-        return;
-      }
-      resolved = true;
-      displaySrc.value = src;
-      setCache(d, { src, fetchedAt: Date.now(), w, h });
-    };
-    img.onerror = () => {
-      if (resolved) return;
-      pendingFailures += 1;
-      if (pendingFailures >= list.length) setCache(d, null);
-    };
-    img.src = src;
-  });
+  for (const src of sources.value) {
+    const result = await tryLoad(src);
+    if (!result) continue;
+    displaySrc.value = result.src;
+    setCache(d, { src: result.src, fetchedAt: Date.now(), w: result.w, h: result.h });
+    return;
+  }
+  setCache(d, null);
 }
 
 watch([() => props.url, () => props.reachability], () => {
   displaySrc.value = null;
-  loadIcons();
+  void loadIcons();
 });
 
 onMounted(() => {
-  loadIcons();
+  void loadIcons();
 });
 </script>
 
