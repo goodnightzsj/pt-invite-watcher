@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { Download, Upload, FileJson, ShieldAlert, UploadCloud, Info, RefreshCw } from "lucide-vue-next";
+import { Download, Upload, FileJson, ShieldAlert, UploadCloud, Info, RefreshCw, Image as ImageIcon } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
 import Card from "../components/Card.vue";
@@ -418,6 +418,40 @@ onBeforeRouteLeave(() => {
   if (!isDirty.value) return true;
   return window.confirm("有未保存的修改，确定离开吗？");
 });
+
+// Browser-local favicon cache controls. Wiping the localStorage key forces the
+// next SiteIcon render to refetch every site's icon; useful after a site's real
+// icon changes or after we shipped the reachability-aware sourcing fix and want
+// to see the new behavior without waiting 30 days for the cache to expire.
+const ICON_CACHE_KEY = "ptiw_icon_cache";
+
+function _readIconCacheSize(): number {
+  try {
+    const raw = localStorage.getItem(ICON_CACHE_KEY);
+    if (!raw) return 0;
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? Object.keys(obj).length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+const iconCacheSize = ref(_readIconCacheSize());
+
+async function clearIconCache() {
+  if (!(await confirm("确认清除浏览器本地缓存的所有站点图标吗？\n清除后将在下次渲染时重新抓取。"))) return;
+  try {
+    localStorage.removeItem(ICON_CACHE_KEY);
+    iconCacheSize.value = 0;
+    showToast("已清除图标缓存，刷新页面后重新抓取", "success", 2400);
+  } catch (e: any) {
+    showToast(String(e?.message || e || "清除失败"), "error", 4500);
+  }
+}
+
+function reloadPage() {
+  window.location.reload();
+}
 </script>
 
 <template>
@@ -717,6 +751,27 @@ onBeforeRouteLeave(() => {
           <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>
         </div>
         <div class="mt-1 text-xs text-slate-500 dark:text-slate-300">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
+
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
+                <ImageIcon class="h-4 w-4" />
+              </div>
+              <div>
+                <div class="text-sm font-medium text-slate-800 dark:text-slate-100">站点图标缓存</div>
+                <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  当前浏览器缓存：<span class="tabular-nums">{{ iconCacheSize }}</span> 个站点（30 天 TTL）。
+                  站点改图或修复图标抓取逻辑后可手动清除，立即重新获取。
+                </div>
+              </div>
+            </div>
+            <div class="flex shrink-0 gap-2">
+              <Button size="sm" :disabled="iconCacheSize === 0" @click="clearIconCache">清除缓存</Button>
+              <Button size="sm" variant="primary" @click="reloadPage">刷新页面</Button>
+            </div>
+          </div>
+        </div>
       </div>
     </Card>
   </div>
