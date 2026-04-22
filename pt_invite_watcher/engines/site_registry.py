@@ -53,6 +53,11 @@ class SiteDefinition:
     registration_path: str = ""        # override engine default (empty = use engine default)
     invite_path: str = ""              # override engine default
     notes: str = ""                    # one-liner visible in the UI tooltip
+    # Extra registrable domains the site is allowed to reference in HTML or redirect to
+    # without being flagged as a hijack. Example: M-Team's homepage renders a banner with
+    # `window.location = "https://support.dmeng.net/..."` pointing at their support site —
+    # that's not a redirect-away, it's an operator-owned peer domain.
+    friendly_peers: tuple[str, ...] = ()
 
     @property
     def primary_domain(self) -> str:
@@ -105,6 +110,11 @@ _SITES: tuple[SiteDefinition, ...] = (
         tags=("中文", "综合"),
         registration_path="signup",
         invite_path="invite",
+        # dmeng.net is M-Team's operator-owned support/help portal; the SPA
+        # homepage references it via `window.location = ...` which the generic
+        # redirect-hijack regex would otherwise flag. Allowing it as a friendly
+        # peer keeps the probe accurate for the real hijack cases.
+        friendly_peers=("dmeng.net",),
         notes="JSON API — 需在站点配置中填入 Authorization 与 API Key",
     ),
 
@@ -759,9 +769,23 @@ def list_all() -> tuple[SiteDefinition, ...]:
     return _SITES
 
 
+def friendly_peers_for(domain: str) -> frozenset[str]:
+    """Look up operator-owned peer domains the probe should allow as friendly.
+
+    Used by the redirect guard to distinguish hijacks from legitimate references
+    to a site's own support / API subdomains. Returns an empty set when the domain
+    isn't in the registry or has no configured peers.
+    """
+    sd = find_by_domain(domain)
+    if sd is None or not sd.friendly_peers:
+        return frozenset()
+    return frozenset(p.lower().strip(".") for p in sd.friendly_peers if p)
+
+
 __all__ = [
     "SiteDefinition",
     "find_by_domain",
     "find_by_id",
+    "friendly_peers_for",
     "list_all",
 ]

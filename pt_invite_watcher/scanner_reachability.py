@@ -15,6 +15,7 @@ from pt_invite_watcher.engines.redirect_guard import (
     off_site_detail,
     same_registrable_domain,
 )
+from pt_invite_watcher.engines.site_registry import friendly_peers_for
 from pt_invite_watcher.models import Evidence, ReachabilityResult
 from pt_invite_watcher.net import DEFAULT_REQUEST_RETRY_ATTEMPTS
 from pt_invite_watcher.utils.parse import format_error_detail as _format_error_detail_util
@@ -55,17 +56,30 @@ async def probe_reachability(
     ua = user_agent or None
     orig_host = urlparse(site_url).hostname or ""
 
-    headers: dict[str, str] = {}
+    # Mimic a real browser more closely: many PT operators (notably M-Team) serve an
+    # anti-bot / SPA-shell landing page when the request looks like a bare probe, which
+    # can then surface as a JS-level "redirect" to the operator's help domain. Adding
+    # the Accept/Accept-Language/DNT headers that every browser sends by default makes
+    # probes blend in without any site-specific logic.
+    headers: dict[str, str] = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Upgrade-Insecure-Requests": "1",
+    }
     if ua:
         headers["User-Agent"] = ua
     if cookie_header:
         headers["Cookie"] = cookie_header
 
+    friendly = friendly_peers_for(orig_host)
+
     gr: GuardedResponse = await guarded_get(
         client,
         site_url,
         expected_host=orig_host,
-        headers=headers or None,
+        friendly_hosts=friendly,
+        headers=headers,
         attempts=DEFAULT_REQUEST_RETRY_ATTEMPTS,
         delay_seconds=max(0, int(retry_delay_seconds or 0)),
     )
@@ -145,8 +159,10 @@ async def probe_reachability(
         # Safety net: even if guarded_get didn't flag anything, cross-check the final URL
         # host against the expected domain and the blacklist (covers exotic cases like
         # httpx silently following a hop we didn't see).
+        from pt_invite_watcher.engines.redirect_guard import registrable_domain as _rd
         final_host = resp.url.host if resp.url else ""
-        if orig_host and final_host:
+        final_is_friendly = bool(final_host and friendly and _rd(final_host) in friendly)
+        if orig_host and final_host and not final_is_friendly:
             if is_blacklisted_host(final_host) or not same_registrable_domain(orig_host, final_host):
                 detail = f"redirected_to:{final_host}"
                 if used > 1:

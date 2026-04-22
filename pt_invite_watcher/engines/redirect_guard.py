@@ -115,14 +115,25 @@ _HTML_JS_REPLACE_RE = re.compile(
 )
 
 
-def detect_html_offsite_redirect(html: str, *, expected_host: str) -> Optional[str]:
+def detect_html_offsite_redirect(
+    html: str,
+    *,
+    expected_host: str,
+    friendly_hosts: Optional[frozenset[str]] = None,
+) -> Optional[str]:
     """Scan HTML (first 16KB) for meta-refresh / JS-level redirects leaving the expected domain.
 
     Returns the offending host on hit, or None otherwise (relative URLs always return None).
+
+    ``friendly_hosts`` is the set of operator-owned peer registrable domains for the
+    *expected* host — e.g. M-Team's homepage references ``support.dmeng.net`` via
+    ``window.location`` which isn't a hijack. Matches against the target's registrable
+    domain (so ``support.dmeng.net`` is covered by ``dmeng.net``).
     """
     if not html:
         return None
     snippet = html[:16_384]
+    friendly = friendly_hosts or frozenset()
     candidates: list[str] = []
     m = _HTML_META_REFRESH_RE.search(snippet)
     if m:
@@ -137,6 +148,8 @@ def detect_html_offsite_redirect(html: str, *, expected_host: str) -> Optional[s
         th = (urlparse(target).hostname or "").lower()
         if not th:
             # Relative URL — same host by definition.
+            continue
+        if friendly and registrable_domain(th) in friendly:
             continue
         if is_blacklisted_host(th):
             return th
@@ -177,6 +190,7 @@ async def guarded_get(
     url: str,
     *,
     expected_host: Optional[str] = None,
+    friendly_hosts: Optional[frozenset[str]] = None,
     headers: Optional[dict[str, str]] = None,
     attempts: int = DEFAULT_REQUEST_RETRY_ATTEMPTS,
     delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
@@ -194,6 +208,7 @@ async def guarded_get(
     """
     target = url
     exp = (expected_host or urlparse(url).hostname or "").lower()
+    friendly = friendly_hosts or frozenset()
     chain: list[dict[str, Any]] = []
     total_retries = 0
     for _hop in range(max_redirects + 1):
@@ -219,6 +234,11 @@ async def guarded_get(
             next_host = (urlparse(next_url).hostname or "").lower()
             if not next_host:
                 return GuardedResponse(None, None, total_retries, chain, "bad_location", None)
+            if friendly and registrable_domain(next_host) in friendly:
+                # Operator-owned peer domain (e.g. mteam → dmeng.net). Treat as in-scope
+                # so the hop is followed rather than flagged as hijack.
+                target = next_url
+                continue
             if is_blacklisted_host(next_host):
                 return GuardedResponse(None, None, total_retries, chain, "blacklisted", next_host)
             if exp and not same_registrable_domain(next_host, exp):
@@ -235,7 +255,7 @@ async def guarded_get(
             except Exception:
                 body = ""
             if body:
-                off = detect_html_offsite_redirect(body, expected_host=exp)
+                off = detect_html_offsite_redirect(body, expected_host=exp, friendly_hosts=friendly)
                 if off:
                     # Preserve the final response so the caller can log a snippet if useful.
                     return GuardedResponse(resp, None, total_retries, chain, "html_redirect", off)

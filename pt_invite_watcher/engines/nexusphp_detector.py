@@ -13,6 +13,7 @@ from pt_invite_watcher.engines.redirect_guard import (
     guarded_get,
     off_site_detail,
 )
+from pt_invite_watcher.engines.site_registry import friendly_peers_for
 from pt_invite_watcher.engines.nexusphp_parse import (
     _append_retry_detail,
     _extract_html_title,
@@ -56,6 +57,7 @@ async def _get_with_retry(
     attempts: int = _HTTP_RETRY_ATTEMPTS,
     delay_seconds: int = DEFAULT_REQUEST_RETRY_DELAY_SECONDS,
     expected_host: Optional[str] = None,
+    friendly_hosts: Optional[frozenset[str]] = None,
 ) -> tuple[Optional[httpx.Response], Optional[Exception], int]:
     """Fetch `url` with retries, routed through the redirect guard.
 
@@ -70,6 +72,7 @@ async def _get_with_retry(
         client,
         url,
         expected_host=expected_host,
+        friendly_hosts=friendly_hosts,
         headers=headers,
         attempts=max(1, int(attempts or 0)),
         delay_seconds=max(0, int(delay_seconds or 0)),
@@ -115,6 +118,7 @@ async def _probe_user_id_from_usercp(
         headers={"User-Agent": ua, "Cookie": cookie_header},
         delay_seconds=retry_delay_seconds,
         expected_host=expected_host,
+        friendly_hosts=friendly_peers_for(expected_host or ""),
     )
     if err or resp is None:
         return None
@@ -155,6 +159,7 @@ class NexusPhpDetector:
         raw_path = (site.registration_path or "").strip()
         paths = [raw_path] if raw_path else ["signup.php"]
         expected_host = urlparse(site.url).hostname or None
+        friendly = friendly_peers_for(expected_host or "")
         for path in paths:
             url = _join(site.url, path)
             resp, err, used = await _get_with_retry(
@@ -163,8 +168,24 @@ class NexusPhpDetector:
                 headers={"User-Agent": ua},
                 delay_seconds=retry_delay_seconds,
                 expected_host=expected_host,
+                friendly_hosts=friendly,
             )
             if err:
+                # When the registration URL redirects to another domain, the
+                # site has effectively disabled registration. Returning an
+                # explicit "closed" status (instead of the generic "unknown"
+                # that a RequestError would get) gives operators a clear signal
+                # and keeps the offending host in the detail for triage.
+                if isinstance(err, RedirectedAwayError):
+                    return AspectResult(
+                        state="closed",
+                        evidence=Evidence(
+                            url=url,
+                            http_status=None,
+                            reason="registration_redirected_offsite",
+                            detail=f"redirected_to:{err.host}" if err.host else str(err),
+                        ),
+                    )
                 last_err = err
                 last_err_url = url
                 last_err_detail = _append_retry_detail(format_error_detail(err, max_len=_MAX_ERROR_DETAIL_LEN), used)
@@ -255,6 +276,7 @@ class NexusPhpDetector:
 
         adapter = get_nexusphp_site_adapter(site)
         expected_host = urlparse(site.url).hostname or None
+        friendly = friendly_peers_for(expected_host or "")
 
         # Many NexusPHP sites expose the invite quota in the top nav on homepage:
         # "邀请[发送]: 12(0)" (M-Team may show Traditional).
@@ -264,8 +286,23 @@ class NexusPhpDetector:
             headers={"User-Agent": ua, "Cookie": cookie_header},
             delay_seconds=retry_delay_seconds,
             expected_host=expected_host,
+            friendly_hosts=friendly,
         )
         if err:
+            # Home URL redirecting off-site is an operational-level outage, but
+            # for the invites aspect it still means "no invites available here"
+            # — surface as closed with a clear reason. Reachability already
+            # logs the probe-level redirect separately.
+            if isinstance(err, RedirectedAwayError):
+                return AspectResult(
+                    state="closed",
+                    evidence=Evidence(
+                        url=site.url,
+                        http_status=None,
+                        reason="invites_redirected_offsite",
+                        detail=f"redirected_to:{err.host}" if err.host else str(err),
+                    ),
+                )
             return AspectResult(
                 state="unknown",
                 evidence=Evidence(
@@ -378,8 +415,23 @@ class NexusPhpDetector:
                 headers={"User-Agent": ua, "Cookie": cookie_header},
                 delay_seconds=retry_delay_seconds,
                 expected_host=expected_host,
+                friendly_hosts=friendly,
             )
             if fetch_err:
+                # The invite URL itself redirecting off-site is the clearest
+                # "invitations are not open here" signal we can get — the site
+                # is actively steering users away. Return closed so operators
+                # see the state immediately rather than burying it in unknown.
+                if isinstance(fetch_err, RedirectedAwayError):
+                    return AspectResult(
+                        state="closed",
+                        evidence=Evidence(
+                            url=u,
+                            http_status=None,
+                            reason="invites_redirected_offsite",
+                            detail=f"redirected_to:{fetch_err.host}" if fetch_err.host else str(fetch_err),
+                        ),
+                    )
                 last_err = fetch_err
                 last_err_url = u
                 last_err_detail = _append_retry_detail(format_error_detail(fetch_err, max_len=_MAX_ERROR_DETAIL_LEN), fetch_used)
