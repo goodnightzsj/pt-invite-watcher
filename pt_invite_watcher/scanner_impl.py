@@ -7,6 +7,7 @@ import asyncio
 import logging
 import os
 import socket
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
@@ -46,6 +47,12 @@ from pt_invite_watcher.utils.parse import normalize_domain as _normalize_domain_
 logger = logging.getLogger("pt_invite_watcher.scanner")
 
 _MAX_ERROR_DETAIL_LEN = 240
+
+# Circuit-breaker tuning. Trips after CIRCUIT_FAIL_THRESHOLD consecutive `down` verdicts and
+# pauses that domain for CIRCUIT_COOLDOWN_SECONDS. Conservative defaults so a short outage
+# (1-2 scan cycles) never trips; a persistent 3-cycle outage does.
+_CIRCUIT_FAIL_THRESHOLD = 3
+_CIRCUIT_COOLDOWN_SECONDS = 900  # 15 minutes
 
 
 class AlreadyScanningError(RuntimeError):
@@ -91,6 +98,10 @@ class Scanner:
         # Optional callback for streaming "scanned N/M" progress to WebSocket clients.
         # Injected by the app layer so the scanner doesn't depend on routes/websocket modules.
         self._progress_broadcast: Optional[Callable[[dict], None]] = None
+        # Per-domain circuit breaker state. After N consecutive reachability=down verdicts a
+        # site is skipped for a cool-down window so we stop hammering an offline/banned host
+        # every cycle. Process-local (cleared on restart); the leader lock keeps state unique.
+        self._circuit: dict[str, dict[str, float]] = {}
         self._ctx_builder = ScanContextBuilder(
             settings,
             store,
@@ -406,6 +417,26 @@ class Scanner:
         *,
         retry_delay_seconds: int,
     ) -> None:
+        dom = _normalize_domain(getattr(site, "domain", "") or "")
+        # Circuit breaker check happens before we grab a semaphore slot, so tripped domains
+        # don't starve healthy ones out of concurrency during a long cooldown.
+        state = self._circuit.get(dom)
+        if state is not None:
+            cooldown_until = float(state.get("cooldown_until", 0.0))
+            if cooldown_until > 0 and time.monotonic() < cooldown_until:
+                remaining = int(cooldown_until - time.monotonic())
+                await self._store.add_event(
+                    category="scan",
+                    level="info",
+                    action="scan_circuit_skip",
+                    message=f"熔断中，跳过本轮扫描（剩余 {remaining}s）",
+                    domain=dom,
+                    detail={
+                        "cooldown_remaining_seconds": remaining,
+                        "consecutive_failures": int(state.get("failures", 0)),
+                    },
+                )
+                return
         async with self._sem:
             await _check_one_site(
                 client=client,
@@ -424,6 +455,42 @@ class Scanner:
             )
 
     async def _persist_and_notify(self, site, result: SiteCheckResult, now: datetime) -> None:
+        # Update the circuit-breaker state based on the reachability verdict. "down" increments
+        # the failure counter and trips after N in a row; "up" clears it; "unknown" is treated
+        # as inconclusive and leaves the counter untouched.
+        dom = _normalize_domain(getattr(site, "domain", "") or "")
+        if dom:
+            reach = getattr(result.reachability, "state", "")
+            state = self._circuit.setdefault(dom, {"failures": 0, "cooldown_until": 0.0})
+            if reach == "down":
+                state["failures"] = float(int(state.get("failures", 0)) + 1)
+                if state["failures"] >= _CIRCUIT_FAIL_THRESHOLD and state.get("cooldown_until", 0) <= time.monotonic():
+                    state["cooldown_until"] = time.monotonic() + _CIRCUIT_COOLDOWN_SECONDS
+                    await self._store.add_event(
+                        category="scan",
+                        level="warning",
+                        action="scan_circuit_tripped",
+                        message=f"连续 {int(state['failures'])} 次不可达，熔断 {_CIRCUIT_COOLDOWN_SECONDS // 60} 分钟",
+                        domain=dom,
+                        detail={
+                            "consecutive_failures": int(state["failures"]),
+                            "cooldown_seconds": _CIRCUIT_COOLDOWN_SECONDS,
+                        },
+                    )
+            elif reach == "up":
+                had_cooldown = state.get("cooldown_until", 0) > 0 or int(state.get("failures", 0)) > 0
+                state["failures"] = 0.0
+                state["cooldown_until"] = 0.0
+                if had_cooldown:
+                    await self._store.add_event(
+                        category="scan",
+                        level="info",
+                        action="scan_circuit_reset",
+                        message="站点恢复可用，熔断已重置",
+                        domain=dom,
+                    )
+            # reach == "unknown" / anything else: leave state unchanged.
+
         await _persist_and_notify_impl(
             store=self._store,
             notifier=self._notifier,
