@@ -11,7 +11,7 @@ import EmptyState from "../components/EmptyState.vue";
 import FormInput from "../components/FormInput.vue";
 import FormSelect from "../components/FormSelect.vue";
 import SiteCard from "../components/SiteCard.vue";
-import { api, type SiteConfigItem, type SiteTemplate } from "../api";
+import { api, type RegistrySite, type SiteConfigItem, type SiteTemplate } from "../api";
 import { showToast } from "../toast";
 
 type EditMode = "manual" | "override";
@@ -92,6 +92,48 @@ function parseDomainFromUrl(url: string) {
   }
 }
 
+// Registry preset: populated lazily on first modal open. Letting users pick
+// "北邮人" or "Blutopia" from a list beats asking them to remember URLs and
+// engine schemas — the form fills itself in based on our curated metadata.
+const registry = ref<RegistrySite[]>([]);
+const registryLoaded = ref(false);
+const presetId = ref<string>("");
+
+async function ensureRegistryLoaded() {
+  if (registryLoaded.value) return;
+  try {
+    const resp = await api.sitesRegistry();
+    registry.value = resp.items || [];
+    registryLoaded.value = true;
+  } catch {
+    // Non-fatal — users can still fill the form manually.
+    registryLoaded.value = true;
+  }
+}
+
+function applyPreset(id: string) {
+  presetId.value = id;
+  if (!id) return;
+  const preset = registry.value.find((r) => r.id === id);
+  if (!preset) return;
+  form.mode = "manual";
+  form.source = "manual";
+  form.url = preset.primary_url;
+  form.domain = preset.primary_domain;
+  form.name = preset.name;
+  form.template = preset.schema;
+  // Registry overrides for non-default paths — leave empty otherwise so the
+  // backend picks the engine's built-in defaults.
+  if (preset.schema === "custom" || preset.registration_path || preset.invite_path) {
+    form.registration_url = preset.registration_path
+      ? new URL(preset.registration_path, preset.primary_url).toString()
+      : "";
+    form.invite_url = preset.invite_path
+      ? new URL(preset.invite_path, preset.primary_url).toString()
+      : "";
+  }
+}
+
 
 
 const computedDomain = computed(() => (form.domain || parseDomainFromUrl(form.url)).trim().toLowerCase());
@@ -146,8 +188,12 @@ async function reload() {
 
 function openAdd() {
   resetForm();
+  presetId.value = "";
   modalTitle.value = "新增站点";
   modalOpen.value = true;
+  // Kick off the preset fetch so the dropdown is populated by the time the
+  // user looks up; they can still type URL manually if the fetch is slow.
+  ensureRegistryLoaded();
 }
 
 function openEdit(item: SiteConfigItem) {
@@ -416,6 +462,34 @@ onMounted(() => load());
 
     <Modal :open="modalOpen" :title="modalTitle" @close="modalOpen = false">
       <div class="space-y-4">
+        <!-- Known-site picker (only meaningful when adding a new site; hidden in edit mode). -->
+        <div
+          v-if="modalTitle === '新增站点'"
+          class="rounded-xl border border-brand-200/60 bg-brand-50/50 p-4 dark:border-brand-900/40 dark:bg-brand-950/20"
+        >
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <div class="text-sm font-semibold text-brand-900 dark:text-brand-100">从已知站点快捷选择</div>
+            <span v-if="registry.length" class="text-xs text-brand-700 dark:text-brand-300">
+              共 {{ registry.length }} 个
+            </span>
+          </div>
+          <FormSelect
+            :model-value="presetId"
+            :options="[
+              { label: '— 手动填写 —', value: '' },
+              ...registry.map((r) => ({
+                label: `${r.name}${r.tags.length ? '  ·  ' + r.tags.join(' / ') : ''}`,
+                value: r.id,
+                help: `${r.primary_domain}  ·  schema: ${r.schema}${r.notes ? '  ·  ' + r.notes : ''}`,
+              })),
+            ]"
+            @update:modelValue="(v) => applyPreset(String(v || ''))"
+          />
+          <div class="mt-1.5 text-xs text-brand-700/80 dark:text-brand-300/80">
+            选中后会自动填写 URL / 站点名 / 模板，可再手动微调。
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <FormInput label="Mode（模式）" :model-value="form.mode" disabled />
           <div>

@@ -88,6 +88,25 @@ export type SitesListResponse = {
   moviepilot_cache_expired?: boolean | null;
 };
 
+export type RegistrySite = {
+  id: string;
+  name: string;
+  aliases: string[];
+  domains: string[];
+  primary_domain: string;
+  primary_url: string;
+  schema: SiteTemplate;
+  tags: string[];
+  registration_path: string;
+  invite_path: string;
+  notes: string;
+};
+
+export type RegistryResponse = {
+  items: RegistrySite[];
+  total: number;
+};
+
 export type ConfigResponse = {
   moviepilot: {
     base_url: string;
@@ -181,6 +200,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   sitesDelete: (domain: string) => requestJson<{ ok: boolean }>(`/api/sites/${encodeURIComponent(domain)}`, { method: "DELETE" }),
+  sitesRegistry: () => requestJson<RegistryResponse>("/api/sites/registry"),
   configGet: () => requestJson<ConfigResponse>("/api/config"),
   configPut: (payload: unknown) => requestJson<{ ok: boolean }>("/api/config", { method: "PUT", body: JSON.stringify(payload) }),
   configReset: () => requestJson<{ ok: boolean }>("/api/config/reset", { method: "POST" }),

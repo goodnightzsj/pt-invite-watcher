@@ -8,6 +8,7 @@ from typing import Any, Dict, Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from pt_invite_watcher.app_context import AppContext
+from pt_invite_watcher.engines.site_registry import find_by_domain as _registry_find_by_domain, list_all as _registry_list_all
 from pt_invite_watcher.kv_keys import SITES_KEY
 from pt_invite_watcher.routes.common import (
     broadcast_dashboard_update,
@@ -48,6 +49,34 @@ async def _sync_site_list_summary_after_sites_write(
         await sync_site_list_summary(ctx.store, ctx.notifier, eff.sites, now, notify=True, reason=reason)
     except Exception:
         logger.exception("failed to sync site list summary (%s)", reason)
+
+
+@router.get("/api/sites/registry", dependencies=[Depends(require_auth)])
+async def api_sites_registry() -> Dict[str, Any]:
+    """Return the curated list of known PT sites.
+
+    The WebUI uses this to power the "pick a known site" dropdown when adding a
+    new manual site — users don't have to remember URLs, canonical names, or
+    which engine schema each site runs. Client-side filters keep this fast even
+    as the registry grows.
+    """
+    items = [
+        {
+            "id": sd.id,
+            "name": sd.name,
+            "aliases": list(sd.aliases),
+            "domains": list(sd.domains),
+            "primary_domain": sd.primary_domain,
+            "primary_url": sd.primary_url,
+            "schema": sd.schema,
+            "tags": list(sd.tags),
+            "registration_path": sd.registration_path,
+            "invite_path": sd.invite_path,
+            "notes": sd.notes,
+        }
+        for sd in _registry_list_all()
+    ]
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/api/sites", dependencies=[Depends(require_auth)])
