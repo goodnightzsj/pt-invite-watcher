@@ -182,7 +182,16 @@ class Scanner:
 
     def _new_http_client(self, *, timeout_seconds: int, trust_env: bool) -> httpx.AsyncClient:
         timeout = httpx.Timeout(timeout_seconds)
-        return httpx.AsyncClient(timeout=timeout, follow_redirects=True, trust_env=trust_env)
+        # http2=True lets httpx multiplex concurrent requests to the same site over a single
+        # TCP+TLS connection. Per-scan the scanner fires registration + invites in parallel
+        # via asyncio.gather, so with h2 they share one connection instead of needing two
+        # handshakes. httpx auto-falls-back to HTTP/1.1 if a site doesn't negotiate h2.
+        return httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            trust_env=trust_env,
+            http2=True,
+        )
 
     async def _clear_scan_hint(self) -> None:
         try:

@@ -1,6 +1,10 @@
 fastapi>=0.110
 uvicorn[standard]>=0.27
 httpx>=0.27
+# h2 enables HTTP/2 for httpx — lets multiple requests to the same PT site share one TCP/TLS
+# connection via multiplexing. httpx falls back to HTTP/1.1 automatically when a site doesn't
+# negotiate h2, so this is safe to enable unconditionally.
+h2>=4.1
 aiosqlite>=0.20
 beautifulsoup4>=4.12
 pyyaml>=6.0
