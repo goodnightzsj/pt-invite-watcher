@@ -440,10 +440,6 @@ async function clearIconCache() {
     showToast(String(e?.message || e || "清除失败"), "error", 4500);
   }
 }
-
-function reloadPage() {
-  window.location.reload();
-}
 </script>
 
 <template>
@@ -760,7 +756,6 @@ function reloadPage() {
             </div>
             <div class="flex shrink-0 gap-2">
               <Button size="sm" :disabled="iconCacheSize === 0" @click="clearIconCache">清除缓存</Button>
-              <Button size="sm" variant="primary" @click="reloadPage">刷新页面</Button>
             </div>
           </div>
         </div>
