@@ -1,3 +1,28 @@
+const _localFmt = new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+});
+
+/**
+ * Absolute local-timezone timestamp with second precision.
+ *
+ * Converts ISO 8601 (the backend emits UTC like 2026-04-22T11:24:28.877440+00:00)
+ * into a locale-aware string such as "2026/04/22 19:24:28" using the user's own
+ * timezone. Used wherever we previously displayed raw ISO — raw UTC confuses
+ * users who aren't on UTC and the sub-second component just adds visual noise.
+ */
+export function formatLocalTime(ts: string | null | undefined): string {
+    if (!ts) return "-";
+    const date = new Date(ts);
+    if (Number.isNaN(date.getTime())) return String(ts);
+    return _localFmt.format(date).replace(/\//g, "-");
+}
+
 export function formatRelativeTime(ts: string | null | undefined): string {
     if (!ts) return "-";
     const date = new Date(ts);
@@ -28,6 +53,6 @@ export function formatRelativeTime(ts: string | null | undefined): string {
         return `${days}天前`;
     }
 
-    // Fallback to simple date string YYYY-MM-DD
-    return date.toISOString().split("T")[0];
+    // Fallback to local-timezone date so users on non-UTC locales see sensible output.
+    return formatLocalTime(ts);
 }

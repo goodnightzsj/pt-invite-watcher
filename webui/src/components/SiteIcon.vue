@@ -5,15 +5,21 @@ import { Globe } from "lucide-vue-next";
 const props = defineProps<{
   url?: string;
   name?: string;
+  reachability?: "up" | "down" | "unknown";
   class?: string;
 }>();
 
-// Icon cache: { [domain]: { src: string, fetchedAt: number } | null }
-// null means all sources failed (will retry on next session)
+// Icon cache: { [domain]: { src, fetchedAt, w, h } | null }
+// - value === null marks "all sources failed — retry next session"
+// - we persist width/height so we can re-validate and skip sources that returned
+//   a 0-sized transparent/redirect pixel previously.
 const CACHE_KEY = "ptiw_icon_cache";
 const CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MIN_ICON_PX = 8;
 
-function getCache(): Record<string, { src: string; fetchedAt: number } | null> {
+type CacheEntry = { src: string; fetchedAt: number; w?: number; h?: number };
+
+function getCache(): Record<string, CacheEntry | null> {
   try {
     return JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
   } catch {
@@ -21,13 +27,9 @@ function getCache(): Record<string, { src: string; fetchedAt: number } | null> {
   }
 }
 
-function setCache(domain: string, src: string | null) {
+function setCache(domain: string, entry: CacheEntry | null) {
   const cache = getCache();
-  if (src) {
-    cache[domain] = { src, fetchedAt: Date.now() };
-  } else {
-    cache[domain] = null; // Mark as failed
-  }
+  cache[domain] = entry;
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
   } catch {
@@ -35,16 +37,11 @@ function setCache(domain: string, src: string | null) {
   }
 }
 
-function getCachedIcon(domain: string): string | null | undefined {
+function getCachedIcon(domain: string): CacheEntry | null | undefined {
   const cache = getCache();
   const entry = cache[domain];
-  if (entry === null) {
-    // Failed before, can retry
-    return undefined;
-  }
-  if (entry && Date.now() - entry.fetchedAt < CACHE_MAX_AGE) {
-    return entry.src;
-  }
+  if (entry === null) return undefined; // previous fail — allow retry
+  if (entry && Date.now() - entry.fetchedAt < CACHE_MAX_AGE) return entry;
   return undefined;
 }
 
@@ -66,13 +63,26 @@ const origin = computed(() => {
   }
 });
 
+/**
+ * Source ordering is reachability-aware:
+ *
+ * - When the site is known unreachable (probe flagged redirect/hijack), the
+ *   origin's `/favicon.ico` is highly suspect — a parked/redirected page may
+ *   serve the hijacker's icon, which we'd then cache for 30 days as the "real"
+ *   icon. Skip origin entirely and rely on external icon services that
+ *   remember the site's genuine favicon from its healthy days.
+ * - For healthy or unknown sites, try origin first (freshest, correct colors).
+ */
 const sources = computed(() => {
-  if (!domain.value) return [];
-  return [
-    `${origin.value}/favicon.ico`,
+  if (!domain.value) return [] as string[];
+  const external = [
     `https://icons.duckduckgo.com/ip3/${domain.value}.ico`,
-    `https://www.google.com/s2/favicons?domain=${domain.value}&sz=64`
+    `https://www.google.com/s2/favicons?domain=${domain.value}&sz=64`,
   ];
+  if (props.reachability === "down") {
+    return external;
+  }
+  return [`${origin.value}/favicon.ico`, ...external];
 });
 
 const displaySrc = ref<string | null>(null);
@@ -84,45 +94,44 @@ function loadIcons() {
     return;
   }
 
-  // Check cache first
   const cached = getCachedIcon(d);
-  if (cached) {
-    displaySrc.value = cached;
+  if (cached && cached.src) {
+    displaySrc.value = cached.src;
     return;
   }
 
-  // If cached === null (failed before), don't retry in same session
-  // If cached === undefined, try fetching
-
   const list = sources.value;
   let resolved = false;
+  let pendingFailures = 0;
 
-  list.forEach((src, index) => {
+  list.forEach((src) => {
     const img = new Image();
     img.referrerPolicy = "no-referrer";
     img.onload = () => {
-      if (!resolved) {
-        resolved = true;
-        displaySrc.value = src;
-        setCache(d, src);
+      if (resolved) return;
+      // Validate a real image came back — some hijacks / 404-as-image handlers
+      // return a 1x1 transparent pixel which looks "loaded" but is useless.
+      const w = img.naturalWidth || 0;
+      const h = img.naturalHeight || 0;
+      if (w < MIN_ICON_PX || h < MIN_ICON_PX) {
+        pendingFailures += 1;
+        if (pendingFailures >= list.length) setCache(d, null);
+        return;
       }
+      resolved = true;
+      displaySrc.value = src;
+      setCache(d, { src, fetchedAt: Date.now(), w, h });
     };
     img.onerror = () => {
-      // If all failed, mark as null
-      if (index === list.length - 1 && !resolved) {
-        // Last source failed
-        setTimeout(() => {
-          if (!resolved) {
-            setCache(d, null);
-          }
-        }, 500);
-      }
+      if (resolved) return;
+      pendingFailures += 1;
+      if (pendingFailures >= list.length) setCache(d, null);
     };
     img.src = src;
   });
 }
 
-watch(() => props.url, () => {
+watch([() => props.url, () => props.reachability], () => {
   displaySrc.value = null;
   loadIcons();
 });

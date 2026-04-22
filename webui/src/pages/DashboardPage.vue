@@ -13,9 +13,10 @@ import SiteIcon from "../components/SiteIcon.vue";
 import EmptyState from "../components/EmptyState.vue";
 import TableSkeleton from "../components/TableSkeleton.vue";
 import Toggle from "../components/Toggle.vue";
+import Tooltip from "../components/Tooltip.vue";
 import { api, type SiteRow, type ScanStatus } from "../api";
 import { showToast } from "../toast";
-import { formatRelativeTime } from "../utils/date";
+import { formatLocalTime, formatRelativeTime } from "../utils/date";
 
 const loading = ref(false);
 const dashboardLoading = ref(false);
@@ -433,7 +434,7 @@ const stats = computed(() => {
         <div>
           <div class="text-base font-semibold">扫描状态</div>
           <div class="mt-1 text-sm text-slate-500 dark:text-slate-300">
-            最后运行：{{ scanStatus.last_run_at || "-" }} · 站点数：{{ scanStatus.site_count || 0 }}
+            最后运行：{{ formatLocalTime(scanStatus.last_run_at) }} · 站点数：{{ scanStatus.site_count || 0 }}
           </div>
         </div>
         <Badge :label="scanStatus.ok ? 'ok' : 'fail'" :tone="scanStatus.ok ? 'green' : 'red'" />
@@ -515,7 +516,7 @@ const stats = computed(() => {
                   <td class="px-6 py-4">
                     <div class="flex items-center gap-3">
                       <div class="h-10 w-10">
-                        <SiteIcon :url="row.url" :name="row.name || '-'" />
+                        <SiteIcon :url="row.url" :name="row.name || '-'" :reachability="row.reachability_state" />
                       </div>
                       <div class="flex flex-col">
                         <span
@@ -537,11 +538,12 @@ const stats = computed(() => {
                     <div class="flex items-center gap-2">
                       <Badge class="shrink-0" :label="reachabilityBadge(row).label"
                         :tone="reachabilityBadge(row).tone as any" />
-                      <span v-if="row.reachability_note" class="status-note line-clamp-1 max-w-[120px]"
-                        :class="reachabilityBadge(row).tone === 'red' ? 'danger' : reachabilityBadge(row).tone === 'green' ? 'success' : 'warning'"
-                        :title="row.reachability_note">
-                        {{ row.reachability_note }}
-                      </span>
+                      <Tooltip v-if="row.reachability_note" :text="row.reachability_note">
+                        <span class="status-note line-clamp-1 max-w-[120px] cursor-help"
+                          :class="reachabilityBadge(row).tone === 'red' ? 'danger' : reachabilityBadge(row).tone === 'green' ? 'success' : 'warning'">
+                          {{ row.reachability_note }}
+                        </span>
+                      </Tooltip>
                     </div>
                   </td>
 
@@ -553,11 +555,12 @@ const stats = computed(() => {
                       </a>
                       <Badge v-else class="shrink-0" :label="row.registration_state"
                         :tone="toneForState(row.registration_state) as any" />
-                      <span v-if="row.registration_note" class="status-note line-clamp-1 max-w-[120px]"
-                        :class="toneForState(row.registration_state) === 'green' ? 'success' : toneForState(row.registration_state) === 'red' ? 'danger' : 'warning'"
-                        :title="row.registration_note">
-                        {{ row.registration_note }}
-                      </span>
+                      <Tooltip v-if="row.registration_note" :text="row.registration_note">
+                        <span class="status-note line-clamp-1 max-w-[120px] cursor-help"
+                          :class="toneForState(row.registration_state) === 'green' ? 'success' : toneForState(row.registration_state) === 'red' ? 'danger' : 'warning'">
+                          {{ row.registration_note }}
+                        </span>
+                      </Tooltip>
                     </div>
                   </td>
 

@@ -47,7 +47,7 @@ const inviteState = computed(() => {
         <!-- Left: Icon & Name -->
         <div class="flex items-center gap-3">
           <div class="h-10 w-10">
-            <SiteIcon :url="site.url" :name="site.name || site.domain" />
+            <SiteIcon :url="site.url" :name="site.name || site.domain" :reachability="site.reachability_state" />
           </div>
           <div>
             <div class="font-semibold text-slate-900 dark:text-slate-100">{{ site.name || site.domain }}</div>

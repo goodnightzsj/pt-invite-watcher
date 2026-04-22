@@ -3,7 +3,7 @@ import { computed } from "vue";
 import type { SiteRow } from "../api";
 import Modal from "./Modal.vue";
 import Badge from "./Badge.vue";
-import { formatRelativeTime } from "../utils/date";
+import { formatLocalTime, formatRelativeTime } from "../utils/date";
 
 const props = defineProps<{
   open: boolean;
@@ -18,11 +18,6 @@ const siteName = computed(() => {
   if (!props.site) return "";
   return props.site.name || props.site.domain;
 });
-
-function formatRawTime(ts: string | null | undefined): string {
-  if (!ts) return "-";
-  return ts.replace('T', ' ').split('.')[0];
-}
 </script>
 
 <template>
@@ -56,12 +51,12 @@ function formatRawTime(ts: string | null | undefined): string {
         <div>
           <div class="text-xs text-slate-500 dark:text-slate-300">上次检查</div>
           <div class="font-mono text-sm">{{ formatRelativeTime(site.last_checked_at) }}</div>
-          <div class="text-[10px] text-slate-400">{{ formatRawTime(site.last_checked_at) }}</div>
+          <div class="text-[10px] text-slate-400">{{ formatLocalTime(site.last_checked_at) }}</div>
         </div>
         <div>
           <div class="text-xs text-slate-500 dark:text-slate-300">状态变更</div>
           <div class="font-mono text-sm">{{ formatRelativeTime(site.last_changed_at) }}</div>
-          <div class="text-[10px] text-slate-400">{{ formatRawTime(site.last_changed_at) }}</div>
+          <div class="text-[10px] text-slate-400">{{ formatLocalTime(site.last_changed_at) }}</div>
         </div>
       </div>
 
