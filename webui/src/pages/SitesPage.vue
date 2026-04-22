@@ -439,9 +439,13 @@ onMounted(() => load());
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <FormInput label="Name（站点名）" v-model="form.name" placeholder="可选" />
           <FormSelect v-model="form.template" label="Template（模板）" :options="[
-            { label: 'nexusphp', value: 'nexusphp', help: '默认 signup.php / invite.php?id=<uid>' },
+            { label: 'nexusphp', value: 'nexusphp', help: '国内主流：signup.php / invite.php?id=<uid>（完整支持）' },
+            { label: 'm-team', value: 'mteam', help: '馒头 — JSON API（完整支持，可配置 Authorization / API Key）' },
             { label: 'custom', value: 'custom', help: '自定义注册/邀请页（从 URL 解析 path）' },
-            { label: 'm-team', value: 'mteam', help: '馒头（API 探测，可配置 Authorization / API Key）' },
+            { label: 'unit3d', value: 'unit3d', help: 'Unit3D（BLU / BHD 等 Laravel 框架）— 仅识别 + 可访问探测' },
+            { label: 'gazelle', value: 'gazelle', help: 'Gazelle（RED / OPS 等音乐向）— 仅识别 + 可访问探测' },
+            { label: 'discuz', value: 'discuz', help: 'Discuz 论坛型 PT — 仅识别 + 可访问探测' },
+            { label: 'tnode', value: 'tnode', help: 'TNode 类魔改站 — 仅识别 + 可访问探测' },
           ]" />
         </div>
 

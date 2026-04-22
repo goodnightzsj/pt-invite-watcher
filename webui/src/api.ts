@@ -54,7 +54,14 @@ export type LogItem = {
 
 export type LogsResponse = { items: LogItem[] };
 
-export type SiteTemplate = "nexusphp" | "custom" | "mteam";
+export type SiteTemplate =
+  | "nexusphp"
+  | "custom"
+  | "mteam"
+  | "unit3d"
+  | "gazelle"
+  | "discuz"
+  | "tnode";
 
 export type SiteConfigItem = {
   domain: string;
