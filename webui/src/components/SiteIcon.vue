@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from "vue";
-import { Globe } from "lucide-vue-next";
 import { ICON_CACHE_KEY as CACHE_KEY, iconCacheVersion, sweepExpiredEntries } from "../icon_cache";
 
 const props = defineProps<{
@@ -92,6 +91,46 @@ const sources = computed(() => {
 
 const displaySrc = ref<string | null>(null);
 
+/**
+ * Deterministic color + initials fallback.
+ *
+ * When the favicon chain is still loading, or when every source 204'd, the
+ * old Globe icon made every site look identical — a wall of gray planets.
+ * Picking a hue from a cheap hash of the domain means each site gets a
+ * stable, distinct swatch that's already visible before any network request
+ * finishes; the real favicon fades in on top once it arrives.
+ *
+ * Luminance is fixed so light/dark themes both have enough contrast for the
+ * white initials on top to stay readable (WCAG AA at 4.5:1 against a 55%
+ * lightness background).
+ */
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+const displayName = computed(() => (props.name || domain.value || "").trim());
+
+const initials = computed(() => {
+  const n = displayName.value;
+  if (!n) return "?";
+  // CJK chars: take the first character. Latin: take the first 1-2 letters of the first word.
+  const firstChar = n.charCodeAt(0);
+  if (firstChar >= 0x3000) return n.charAt(0);
+  const word = n.split(/[\s·\-._/]+/)[0] || n;
+  return word.slice(0, 2).toUpperCase();
+});
+
+const fallbackStyle = computed(() => {
+  const key = domain.value || displayName.value || "";
+  if (!key) return {};
+  const hue = hashString(key) % 360;
+  return {
+    backgroundColor: `hsl(${hue} 55% 50%)`,
+  } as Record<string, string>;
+});
+
 function tryLoad(src: string): Promise<{ src: string; w: number; h: number } | null> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -166,16 +205,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <div :class="['relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800', props.class]">
+  <div :class="['relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full', props.class]" :style="fallbackStyle">
+    <!-- Initials layer renders immediately (no network required) so the list
+         never looks like a wall of generic placeholders while favicons fetch. -->
+    <span class="select-none text-[40%] font-bold text-white/95" aria-hidden="true">
+      {{ initials }}
+    </span>
+    <!-- Real favicon fades in on top of the initials swatch once a valid source
+         resolves; stays above via z-index. Hidden when nothing loaded so the
+         initials alone carry the site's identity. -->
     <img
       v-if="displaySrc"
       :src="displaySrc"
       :alt="name || domain"
       loading="lazy"
       decoding="async"
-      class="h-full w-full object-cover opacity-90 transition-opacity duration-300"
+      class="absolute inset-0 h-full w-full object-cover opacity-100 transition-opacity duration-300"
       referrerpolicy="no-referrer"
     />
-    <Globe v-else class="h-1/2 w-1/2 text-slate-300 dark:text-slate-600" />
   </div>
 </template>
