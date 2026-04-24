@@ -43,6 +43,26 @@ const items = ref<SiteConfigItem[]>([]);
 const moviepilotOk = ref(false);
 const moviepilotError = ref("");
 
+// Search + source filter. Source filter is a quick way to inspect just the
+// manually-added overrides (which is where users actually spend their
+// configuration time) vs the full MoviePilot import.
+const searchQuery = ref("");
+type SourceFilter = "all" | "moviepilot" | "manual";
+const sourceFilter = ref<SourceFilter>("all");
+
+const filteredItems = computed(() => {
+  const raw = items.value;
+  const q = searchQuery.value.trim().toLowerCase();
+  const src = sourceFilter.value;
+  if (!q && src === "all") return raw;
+  return raw.filter((site) => {
+    if (src !== "all" && site.source !== src) return false;
+    if (!q) return true;
+    const hay = `${site.name || ""} ${site.domain} ${site.url}`.toLowerCase();
+    return hay.includes(q);
+  });
+});
+
 const modalOpen = ref(false);
 const modalTitle = ref("");
 const form = reactive<FormModel>({
@@ -329,9 +349,45 @@ onMounted(() => load());
     </EmptyState>
 
     <template v-else>
+      <!-- Search + source filter. Kept compact so it sits above the list without
+           eating vertical space; the source chips double as a count summary. -->
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div class="relative w-full sm:max-w-md">
+          <input
+            v-model="searchQuery"
+            type="search"
+            placeholder="搜索站点名称 / 域名 / URL"
+            class="ui-input pl-9"
+            aria-label="站点搜索"
+          />
+          <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="9" cy="9" r="6" />
+            <path d="M14 14l4 4" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div class="flex items-center gap-1.5 text-xs">
+          <button
+            v-for="opt in [
+              { v: 'all', label: `全部 (${items.length})` },
+              { v: 'moviepilot', label: `MoviePilot (${items.filter(i => i.source === 'moviepilot').length})` },
+              { v: 'manual', label: `手动 (${items.filter(i => i.source === 'manual').length})` },
+            ] as const"
+            :key="opt.v"
+            type="button"
+            class="rounded-full border px-3 py-1 transition-colors"
+            :class="sourceFilter === opt.v
+              ? 'border-brand-400 bg-brand-50 text-brand-700 dark:border-brand-400 dark:bg-brand-500/10 dark:text-brand-200'
+              : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100'"
+            @click="sourceFilter = opt.v"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+      </div>
+
       <!-- Mobile Card View -->
       <div class="space-y-4 sm:hidden">
-        <Card v-for="(site, i) in items" :key="site.domain" padding="sm" class="relative overflow-hidden">
+        <Card v-for="(site, i) in filteredItems" :key="site.domain" padding="sm" class="relative overflow-hidden">
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-3">
               <div class="h-10 w-10">
@@ -367,7 +423,12 @@ onMounted(() => load());
         <div class="overflow-hidden rounded-2xl">
           <div
             class="border-b border-slate-100 px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
-            共 {{ items.length }} 个站点（MoviePilot + 手动/覆盖）
+            <template v-if="filteredItems.length === items.length">
+              共 {{ items.length }} 个站点（MoviePilot + 手动/覆盖）
+            </template>
+            <template v-else>
+              匹配 {{ filteredItems.length }} / {{ items.length }} 个站点
+            </template>
           </div>
 
           <div class="overflow-x-auto overflow-y-auto h-[calc(100vh-200px)] relative">
@@ -387,7 +448,7 @@ onMounted(() => load());
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
                 <TransitionGroup name="list" appear>
-                  <tr v-for="(item, index) in items" :key="item.domain" :style="{ '--i': index }"
+                  <tr v-for="(item, index) in filteredItems" :key="item.domain" :style="{ '--i': index }"
                     class="table-row-hover group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
                     <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
                       <div class="flex items-center gap-3">
