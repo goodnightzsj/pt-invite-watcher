@@ -110,6 +110,11 @@ const canResetConnection = computed(() => {
     && runtimeConfig.apiBase !== "";
 });
 
+const isCapacitorHost = computed(() => {
+  const host = detectHost();
+  return host === "capacitor-ios" || host === "capacitor-android";
+});
+
 async function resetConnection() {
   if (!(await confirm("确认重新连接服务器吗？本地保存的 URL / 凭证会被清除，下次启动会重新进入 Onboarding。"))) return;
   resetRuntimeConfig();
@@ -794,7 +799,12 @@ async function clearIconCache() {
         </div>
         <div class="mt-1 text-xs text-slate-500 dark:text-slate-300">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
 
-        <div class="mt-4 flex items-start gap-3">
+        <!-- Browser Notification API is a no-op inside the Capacitor WebView
+             (mobile native notifications go through Telegram / 企业微信 +
+             `@capacitor/local-notifications`, not `window.Notification`).
+             Hide this toggle there so users don't flip a switch that
+             silently does nothing. -->
+        <div v-if="!isCapacitorHost" class="mt-4 flex items-start gap-3">
           <Toggle
             :modelValue="browserNotificationsEnabled"
             @update:modelValue="toggleBrowserNotifications"
