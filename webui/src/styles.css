@@ -74,6 +74,52 @@
   --color-danger-950: 76 5 25;
 }
 
+/* ============================================================================
+   Cross-platform chrome helpers
+   ---------------------------------------------------------------------------
+   The same Vue bundle ships in 4 contexts (browser / Tauri desktop / Capacitor
+   iOS / Capacitor Android). Mobile WebViews need to paint into the notch +
+   home-indicator area while the layout itself inset-pads to avoid overlap.
+   These helpers replace the `pb-safe` class that MobileNav referenced but
+   was never actually defined before — also used by the header for iOS
+   status-bar clearance once running under Capacitor.
+   ============================================================================ */
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+.pl-safe {
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+}
+.pr-safe {
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+.mt-safe {
+  margin-top: env(safe-area-inset-top);
+}
+
+/* Tap-highlight + user-select polish for mobile:
+   - Remove Safari / Chrome-mobile's blue tap flash on interactive elements.
+   - Prevent accidental text selection on navigation chrome (feels native).
+   - `overscroll-behavior: contain` keeps the pull-to-refresh / rubber-band from
+     leaking out of the outermost scroller into the WebView shell. */
+html {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+button, a {
+  -webkit-touch-callout: none;
+}
+nav button, nav a, header a, header button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .glass {
   background: var(--glass-bg);
   backdrop-filter: blur(12px);

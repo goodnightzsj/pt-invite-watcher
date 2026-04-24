@@ -47,7 +47,12 @@ onMounted(async () => {
   <div class="min-h-screen relative [overflow-x:clip]">
     <div class="ui-aurora" aria-hidden="true"></div>
 
-    <header class="sticky top-0 z-50 w-full glass border-x-0 border-t-0 rounded-none">
+    <!-- `pt-safe` gives us the iOS status-bar inset when running in the Capacitor
+         shell (normally 44-54px). Browser + Tauri see `env(safe-area-inset-top)`
+         as 0 and the fallback 0.5rem keeps the header from hugging the window
+         chrome on desktop. `pl-safe` / `pr-safe` handle landscape iPhone where
+         the notch eats screen edges. -->
+    <header class="sticky top-0 z-50 w-full glass border-x-0 border-t-0 rounded-none pt-safe pl-safe pr-safe">
       <div class="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
         <!-- Logo — the brand chip uses the theme accent with a soft glow so the app identity is
              present without repeating a heavy gradient on every surface. -->
@@ -93,7 +98,9 @@ onMounted(async () => {
       </div>
     </header>
 
-    <main class="container mx-auto max-w-7xl flex-1 px-4 py-8 pb-24 md:pb-8">
+    <!-- `pb-[calc(6rem+env(safe-area-inset-bottom))]` keeps mobile content above
+         the floating Dock even on devices with a home-indicator bar. -->
+    <main class="container mx-auto max-w-7xl flex-1 px-4 py-8 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8">
       <RouterView v-slot="{ Component }">
         <Transition name="page" mode="out-in">
           <component :is="Component" />
@@ -105,8 +112,9 @@ onMounted(async () => {
     <!-- Cloud Bottom Nav (Mobile) -->
     <MobileNav :items="nav" />
 
-    <!-- Toast Queue -->
-    <div class="fixed bottom-24 right-5 z-50 flex flex-col-reverse gap-2 sm:bottom-5">
+    <!-- Toast Queue — inset by safe-area so home-indicator on iPhone doesn't
+         swallow the first toast. Desktop + browser fall back to the 24/5 rem. -->
+    <div class="fixed right-5 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-50 flex flex-col-reverse gap-2 sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom))]">
       <transition-group name="list">
         <Toast v-for="t in toasts" :key="t.id" :kind="t.kind" @close="removeToast(t.id)">
           {{ t.message }}<span v-if="t.count > 1" class="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-black/10 px-1.5 text-[11px] font-semibold tabular-nums dark:bg-white/15">×{{ t.count }}</span>
