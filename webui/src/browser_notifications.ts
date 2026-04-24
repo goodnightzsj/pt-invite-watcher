@@ -91,7 +91,6 @@ export function notifyBrowser(
             body,
             icon: options.icon,
             tag: `ptiw-${key}`,           // same tag → subsequent notifications replace
-            renotify: false,               // but don't re-alert if OS already showed it
         });
         if (options.url) {
             n.onclick = () => {
