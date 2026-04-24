@@ -591,14 +591,16 @@ const stats = computed(() => {
                       <button
                         class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-brand-500/10 dark:hover:text-brand-300"
                         :disabled="scanRunning || loading || scanningDomains.has(row.domain) || row.scanning"
-                        @click="runRowScan(row)" title="扫描此站">
+                        @click="runRowScan(row)" title="扫描此站"
+                        :aria-label="`扫描 ${row.name || row.domain}`">
                         <Loader2 v-if="scanningDomains.has(row.domain) || row.scanning"
                           class="h-4 w-4 animate-spin opacity-50" />
                         <RefreshCw v-else class="h-4 w-4" />
                       </button>
                       <button v-if="row.errors && row.errors.length"
                         class="rounded-lg p-2 text-danger-500 transition-colors hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-900/20"
-                        @click="openErrors(row)" :title="`查看错误 (${row.errors.length})`">
+                        @click="openErrors(row)" :title="`查看错误 (${row.errors.length})`"
+                        :aria-label="`查看 ${row.name || row.domain} 的 ${row.errors.length} 条错误`">
                         <AlertCircle class="h-4 w-4" />
                       </button>
                     </div>
