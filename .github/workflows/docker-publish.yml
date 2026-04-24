@@ -95,7 +95,7 @@ jobs:
           # our builds after every commit. mirror.gcr.io requires no auth and
           # falls back to docker.io on miss. Push still goes to Docker Hub via
           # the login step below — only the pull path is mirrored.
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
 
