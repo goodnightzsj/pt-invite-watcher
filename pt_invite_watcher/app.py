@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
@@ -125,6 +127,52 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PT Invite Watcher", version=__version__, lifespan=lifespan)
+
+# ============================================================================
+# CORS — unlocks the mobile (Capacitor) shell
+# ============================================================================
+#
+# The Vue bundle ships inside Capacitor iOS/Android via a WebView whose origin
+# is `capacitor://localhost` (iOS) or `https://localhost` (Android). Every
+# fetch to the user's remote FastAPI is cross-origin from those origins, and
+# browsers block cross-origin requests without matching CORS headers. Without
+# these entries the mobile app can't authenticate, can't list sites, can't
+# subscribe to WebSocket updates — it's a blocking bug, not a nicety.
+#
+# The origins whitelisted below are device-local and device-specific; they
+# are NOT internet-accessible, so allowing them doesn't expose the API to
+# random websites. BasicAuth still gates every API endpoint as before.
+#
+# Operators who want to whitelist additional origins (e.g. their own Electron
+# wrapper, a Homelab dashboard iframe) can list them in the
+# `PTIW_CORS_EXTRA_ORIGINS` env var (comma-separated).
+_EXTRA_ORIGINS = [
+    o.strip()
+    for o in (os.getenv("PTIW_CORS_EXTRA_ORIGINS") or "").split(",")
+    if o.strip()
+]
+_ALLOWED_ORIGINS = [
+    # Capacitor iOS custom scheme.
+    "capacitor://localhost",
+    # Capacitor Android (and some iOS builds with `iosScheme: https`).
+    "https://localhost",
+    # Legacy Ionic / Capacitor 1-3 scheme, still seen in the wild.
+    "ionic://localhost",
+    # Tauri webview runs from `tauri://localhost` on macOS/Linux and
+    # `https://tauri.localhost` on Windows — same cross-origin concern
+    # whenever apiBase points at a real domain.
+    "tauri://localhost",
+    "https://tauri.localhost",
+    *_EXTRA_ORIGINS,
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,     # BasicAuth / cookies pass through CORS preflight
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Serve Vite build assets. We intentionally don't require auth here; the SPA entry and APIs are protected.
 app.mount("/assets", StaticFiles(directory=ASSETS_DIR.as_posix(), check_dir=False), name="assets")
