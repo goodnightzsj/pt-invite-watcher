@@ -4,7 +4,7 @@ import type { SiteRow } from "../api";
 import Badge from "./Badge.vue";
 import SiteIcon from "./SiteIcon.vue";
 import { ChevronRight } from "lucide-vue-next";
-import { formatRelativeTime } from "../utils/date";
+import RelativeTime from "./RelativeTime.vue";
 
 const props = defineProps<{
   site: SiteRow;
@@ -71,7 +71,7 @@ const inviteState = computed(() => {
         class="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300"
       >
         <div>{{ site.engine }}</div>
-        <div>{{ formatRelativeTime(site.last_checked_at) }} 更新</div>
+        <div><RelativeTime :ts="site.last_checked_at" /> 更新</div>
       </div>
   </div>
 </template>

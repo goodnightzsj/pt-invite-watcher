@@ -14,6 +14,7 @@ import EmptyState from "../components/EmptyState.vue";
 import TableSkeleton from "../components/TableSkeleton.vue";
 import Toggle from "../components/Toggle.vue";
 import Tooltip from "../components/Tooltip.vue";
+import RelativeTime from "../components/RelativeTime.vue";
 import { api, type SiteRow, type ScanStatus } from "../api";
 import { showToast } from "../toast";
 import { formatLocalTime, formatRelativeTime } from "../utils/date";
@@ -84,8 +85,8 @@ function sortedSiteRows(items: SiteRow[]) {
   });
 }
 
-function formatChangedAt(row: SiteRow) {
-  if (row.last_changed_at) return formatRelativeTime(row.last_changed_at);
+function changedLabel(row: SiteRow): string {
+  if (row.last_changed_at) return "";  // RelativeTime component renders it
   if (row.last_checked_at) return "未变更";
   return "-";
 }
@@ -581,8 +582,11 @@ const stats = computed(() => {
 
                   <td class="hidden lg:table-cell px-6 py-4">
                     <div class="text-xs text-slate-500 dark:text-slate-300">
-                      <div>最新检查：{{ formatRelativeTime(row.last_checked_at) }}</div>
-                      <div class="mt-0.5 scale-90 origin-left opacity-60">上次变更时间：{{ formatChangedAt(row) }}</div>
+                      <div>最新检查：<RelativeTime :ts="row.last_checked_at" /></div>
+                      <div class="mt-0.5 scale-90 origin-left opacity-60">
+                        上次变更时间：<RelativeTime v-if="row.last_changed_at" :ts="row.last_changed_at" />
+                        <span v-else>{{ changedLabel(row) }}</span>
+                      </div>
                     </div>
                   </td>
 
