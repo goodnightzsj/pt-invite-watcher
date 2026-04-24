@@ -314,6 +314,29 @@ useWS(WS_SCAN_PROGRESS, (data: any) => {
   }
 });
 
+// Screen-reader announcement throttled to *milestone* granularity: site-change
+// transitions and scan completion. Binding aria-live directly to the computed
+// `${completed}/${total}` would re-read the number on every broadcast tick —
+// auditory spam. Updating a backing ref only on meaningful transitions keeps
+// the announcement cadence to one utterance per site (plus a final "完成").
+const a11yScanAnnouncement = ref("");
+watch(
+  () => ({ d: scanProgress.value?.domain || "", c: scanProgress.value?.completed || 0, t: scanProgress.value?.total || 0, running: scanRunning.value }),
+  (next, prev) => {
+    if (next.running && !prev?.running && !next.t) {
+      a11yScanAnnouncement.value = "扫描进行中";
+      return;
+    }
+    if (next.t > 0 && next.c >= next.t && !(prev && prev.c >= prev.t && prev.t === next.t)) {
+      a11yScanAnnouncement.value = `扫描完成：${next.c} / ${next.t}`;
+      return;
+    }
+    if (next.d && next.d !== prev?.d) {
+      a11yScanAnnouncement.value = next.t > 0 ? `正在扫描 ${next.d} (${next.c} / ${next.t})` : `正在扫描 ${next.d}`;
+    }
+  }
+);
+
 function formatElapsed(ms: number | null): string {
   if (ms == null) return "";
   if (ms < 1000) return `${ms}ms`;
@@ -493,7 +516,14 @@ const stats = computed(() => {
 
         <!-- Scanning progress bar: determinate if we have live progress, otherwise indeterminate. -->
         <div v-if="scanRunning || hasInflightScan || scanProgress" class="relative">
-          <div class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+          <div
+            class="h-1 w-full overflow-hidden bg-slate-100 dark:bg-slate-800"
+            role="progressbar"
+            :aria-valuemin="0"
+            :aria-valuemax="scanProgress?.total || 100"
+            :aria-valuenow="scanProgress?.completed || 0"
+            :aria-valuetext="scanProgress ? `已扫描 ${scanProgress.completed} / ${scanProgress.total}` : '扫描进行中'"
+          >
             <div
               v-if="scanProgress && scanProgress.total > 0"
               class="h-full bg-gradient-to-r from-brand-500 via-purple-500 to-brand-500 transition-[width] duration-300 ease-out"
@@ -506,6 +536,15 @@ const stats = computed(() => {
             <span>{{ scanProgress.completed }} / {{ scanProgress.total }}</span>
             <span v-if="scanProgress.domain" class="max-w-[12rem] truncate text-slate-400 dark:text-slate-400">{{ scanProgress.domain }}</span>
             <span v-if="scanProgress.elapsedMs != null" class="text-slate-400 dark:text-slate-500">· {{ formatElapsed(scanProgress.elapsedMs) }}</span>
+          </div>
+          <!--
+            Screen-reader-only polite announcement of scan progress milestones.
+            Speaks only when the current site changes or the scan finishes; we
+            don't want "扫描中 x/y" shouted on every tick. Invisible to sighted
+            users (the visual progress bar does the job for them).
+          -->
+          <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {{ a11yScanAnnouncement }}
           </div>
         </div>
 
