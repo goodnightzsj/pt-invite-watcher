@@ -88,6 +88,16 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          # Route docker.io pulls (base images: node:18-slim, python:3.11-slim)
+          # through Google's public read-through mirror. Docker Hub's anonymous
+          # + free-tier rate limits (100/6h anon, 200/6h auth'd) were tripping
+          # our builds after every commit. mirror.gcr.io requires no auth and
+          # falls back to docker.io on miss. Push still goes to Docker Hub via
+          # the login step below — only the pull path is mirrored.
+          config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Build and push
         uses: docker/build-push-action@v5
