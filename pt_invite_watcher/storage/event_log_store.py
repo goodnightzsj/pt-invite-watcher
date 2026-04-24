@@ -240,6 +240,47 @@ async def list_events(
     return items
 
 
+async def prune_events_older_than(store: Any, cutoff_iso: str) -> int:
+    """Delete event_log rows whose ISO-timestamp `ts` is older than `cutoff_iso`.
+    Returns the number of rows removed. Uses the same write path as `clear_events`.
+
+    The caller computes `cutoff_iso` (usually `now - retention_days`) so policy
+    is entirely up to the scheduler — this function stays a pure SQL primitive.
+    `ts` column is a sortable ISO 8601 string (UTC) so a lexicographic compare
+    is also a temporal compare; no date parsing required.
+    """
+    write_txn = getattr(store, "write_transaction", None)
+    if callable(write_txn):
+        async with write_txn() as conn:
+            cur = await conn.execute(
+                "DELETE FROM event_log WHERE ts < ?",
+                (cutoff_iso,),
+            )
+            removed = cur.rowcount or 0
+            await cur.close()
+        return int(removed)
+
+    lock = getattr(store, "_write_lock", None)
+    require_write = getattr(store, "require_write_conn", None) or getattr(store, "_require_write_conn", None)
+    if callable(require_write):
+        conn = require_write()
+    else:
+        conn = getattr(store, "require_conn", None)
+        conn = conn() if callable(conn) else store._require_conn()
+
+    async def _run() -> int:
+        cur = await conn.execute("DELETE FROM event_log WHERE ts < ?", (cutoff_iso,))
+        removed = cur.rowcount or 0
+        await cur.close()
+        await conn.commit()
+        return int(removed)
+
+    if lock is not None:
+        async with lock:
+            return await _run()
+    return await _run()
+
+
 async def clear_events(store: Any) -> None:
     write_txn = getattr(store, "write_transaction", None)
     if callable(write_txn):
@@ -285,4 +326,4 @@ async def get_log_domains(store: Any) -> list[str]:
     return [str(r[0]) for r in rows if r[0]]
 
 
-__all__ = ["add_event", "clear_events", "get_log_domains", "list_events"]
+__all__ = ["add_event", "clear_events", "get_log_domains", "list_events", "prune_events_older_than"]

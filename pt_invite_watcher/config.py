@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -89,6 +89,12 @@ class ScanSettings:
 
 
 @dataclass(frozen=True)
+class RetentionSettings:
+    """How long to keep event_log rows before auto-pruning. 0 = disabled."""
+    log_days: int
+
+
+@dataclass(frozen=True)
 class CookieCloudSettings:
     base_url: str
     uuid: str
@@ -118,6 +124,10 @@ class Settings:
     db: DatabaseSettings
     web: WebSettings
     log_level: str
+    # `retention` is last with a default so existing call sites in tests and
+    # other embedders that don't yet know about log retention keep working.
+    # Production runtime overrides via env/yaml in `load_settings()`.
+    retention: RetentionSettings = field(default_factory=lambda: RetentionSettings(log_days=30))
 
 
 def _load_yaml_config(config_path: Optional[str]) -> dict[str, Any]:
@@ -179,6 +189,14 @@ def load_settings(config_path: Optional[str] = None) -> Settings:
 
     log_level = (_env("PTIW_LOG_LEVEL", "INFO") or "INFO").strip().upper()
 
+    # 0 disables pruning entirely. Default 30d balances long-enough history
+    # for post-incident review against unbounded SQLite growth on long-lived
+    # installs.
+    log_retention_days = _env_int(
+        "PTIW_LOG_RETENTION_DAYS",
+        int(_deep_get(cfg, ["retention", "log_days"], 30) or 30),
+    )
+
     if mp_base_url:
         parsed = urlparse(mp_base_url)
         if not parsed.scheme or not parsed.netloc:
@@ -216,6 +234,9 @@ def load_settings(config_path: Optional[str] = None) -> Settings:
                 username=web_auth_username,
                 password=web_auth_password,
             ),
+        ),
+        retention=RetentionSettings(
+            log_days=max(0, int(log_retention_days or 0)),
         ),
         log_level=log_level,
     )
