@@ -656,7 +656,7 @@ const stats = computed(() => {
         <!-- Mobile: Card View -->
         <div v-if="hasRows" class="md:hidden space-y-3 p-4">
           <TransitionGroup name="list">
-            <SiteCard v-for="(row, index) in sortedRows" :key="row.domain" :site="row" :style="{ '--i': index }"
+            <SiteCard v-for="(row, index) in sortedRows" :key="row.domain" :site="row" :style="{ '--i': index, 'content-visibility': 'auto', 'contain-intrinsic-size': '0 160px' }"
               @click="selectedSite = row" />
           </TransitionGroup>
         </div>
@@ -678,7 +678,7 @@ const stats = computed(() => {
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
               <TransitionGroup name="list" appear>
-                <tr v-for="(row, index) in sortedRows" :key="row.domain" :style="{ '--i': index }"
+                <tr v-for="(row, index) in sortedRows" :key="row.domain" :style="{ '--i': index, 'content-visibility': 'auto', 'contain-intrinsic-size': '0 72px' }"
                   class="group table-row-hover transition-colors duration-150 hover:bg-brand-50/40 dark:hover:bg-brand-950/20"
                   :class="row.scanning ? 'row-scanning' : ''">
                   <!-- Site & Domain Combined -->

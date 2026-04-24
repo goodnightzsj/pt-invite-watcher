@@ -387,7 +387,7 @@ onMounted(() => load());
 
       <!-- Mobile Card View -->
       <div class="space-y-4 sm:hidden">
-        <Card v-for="(site, i) in filteredItems" :key="site.domain" padding="sm" class="relative overflow-hidden">
+        <Card v-for="(site, i) in filteredItems" :key="site.domain" padding="sm" class="relative overflow-hidden" :style="{ 'content-visibility': 'auto', 'contain-intrinsic-size': '0 180px' }">
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-3">
               <div class="h-10 w-10">
@@ -448,7 +448,7 @@ onMounted(() => load());
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800/40">
                 <TransitionGroup name="list" appear>
-                  <tr v-for="(item, index) in filteredItems" :key="item.domain" :style="{ '--i': index }"
+                  <tr v-for="(item, index) in filteredItems" :key="item.domain" :style="{ '--i': index, 'content-visibility': 'auto', 'contain-intrinsic-size': '0 80px' }"
                     class="table-row-hover group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
                     <td class="px-6 py-4 font-medium text-slate-700 dark:text-slate-200">
                       <div class="flex items-center gap-3">
