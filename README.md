@@ -167,6 +167,20 @@ MoviePilot（站点配置中的 cookie 字段）
 - **背压保护**：服务端日志事件队列满会发送一次 `logs_update` 让客户端 resync。
 - **告警事件**：scheduler 连续失败会以 `error` 级别写入 `event_log`，恢复后写一条 `info` 记录。
 
+## 📱 桌面 / 移动客户端
+
+除浏览器之外，本项目还提供 **Windows / macOS / Linux 桌面 app**（Tauri 2 壳 + 内嵌 Python sidecar，可离线本地运行）以及 **iOS / Android 移动 app**（远程模式，连接自托管服务器）。
+
+```bash
+npm install
+npm run sidecar:build       # 仅本地模式需要
+npm run tauri:build         # Windows / macOS / Linux 打包
+npm run tauri:android:build # Android
+npm run tauri:ios:build     # iOS（需 macOS + Xcode）
+```
+
+完整的构建、签名、公证、上架流程见 [`docs/multi-platform.md`](docs/multi-platform.md)。
+
 ## ⚠️ 免责声明
 
 本项目仅用于「站点状态监控与通知」，不包含任何绕过验证、突破安全机制、自动抢注或获取邀请码的功能。请遵守各站点规则。
