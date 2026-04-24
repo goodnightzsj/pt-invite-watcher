@@ -12,6 +12,9 @@ name: Release Please
 on:
   push:
     branches: [main]
+  # Manual re-trigger for when a permissions flip or repo-setting change
+  # needs to be re-probed without waiting for the next real commit.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,30 +26,9 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          # Single-project manifest: releases are tracked in a top-level
-          # CHANGELOG.md / package versioning. `simple` release-type leaves
-          # the maintainer in charge of which files carry the version
-          # (webui/package.json, mobile/package.json, src-tauri/Cargo.toml
-          # all get bumped via extra-files below).
-          release-type: simple
-          package-name: pt-invite-watcher
-          # Extra files whose version strings should stay in sync with the
-          # top-level version. release-please replaces matched literals.
-          extra-files: |
-            webui/package.json
-            mobile/package.json
-            src-tauri/Cargo.toml
-            src-tauri/tauri.conf.json
-          # Conventional-commit mapping — anything not listed falls to
-          # "Other" and doesn't bump version.
-          changelog-types: |
-            [
-              {"type": "feat", "section": "✨ Features"},
-              {"type": "fix", "section": "🐛 Bug Fixes"},
-              {"type": "perf", "section": "⚡ Performance"},
-              {"type": "sec", "section": "🔒 Security"},
-              {"type": "a11y", "section": "♿ Accessibility"},
-              {"type": "refactor", "section": "♻️ Refactoring"},
-              {"type": "ci", "section": "🔧 CI"},
-              {"type": "docs", "section": "📝 Docs", "hidden": false}
-            ]
+          # v4 takes its settings from a JSON config file instead of inline
+          # workflow inputs. See `release-please-config.json` +
+          # `.release-please-manifest.json` at the repo root for the
+          # versioning rules, extra-files mapping, and changelog sections.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
