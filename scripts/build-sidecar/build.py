@@ -105,7 +105,7 @@ def main() -> None:
     suffix = ".exe" if platform.system() == "Windows" else ""
     target = OUT_DIR / f"{SPEC_NAME}-{triple}{suffix}"
     shutil.copy2(built, target)
-    print(f"✓ wrote {target} ({target.stat().st_size // (1024 * 1024)} MB)")
+    print(f"OK wrote {target} ({target.stat().st_size // (1024 * 1024)} MB)")
 
 
 if __name__ == "__main__":

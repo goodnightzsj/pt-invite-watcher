@@ -122,19 +122,30 @@ jobs:
             echo "identity=-" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Tauri build
+      - name: Tauri build (signed)
+        # Only runs when a real macOS signing identity + Apple ID + team are
+        # all present; otherwise we fall through to the ad-hoc path below.
+        # Splitting on `mac_signing.identity != '-'` keeps empty envars from
+        # being passed as literal empty strings, which tauri-bundler treats
+        # as "please notarize" and then fails on empty team id validation.
+        if: ${{ steps.mac_signing.outputs.identity != '' && steps.mac_signing.outputs.identity != '-' }}
         env:
-          # macOS: optional signing / notarization. If the secrets aren't
-          # set, we pass `-` (ad-hoc) so tauri-bundler skips the keychain
-          # import step entirely — previously that step failed with "failed
-          # to import keychain certificate" on empty `APPLE_CERTIFICATE`.
           APPLE_SIGNING_IDENTITY: ${{ steps.mac_signing.outputs.identity }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows: optional code-signing .pfx (empty = unsigned .msi/.exe).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --target ${{ matrix.rust_target }}
+
+      - name: Tauri build (unsigned / ad-hoc)
+        # Default path when signing secrets aren't configured. Pass only the
+        # ad-hoc sentinel for macOS; don't pass APPLE_ID / APPLE_TEAM_ID so
+        # tauri-bundler doesn't launch the notarize path. Windows / Linux
+        # have no signing envars in this branch either.
+        if: ${{ steps.mac_signing.outputs.identity == '-' || steps.mac_signing.outputs.identity == '' }}
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ steps.mac_signing.outputs.identity }}
         run: npx tauri build --target ${{ matrix.rust_target }}
 
       # --- Artifact collection ------------------------------------------
