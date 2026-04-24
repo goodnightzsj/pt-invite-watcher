@@ -18,6 +18,8 @@ import {
   disableBrowserNotifications,
   enableBrowserNotifications,
 } from "../browser_notifications";
+import { resetRuntimeConfig, runtimeConfig } from "../runtime_config";
+import { detectHost } from "../capacitor_integration";
 
 const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
@@ -96,6 +98,24 @@ const notifPermissionLabel = computed(() => {
   if (p === "default") return "尚未授权，开启时会请求浏览器权限";
   return "已授权";
 });
+
+// Remote-mode only: let users reset their saved apiBase + credentials so
+// Onboarding re-runs on next launch. Browser + Tauri-embedded modes don't
+// need this — browser users navigate to a different URL, Tauri-embedded
+// always talks to the bundled sidecar.
+const canResetConnection = computed(() => {
+  const host = detectHost();
+  return (host === "capacitor-ios" || host === "capacitor-android" || host === "tauri")
+    && runtimeConfig.mode === "remote"
+    && runtimeConfig.apiBase !== "";
+});
+
+async function resetConnection() {
+  if (!(await confirm("确认重新连接服务器吗？本地保存的 URL / 凭证会被清除，下次启动会重新进入 Onboarding。"))) return;
+  resetRuntimeConfig();
+  showToast("已清除连接信息，即将重新加载…", "info", 1800);
+  setTimeout(() => window.location.reload(), 1200);
+}
 
 async function toggleBrowserNotifications(next: boolean) {
   if (!next) {
@@ -804,6 +824,29 @@ async function clearIconCache() {
             </div>
             <div class="flex shrink-0 gap-2">
               <Button size="sm" :disabled="iconCacheSize === 0" @click="clearIconCache">清除缓存</Button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reset server connection. Only shown in the Capacitor / Tauri shells
+             when already configured for remote mode — browser users change
+             server by navigating to a different URL, not via this control. -->
+        <div v-if="canResetConnection" class="mt-4 rounded-xl border border-danger-200/70 bg-danger-50/30 p-4 dark:border-danger-900/50 dark:bg-danger-950/20">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-danger-100 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300">
+                <ShieldAlert class="h-4 w-4" />
+              </div>
+              <div>
+                <div class="text-sm font-medium text-slate-800 dark:text-slate-100">重新连接服务器</div>
+                <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  当前连接：<span class="font-mono">{{ runtimeConfig.apiBase }}</span>。
+                  需要切换到其他 FastAPI 实例？清除后下次启动会重新进入 Onboarding 流程。
+                </div>
+              </div>
+            </div>
+            <div class="flex shrink-0 gap-2">
+              <Button size="sm" variant="danger" @click="resetConnection">清除连接</Button>
             </div>
           </div>
         </div>
