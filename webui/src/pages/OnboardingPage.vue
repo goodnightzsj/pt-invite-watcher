@@ -50,28 +50,46 @@ async function connect() {
     submitting.value = true;
     errorMsg.value = "";
     try {
-        const base = apiBase.value.trim().replace(/\/$/, "");
+        let base = apiBase.value.trim().replace(/\/$/, "");
         if (!/^https?:\/\//i.test(base)) {
             throw new Error("URL 必须以 http:// 或 https:// 开头");
+        }
+        // Strip a trailing `/api` so users who paste their API URL (rather
+        // than the app root) still end up with a valid base. Without this,
+        // `apiUrl("/api/...")` would double up to `/api/api/...`.
+        if (base.toLowerCase().endsWith("/api")) {
+            base = base.slice(0, -"/api".length);
         }
         const auth = (username.value || password.value) ? base64UserPass(username.value, password.value) : "";
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (auth) headers.Authorization = `Basic ${auth}`;
-        // Sanity-probe the endpoint so we don't save bogus settings that would
-        // leave the dashboard stuck on 401/404 after a reload.
-        const resp = await fetch(`${base}/api/version`, { headers });
+
+        // AbortController gives us a 10s ceiling on the probe — otherwise a
+        // bad URL (wrong port, firewall-dropped, DNS pointing to a black hole)
+        // leaves the user staring at a spinner for 60s+ of TCP timeout.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10_000);
+        let resp: Response;
+        try {
+            resp = await fetch(`${base}/api/version`, { headers, signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
         if (resp.status === 401) throw new Error("用户名或密码不正确（BasicAuth 401）");
+        if (resp.status === 404) throw new Error("服务器未识别 /api/version —— 确认 URL 指向 PT Invite Watcher 根路径（不含 /api）");
         if (!resp.ok) throw new Error(`服务器响应异常：HTTP ${resp.status}`);
         saveRemoteConfig(base, auth);
         // Reload so every part of the app re-reads the new runtime config and
         // the WebSocket reconnects to the right origin.
         window.location.reload();
     } catch (e: any) {
-        if (e instanceof HttpError) {
+        if (e instanceof DOMException && e.name === "AbortError") {
+            errorMsg.value = "连接超时（10 秒）—— 确认服务器 URL 可从当前网络访问";
+        } else if (e instanceof HttpError) {
             errorMsg.value = `连接失败：${e.status} ${e.statusText}`;
         } else if (e instanceof TypeError) {
             // CORS / DNS / unreachable all surface here as "Failed to fetch".
-            errorMsg.value = "无法连接到该地址（检查 URL 是否可达 / CORS 是否允许当前 origin）";
+            errorMsg.value = "无法连接到该地址（检查 URL 是否可达 / 服务器是否允许 CORS）";
         } else {
             errorMsg.value = String(e?.message || e);
         }
