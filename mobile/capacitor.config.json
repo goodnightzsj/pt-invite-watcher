@@ -4,11 +4,13 @@
   "webDir": "../pt_invite_watcher/webui_dist",
   "server": {
     "androidScheme": "https",
-    "iosScheme": "https"
+    "iosScheme": "https",
+    "cleartext": true
   },
   "android": {
     "useLegacyBridge": false,
-    "backgroundColor": "#020617"
+    "backgroundColor": "#020617",
+    "allowMixedContent": true
   },
   "ios": {
     "backgroundColor": "#020617",
