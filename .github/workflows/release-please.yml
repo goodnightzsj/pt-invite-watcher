@@ -32,3 +32,11 @@ jobs:
           # versioning rules, extra-files mapping, and changelog sections.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # GitHub safeguards against infinite workflow loops: tags / releases
+          # pushed using the default `GITHUB_TOKEN` do NOT fire downstream
+          # `push:tags` workflows. Without a PAT, release-please creates the
+          # tag but desktop/android/ios/release-body silently skip — users
+          # end up with an empty published Release.
+          # `RELEASE_PAT` is a repo secret holding a personal access token
+          # with `contents: write` + `pull_requests: write` scopes.
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
