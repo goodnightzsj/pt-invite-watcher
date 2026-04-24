@@ -1,0 +1,108 @@
+/**
+ * Opportunistic integrations with the Capacitor runtime.
+ *
+ * When the bundle loads inside the Capacitor iOS/Android shell, `window.Capacitor`
+ * is populated by the Capacitor runtime before our app boots. We detect that at
+ * runtime and wire a few native niceties — no static import of `@capacitor/*`
+ * packages so the browser + Tauri builds stay zero-dep and ship the same bundle.
+ *
+ * This file is best-effort. Every code path fails silently on browsers / Tauri
+ * (where `window.Capacitor` is `undefined`) so mis-detection never crashes the
+ * app.
+ */
+import type { Router } from "vue-router";
+
+interface CapacitorPluginListener {
+    remove?: () => void;
+}
+
+interface AppPlugin {
+    addListener: (
+        eventName: "backButton",
+        listener: (event: { canGoBack?: boolean }) => void
+    ) => Promise<CapacitorPluginListener>;
+    exitApp: () => Promise<void>;
+}
+
+interface StatusBarPlugin {
+    setStyle: (options: { style: "LIGHT" | "DARK" | "DEFAULT" }) => Promise<void>;
+    setBackgroundColor: (options: { color: string }) => Promise<void>;
+    setOverlaysWebView: (options: { overlay: boolean }) => Promise<void>;
+}
+
+interface CapacitorGlobal {
+    getPlatform?: () => "web" | "ios" | "android";
+    isNativePlatform?: () => boolean;
+    Plugins?: {
+        App?: AppPlugin;
+        StatusBar?: StatusBarPlugin;
+    };
+}
+
+function getCapacitor(): CapacitorGlobal | null {
+    const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
+    if (!cap) return null;
+    if (cap.isNativePlatform && !cap.isNativePlatform()) return null;
+    return cap;
+}
+
+/** True when loaded inside the Capacitor native shell (iOS or Android). */
+export function isCapacitor(): boolean {
+    return getCapacitor() !== null;
+}
+
+/** Platform string or "web" when not in Capacitor. */
+export function capacitorPlatform(): "web" | "ios" | "android" {
+    return getCapacitor()?.getPlatform?.() ?? "web";
+}
+
+/**
+ * Wire the Android hardware-back button to the router.
+ *
+ * Without this, hitting "back" on Android always closes the app — iOS has no
+ * hardware back so it's a no-op there. When the router can go back we navigate
+ * back; when we're at the root route and the user presses back twice in a row
+ * within 2s, we exit (matches the standard Android app convention).
+ */
+export function wireHardwareBack(router: Router): void {
+    const cap = getCapacitor();
+    const app = cap?.Plugins?.App;
+    if (!app) return;
+
+    let lastPressAt = 0;
+    app.addListener("backButton", ({ canGoBack }) => {
+        const now = Date.now();
+        // History stack has something — pop it.
+        if (canGoBack && window.history.length > 1) {
+            router.back();
+            return;
+        }
+        // Root route: "press back again to exit" within 2s.
+        if (now - lastPressAt < 2000) {
+            app.exitApp().catch(() => { /* ignore */ });
+            return;
+        }
+        lastPressAt = now;
+        // Surface a toast so the user knows what's going on. Dynamic import so
+        // this file doesn't pull toast into the router chunk.
+        import("./toast").then(({ showToast }) => {
+            showToast("再按一次返回键退出", "info", 1800);
+        });
+    });
+}
+
+/**
+ * Keep the native status bar aligned with the current theme (dark/light).
+ *
+ * `setStyle` controls icon color (so they stay legible over our glass header);
+ * `setOverlaysWebView(true)` is what lets the header's `pt-safe` padding
+ * actually display the status bar as part of our UI rather than stealing a
+ * chunk of vertical real estate.
+ */
+export function syncStatusBar(isDark: boolean): void {
+    const cap = getCapacitor();
+    const sb = cap?.Plugins?.StatusBar;
+    if (!sb) return;
+    sb.setOverlaysWebView({ overlay: true }).catch(() => { });
+    sb.setStyle({ style: isDark ? "LIGHT" : "DARK" }).catch(() => { });
+}

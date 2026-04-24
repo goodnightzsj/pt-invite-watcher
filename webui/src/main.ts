@@ -6,6 +6,7 @@ import OnboardingPage from "./pages/OnboardingPage.vue";
 import { prefetchSecondaryPages, routes } from "./router";
 import { initTheme } from "./theme";
 import { loadRuntimeConfig, needsOnboarding } from "./runtime_config";
+import { isCapacitor, syncStatusBar, wireHardwareBack } from "./capacitor_integration";
 
 import "./styles.css";
 
@@ -33,5 +34,18 @@ createApp(App).use(router).mount("#app");
 // and we don't want to ping an unknown server 4 extra times.
 if (!needsOnboarding()) {
   prefetchSecondaryPages();
+}
+
+// Capacitor-only wiring: zero-cost no-op in browser / Tauri shells. Hardware
+// back button on Android routes through the Vue router; status bar tracks
+// the current theme (dark/light) so icons stay legible over the glass header.
+if (isCapacitor()) {
+  wireHardwareBack(router);
+  const isDark = document.documentElement.classList.contains("dark");
+  syncStatusBar(isDark);
+  // Re-sync whenever ThemeToggle flips the `dark` class.
+  new MutationObserver(() => {
+    syncStatusBar(document.documentElement.classList.contains("dark"));
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 }
 
