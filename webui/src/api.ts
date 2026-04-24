@@ -167,11 +167,19 @@ export class HttpError extends Error {
   }
 }
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+import { apiUrl, authHeader } from "./runtime_config";
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  // `path` is expected to be the same relative string call sites have always
+  // passed (e.g. "/api/dashboard"). `apiUrl` prepends the runtime base if one
+  // is set (remote mode / Tauri embedded-sidecar mode) and keeps the string
+  // relative otherwise (same-origin browser).
+  const url = apiUrl(path);
   const resp = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeader(),
       ...(init?.headers || {}),
     },
   });

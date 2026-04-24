@@ -2,6 +2,7 @@ import { onUnmounted } from "vue";
 
 import { WS_PING } from "./ws_events";
 import type { WSEventType } from "./ws_events";
+import { wsUrl } from "./runtime_config";
 export type { WSEventType } from "./ws_events";
 
 export interface WSMessage {
@@ -39,9 +40,9 @@ function scheduleReconnect() {
 function connect() {
     if (socket) return;
 
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const url = `${proto}//${host}/ws/events`;
+    // `wsUrl` picks the right origin for the current runtime context:
+    // runtime-config wsBase → derived from apiBase → fallback to window.location.
+    const url = wsUrl("/ws/events");
 
     try {
         socket = new WebSocket(url);

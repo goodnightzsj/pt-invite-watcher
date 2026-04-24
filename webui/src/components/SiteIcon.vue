@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from "vue";
 import { ICON_CACHE_KEY as CACHE_KEY, iconCacheVersion, sweepExpiredEntries } from "../icon_cache";
+import { apiUrl } from "../runtime_config";
 
 const props = defineProps<{
   url?: string;
@@ -83,7 +84,7 @@ const origin = computed(() => {
 const sources = computed(() => {
   if (!domain.value) return [] as string[];
   return [
-    `/api/sites/icon?domain=${encodeURIComponent(domain.value)}`,
+    apiUrl(`/api/sites/icon?domain=${encodeURIComponent(domain.value)}`),
     `https://icons.duckduckgo.com/ip3/${domain.value}.ico`,
     `https://www.google.com/s2/favicons?domain=${domain.value}&sz=64`,
   ];
