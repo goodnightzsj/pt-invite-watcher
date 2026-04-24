@@ -104,9 +104,13 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Tauri CLI uses its own short target names for `tauri ios build`
+          # (see `tauri ios build --help`): aarch64 / aarch64-sim / x86_64.
+          # The full Rust triples `aarch64-apple-ios*` are what rustup accepts
+          # for the cross-compile toolchain, but the CLI flag is shortened.
           if [ -z "${APPLE_SIGNING_IDENTITY}" ]; then
             echo "::warning::APPLE_SIGNING_IDENTITY not set — producing an unsigned simulator build"
-            npx tauri ios build --target aarch64-apple-ios-sim
+            npx tauri ios build --target aarch64-sim
           else
             npx tauri ios build
           fi
