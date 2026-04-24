@@ -1,0 +1,22 @@
+{
+  "name": "pt-invite-watcher-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Native desktop + mobile shell for PT Invite Watcher (Tauri 2).",
+  "scripts": {
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:android:init": "tauri android init",
+    "tauri:android:dev": "tauri android dev",
+    "tauri:android:build": "tauri android build",
+    "tauri:ios:init": "tauri ios init",
+    "tauri:ios:dev": "tauri ios dev",
+    "tauri:ios:build": "tauri ios build",
+    "webui:dev": "npm --prefix webui run dev",
+    "webui:build": "npm --prefix webui run build",
+    "sidecar:build": ".venv/bin/python scripts/build-sidecar/build.py"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
