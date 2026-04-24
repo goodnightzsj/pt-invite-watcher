@@ -25,6 +25,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Tauri 2 CLI generates Xcode project format 77 (Xcode 16+). macos-14
+      # runners ship with both Xcode 15.4 and 16.x; explicitly select the
+      # latest to avoid xcodebuild rejecting the project as "future format".
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       - name: Show Xcode version
         run: xcodebuild -version
 

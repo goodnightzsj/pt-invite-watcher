@@ -36,9 +36,6 @@
       "icons/128x128@2x.png",
       "icons/icon.png"
     ],
-    "externalBin": [
-      "binaries/pt-invite-watcher-server"
-    ],
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
