@@ -167,7 +167,31 @@ export class HttpError extends Error {
   }
 }
 
-import { apiUrl, authHeader } from "./runtime_config";
+import { apiUrl, authHeader, resetRuntimeConfig, runtimeConfig } from "./runtime_config";
+
+// Coalesce a burst of 401s (multiple concurrent requests all failing on the
+// same stale session) into a single re-onboard flow — otherwise we'd toast
+// "authentication expired" N times and try to reload N times.
+let authFailureHandled = false;
+
+function handleAuthFailure(): void {
+  if (authFailureHandled) return;
+  if (runtimeConfig.mode !== "remote" || !runtimeConfig.basicAuth) return;
+  authFailureHandled = true;
+  // Clear the bad credentials so `needsOnboarding()` flips to true on reload,
+  // landing the user back on the URL + BasicAuth form where they can re-enter.
+  resetRuntimeConfig();
+  try {
+    // Deferred import so this module doesn't pull toast into every chunk.
+    import("./toast").then(({ showToast }) => {
+      showToast("认证失效，请重新连接服务器", "error", 4000);
+    });
+  } catch {
+    /* ignore — toast is a nicety, the reload is the essential part */
+  }
+  // Give the toast a moment to render before blowing away the page.
+  setTimeout(() => window.location.reload(), 1500);
+}
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   // `path` is expected to be the same relative string call sites have always
@@ -185,6 +209,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!resp.ok) {
     const text = await resp.text();
+    // In remote-mode shells (Capacitor / Tauri), a 401 means the stored
+    // credentials are no longer valid — typically because the user changed
+    // them server-side. Bounce them back to Onboarding instead of stranding
+    // them on a dashboard that will keep 401-ing every request.
+    if (resp.status === 401) handleAuthFailure();
     throw new HttpError(resp.status, resp.statusText, text, url);
   }
   return (await resp.json()) as T;
