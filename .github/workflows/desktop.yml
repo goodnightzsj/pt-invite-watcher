@@ -1,0 +1,151 @@
+name: Desktop Build (Win / macOS / Linux)
+
+# Triggers:
+#   - `git push v0.1.0` → full release build, attaches artifacts to a GitHub Release
+#   - Manual "Run workflow" → same build but artifacts-only, no release
+# CI tests already run in docker-publish.yml on every main push; this workflow only
+# concerns itself with the large, platform-native build pipeline.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to upload release assets when triggered by a tag
+
+jobs:
+  build-desktop:
+    strategy:
+      # Let one runner's failure not cancel the others — users may want the
+      # Windows binary even if notarization on macOS is misconfigured.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14                       # Apple Silicon runner — cheapest path to aarch64
+            rust_target: aarch64-apple-darwin
+            sidecar_triple: aarch64-apple-darwin
+            bundle_dir: macos
+          - os: macos-13                       # Intel runner for the x86_64 .dmg
+            rust_target: x86_64-apple-darwin
+            sidecar_triple: x86_64-apple-darwin
+            bundle_dir: macos
+          - os: ubuntu-22.04                   # glibc target that covers most distros
+            rust_target: x86_64-unknown-linux-gnu
+            sidecar_triple: x86_64-unknown-linux-gnu
+            bundle_dir: linux
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            sidecar_triple: x86_64-pc-windows-msvc
+            bundle_dir: windows
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.rust_target }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Toolchain setup ----------------------------------------------
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webui/package-lock.json
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Rust ${{ matrix.rust_target }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          shared-key: tauri-${{ matrix.rust_target }}
+
+      # --- Linux-only system deps that Tauri's webview needs -----------
+      - name: Install webkit2gtk + build-essential (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev pkg-config
+
+      # --- Python sidecar ------------------------------------------------
+      - name: Install Python deps + PyInstaller
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build webui
+        run: |
+          npm ci --prefix webui
+          npm run --prefix webui build
+
+      - name: Build Python sidecar binary
+        shell: bash
+        run: python scripts/build-sidecar/build.py --triple ${{ matrix.sidecar_triple }}
+
+      - name: Verify sidecar was produced for Tauri
+        shell: bash
+        run: ls -la src-tauri/binaries
+
+      # --- Tauri build ---------------------------------------------------
+      - name: Install root npm deps (brings tauri-cli)
+        run: npm ci
+
+      - name: Tauri build
+        env:
+          # macOS: optional signing / notarization. If the secrets aren't set,
+          # Tauri still produces a .dmg — just unsigned. Users download + right-click-open.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows: optional code-signing .pfx
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --target ${{ matrix.rust_target }}
+
+      # --- Artifact collection ------------------------------------------
+      - name: Collect bundles
+        shell: bash
+        run: |
+          mkdir -p dist
+          # Tauri emits to src-tauri/target/<triple>/release/bundle/<format>/
+          find src-tauri/target/${{ matrix.rust_target }}/release/bundle \
+            -type f \
+            \( -name "*.dmg" -o -name "*.app.tar.gz" \
+               -o -name "*.msi" -o -name "*.exe" \
+               -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) \
+            -exec cp -v {} dist/ \;
+          ls -la dist/
+
+      - name: Upload artifact (workflow_dispatch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt-invite-watcher-${{ matrix.rust_target }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Attach to Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          fail_on_unmatched_files: false
+          generate_release_notes: true

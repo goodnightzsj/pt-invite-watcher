@@ -1,0 +1,141 @@
+name: Android Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-22.04
+    name: Android APK + AAB
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webui/package-lock.json
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          # Tauri 2 needs the NDK for cross-compiling Rust to the 4 android arches.
+          # Pin a known-working revision; bump when Tauri upgrades its MSRV.
+          yes | sdkmanager "ndk;26.2.11394342" >/dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.2.11394342" >> $GITHUB_ENV
+
+      - name: Setup Rust + android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >
+            aarch64-linux-android,
+            armv7-linux-androideabi,
+            i686-linux-android,
+            x86_64-linux-android
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          shared-key: tauri-android
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            src-tauri/gen/android/.gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/build.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Install root npm deps (tauri-cli)
+        run: npm ci
+
+      - name: Build webui
+        run: |
+          npm ci --prefix webui
+          npm run --prefix webui build
+
+      - name: Tauri android init (idempotent)
+        shell: bash
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+        run: |
+          # `init` generates src-tauri/gen/android/ — a full Gradle project. The
+          # command is idempotent; running it on a cache hit is a quick no-op.
+          if [ ! -d src-tauri/gen/android ]; then
+            npx tauri android init --ci
+          fi
+
+      - name: Decode upload keystore (if provided)
+        # Play Store uploads require a signed AAB. CI stores the keystore as a
+        # base64 secret so it's not committed; when absent the build still
+        # produces a debug-signed APK useful for sideloading and internal tests.
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$KS" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 not set — build will be debug-signed only"
+            exit 0
+          fi
+          mkdir -p src-tauri/gen/android
+          echo "$KS" | base64 -d > src-tauri/gen/android/upload.keystore
+          cat > src-tauri/gen/android/key.properties <<EOF
+          storeFile=upload.keystore
+          storePassword=$KS_PASS
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASS
+          EOF
+
+      - name: Tauri android build
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+        run: npx tauri android build --apk --aab
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          find src-tauri/gen/android/app/build/outputs -type f \
+            \( -name "*.apk" -o -name "*.aab" \) -exec cp -v {} dist/ \;
+          ls -la dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt-invite-watcher-android
+          path: dist/*
+
+      - name: Attach to Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          fail_on_unmatched_files: false

@@ -1,0 +1,135 @@
+name: iOS Build
+
+# iOS builds only run on Apple runners. If you don't have an Apple Developer
+# Account the workflow still produces an unsigned simulator build that you can
+# sideload via `xcrun simctl` for local testing — App Store + TestFlight
+# submissions require the full secret set below.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      scheme:
+        description: "build scheme (debug / release)"
+        required: false
+        default: "release"
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    runs-on: macos-14            # Apple Silicon, ships with Xcode 15+
+    name: iOS .ipa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webui/package-lock.json
+
+      - name: Setup Rust + iOS targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          shared-key: tauri-ios
+
+      - name: Install root npm deps (tauri-cli)
+        run: npm ci
+
+      - name: Build webui
+        run: |
+          npm ci --prefix webui
+          npm run --prefix webui build
+
+      - name: Import Apple signing certificate (if provided)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::notice::APPLE_CERTIFICATE not set — skipping signing setup"
+            exit 0
+          fi
+          # Stash the .p12 into a temporary keychain so xcodebuild can find it,
+          # scoped to this runner only (cleaned up when the VM is recycled).
+          echo "$APPLE_CERTIFICATE" | base64 -d > /tmp/cert.p12
+          security create-keychain -p "$APPLE_CERTIFICATE_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$APPLE_CERTIFICATE_PASSWORD" build.keychain
+          security import /tmp/cert.p12 \
+            -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$APPLE_CERTIFICATE_PASSWORD" build.keychain
+
+      - name: Install provisioning profile (if provided)
+        env:
+          PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+        shell: bash
+        run: |
+          if [ -z "$PROFILE" ]; then
+            echo "::notice::APPLE_PROVISIONING_PROFILE not set — simulator-only build"
+            exit 0
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$PROFILE" | base64 -d > \
+            "$HOME/Library/MobileDevice/Provisioning Profiles/ci.mobileprovision"
+
+      - name: Tauri iOS init (idempotent)
+        run: |
+          if [ ! -d src-tauri/gen/apple ]; then
+            npx tauri ios init --ci
+          fi
+
+      - name: Tauri iOS build
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "${APPLE_SIGNING_IDENTITY}" ]; then
+            echo "::warning::APPLE_SIGNING_IDENTITY not set — producing an unsigned simulator build"
+            npx tauri ios build --target aarch64-apple-ios-sim
+          else
+            npx tauri ios build
+          fi
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          find src-tauri/gen/apple/build -type f \
+            \( -name "*.ipa" -o -name "*.app" \) -exec cp -rv {} dist/ \; || true
+          ls -la dist/ || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt-invite-watcher-ios
+          path: dist/*
+          if-no-files-found: warn
+
+      - name: Attach to Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          fail_on_unmatched_files: false

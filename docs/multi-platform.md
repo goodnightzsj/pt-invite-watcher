@@ -197,6 +197,60 @@ Xcode 打开 `src-tauri/gen/apple/PT Invite Watcher.xcodeproj` → Product → A
 
 ---
 
+## GitHub Actions 自动构建
+
+仓库 `.github/workflows/` 里有三条针对多端打包的 workflow，**push 一个 `v*` 标签**就会全部触发，产物挂到 GitHub Release 草稿；**手动 Run workflow** 则只产出 `actions/upload-artifact` 附件，适合验证构建环境。
+
+| 文件 | 产物 | Runner | 可选 Secrets |
+|---|---|---|---|
+| `desktop.yml` | `.dmg` (Apple Silicon + Intel)、`.msi` + `.exe`、`.AppImage` + `.deb` | macos-14 / macos-13 / windows-latest / ubuntu-22.04（并行） | `APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`、`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` |
+| `android.yml` | `.apk` + `.aab` | ubuntu-22.04 | `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` |
+| `ios.yml` | `.ipa`（签名时）或 `.app`（simulator） | macos-14 | `APPLE_CERTIFICATE`（base64 .p12）、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_PROVISIONING_PROFILE`（base64 .mobileprovision）、`APPLE_SIGNING_IDENTITY`、`APPLE_TEAM_ID` |
+
+**关键点**：
+
+- **没有 secret 也能跑**。desktop.yml 产出未签名的 dmg/msi/AppImage；android.yml 产出 debug-signed APK；ios.yml 产出模拟器用 `.app`。只是无法上架 / 无法绕 Gatekeeper / SmartScreen 首次警告而已。
+- **Rust + Cargo 缓存** 已经用 `Swatinem/rust-cache` 做了，首次 ~20min，之后每轮 ~5-8min。Gradle / Node 缓存同理。
+- **Tauri android/ios init 会产生 `src-tauri/gen/`**。workflow 里判断了已生成则跳过，所以首次运行会建出 Gradle / Xcode 工程，后续缓存命中直接 build。
+- **macOS 双架构**：没用 `universal2` 合并，而是分别跑 macos-13（Intel）和 macos-14（Apple Silicon）两个 runner，各产一个 .dmg。这样 CI 总时长不变（并行），但用户下载的包尺寸只有一半。
+
+### Secrets 配置速查
+
+Apple 签名（macOS desktop + iOS）：
+
+```bash
+# 从钥匙串导出 Developer ID Application .p12，然后：
+base64 -i developer_id.p12 | pbcopy     # 粘到 secrets.APPLE_CERTIFICATE
+# appleid.apple.com → 账户 → App 专用密码 → 生成后粘到 secrets.APPLE_PASSWORD
+```
+
+Android 签名：
+
+```bash
+# 已有 keystore（见 docs 上文 keytool 命令）
+base64 -i ~/.android/pt-invite-watcher.keystore | pbcopy   # → secrets.ANDROID_KEYSTORE_BASE64
+```
+
+Windows 签名：
+
+```bash
+# EV 证书通常厂商给 .pfx 文件
+# TAURI_SIGNING_PRIVATE_KEY 就是 .pfx 的绝对路径（runner 会解密到 $PATH）
+# 简单做法：base64 .pfx 然后在 workflow 加一步 decode 到 /tmp/cert.pfx
+```
+
+### 触发构建
+
+```bash
+# 打 tag → 全部三个 workflow 都跑，产物挂到 Release 草稿
+git tag v0.1.0
+git push origin v0.1.0
+
+# 或在 GitHub Actions 页面点 "Run workflow" 手动触发任一条
+```
+
+---
+
 ## 数据迁移 / 切换模式
 
 **本地模式的 SQLite 位置**：
