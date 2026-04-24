@@ -198,17 +198,20 @@ jobs:
           TAG: ${{ github.ref_name }}
           SIGNED: ${{ steps.secrets.outputs.signed }}
         run: |
+          # Paths relative to `mobile/` (job-level defaults.run.working-directory).
+          # A `mobile/ios/...` prefix here double-ups to `mobile/mobile/ios/...`
+          # and finds nothing — same foot-gun as android.yml.
           version="${TAG#v}"; version="${version#ios-v}"
           mkdir -p dist
           shopt -s nullglob
           if [ "$SIGNED" = "true" ]; then
-            for f in mobile/ios/App/build/ipa/*.ipa; do
+            for f in ios/App/build/ipa/*.ipa; do
               cp -v "$f" "dist/pt-invite-watcher-v${version}-iOS.ipa"
             done
           else
             # Unsigned simulator build: tarred .app that a dev can drag into Simulator.app.
-            if [ -f "mobile/ios/App/release/App-simulator.app.tar.gz" ]; then
-              cp -v "mobile/ios/App/release/App-simulator.app.tar.gz" \
+            if [ -f "ios/App/release/App-simulator.app.tar.gz" ]; then
+              cp -v "ios/App/release/App-simulator.app.tar.gz" \
                     "dist/pt-invite-watcher-v${version}-iOS-Simulator.app.tar.gz"
             fi
           fi

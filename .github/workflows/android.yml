@@ -189,17 +189,19 @@ jobs:
           TAG: ${{ github.ref_name }}
           TYPE: ${{ steps.build.outputs.type }}
         run: |
-          # Same naming convention as desktop.yml. Android is a universal
-          # APK/AAB (Gradle produces one-per-arch in `splits` configs, but
-          # we don't split — one file covers arm64/arm7/x86/x86_64 thanks
-          # to Capacitor's default Gradle setup).
+          # Paths are relative to `mobile/` because `defaults.run.working-
+          # directory: mobile` at the job level. A `mobile/android/...`
+          # prefix here would double up to `mobile/mobile/...` and match
+          # nothing — caught on the first tag release when the upload step
+          # warned "No files were found". Android is a universal APK/AAB
+          # (no per-arch splits configured, so one file covers every arch).
           version="${TAG#v}"; version="${version#android-v}"
           mkdir -p dist
           shopt -s nullglob
-          for apk in mobile/android/app/build/outputs/apk/${TYPE}/*.apk; do
+          for apk in android/app/build/outputs/apk/${TYPE}/*.apk; do
             cp -v "$apk" "dist/pt-invite-watcher-v${version}-Android-universal.apk"
           done
-          for aab in mobile/android/app/build/outputs/bundle/release/*.aab; do
+          for aab in android/app/build/outputs/bundle/release/*.aab; do
             cp -v "$aab" "dist/pt-invite-watcher-v${version}-Android-universal.aab"
           done
           ls -la dist/
