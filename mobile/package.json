@@ -1,6 +1,6 @@
 {
   "name": "pt-invite-watcher-mobile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Capacitor wrapper that ships the PT Invite Watcher web UI as a native Android / iOS app.",
   "scripts": {
