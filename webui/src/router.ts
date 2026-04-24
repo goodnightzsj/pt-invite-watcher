@@ -13,12 +13,15 @@ const lazyConfig = () => import("./pages/ConfigPage.vue");
 const lazyNotifications = () => import("./pages/NotificationsPage.vue");
 const lazyLogs = () => import("./pages/LogsPage.vue");
 
+// `meta.title` drives the browser tab / PWA app-switcher label. Keeping the
+// copy short (≤ 10 chars) so it's readable in narrow tab strips. The router's
+// `afterEach` hook (main.ts) concatenates with the product name.
 export const routes: RouteRecordRaw[] = [
-  { path: "/", component: DashboardPage },
-  { path: "/sites", component: lazySites },
-  { path: "/config", component: lazyConfig },
-  { path: "/notifications", component: lazyNotifications },
-  { path: "/logs", component: lazyLogs },
+  { path: "/", component: DashboardPage, meta: { title: "站点状态" } },
+  { path: "/sites", component: lazySites, meta: { title: "站点管理" } },
+  { path: "/config", component: lazyConfig, meta: { title: "服务配置" } },
+  { path: "/notifications", component: lazyNotifications, meta: { title: "通知设置" } },
+  { path: "/logs", component: lazyLogs, meta: { title: "日志" } },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 

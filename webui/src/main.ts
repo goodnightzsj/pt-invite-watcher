@@ -39,6 +39,43 @@ const router = createRouter({
   },
 });
 
+// Dynamic page title — browser tab + PWA app switcher + Capacitor title bar
+// reflect the current view. "PT Invite Watcher" alone is the root fallback
+// so users arriving from a search still see the product name.
+const BASE_TITLE = "PT Invite Watcher";
+router.afterEach((to) => {
+  const pageTitle = (to.meta?.title as string | undefined) || "";
+  document.title = pageTitle ? `${pageTitle} · ${BASE_TITLE}` : BASE_TITLE;
+});
+
+// Keyboard-driven navigation for desktop + Tauri users. Cmd/Ctrl+1..5 jumps
+// to the five main views; only active when no text input is focused so we
+// don't hijack keystrokes mid-typing. Mobile users can't trigger these
+// (no keyboard mod) so the listener is still safe to always install.
+const NAV_KEY_TO_PATH: Record<string, string> = {
+  "1": "/",
+  "2": "/sites",
+  "3": "/config",
+  "4": "/notifications",
+  "5": "/logs",
+};
+window.addEventListener("keydown", (e: KeyboardEvent) => {
+  // Meta = macOS Cmd, Control = Windows/Linux Ctrl. Requiring both is out
+  // because native menus own Cmd+1..5 on macOS — but in a webview we're
+  // free to claim them.
+  if (!(e.metaKey || e.ctrlKey)) return;
+  if (e.altKey || e.shiftKey) return; // Leave Alt/Shift combos for the browser
+  const target = e.target as HTMLElement | null;
+  const tag = (target?.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || target?.isContentEditable) return;
+  const path = NAV_KEY_TO_PATH[e.key];
+  if (!path) return;
+  e.preventDefault();
+  if (router.currentRoute.value.path !== path) {
+    void router.push(path);
+  }
+});
+
 initTheme();
 
 createApp(App).use(router).mount("#app");
