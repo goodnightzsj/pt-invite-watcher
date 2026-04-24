@@ -85,5 +85,27 @@ async def persist_and_notify(
     except Exception:
         logger.exception("notify failed: %s", site.domain)
 
+    # Native mobile push (APN / FCM) — only when an invite JUST transitioned
+    # to open. Other changes (registration closed, reachability down) stay
+    # on the Telegram / 企业微信 channels because they're less actionable
+    # from a phone lock screen. `is_configured()` is a fast env-var check so
+    # the typical operator with no mobile push setup pays nothing here.
+    try:
+        from pt_invite_watcher.notify.mobile_push import dispatch_invites_opened, is_configured
+        if is_configured():
+            prev_inv = (prev.invites_state if prev else None) or ""
+            new_inv = result.invites.state or ""
+            if prev_inv != "open" and new_inv == "open":
+                await dispatch_invites_opened(
+                    store,
+                    domain=normalize_domain(site.domain),
+                    site_name=getattr(site, "name", "") or "",
+                    count=getattr(result.invites, "available", None),
+                )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("mobile push dispatch failed: %s", site.domain)
+
 
 __all__ = ["persist_and_notify"]

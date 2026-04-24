@@ -307,4 +307,11 @@ export const api = {
   },
   logsDomains: () => requestJson<{ domains: string[] }>("/api/logs/domains"),
   version: () => requestJson<{ version: string }>("/api/version"),
+  deviceRegister: (token: string, platform: "ios" | "android", domainFilter = "") =>
+    requestJson<{ ok: boolean }>("/api/devices/register", {
+      method: "POST",
+      body: JSON.stringify({ token, platform, domain_filter: domainFilter }),
+    }),
+  deviceUnregister: (token: string) =>
+    requestJson<{ ok: boolean; removed: number }>(`/api/devices/${encodeURIComponent(token)}`, { method: "DELETE" }),
 };

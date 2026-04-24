@@ -19,7 +19,7 @@ import {
   enableBrowserNotifications,
 } from "../browser_notifications";
 import { resetRuntimeConfig, runtimeConfig } from "../runtime_config";
-import { detectHost, isAutostartEnabled, setAutostartEnabled } from "../capacitor_integration";
+import { detectHost, isAutostartEnabled, requestAndRegisterPush, setAutostartEnabled } from "../capacitor_integration";
 
 const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
@@ -134,6 +134,31 @@ async function toggleAutostart(next: boolean) {
     showToast(next ? "已开启开机自启" : "已关闭开机自启", "success", 1800);
   } else {
     showToast("切换失败（权限不足或系统不支持）", "error", 2800);
+  }
+}
+
+// Mobile push (APN/FCM). Stored token lives server-side; `pushRegistered`
+// reflects the local registration attempt for this session only — we don't
+// probe for "is the backend still subscribed" since re-tapping the button
+// is idempotent on the server side.
+const pushRegistered = ref(false);
+const pushBusy = ref(false);
+
+async function enableMobilePush() {
+  if (pushBusy.value) return;
+  pushBusy.value = true;
+  try {
+    const token = await requestAndRegisterPush(async (t, platform) => {
+      await api.deviceRegister(t, platform);
+    });
+    if (token) {
+      pushRegistered.value = true;
+      showToast("推送已注册（邀请开放时即时送达）", "success", 2600);
+    } else {
+      showToast("注册失败（检查系统通知权限）", "error", 3600);
+    }
+  } finally {
+    pushBusy.value = false;
   }
 }
 
@@ -836,11 +861,27 @@ async function clearIconCache() {
           </div>
         </div>
 
+        <!-- Capacitor mobile: native push via APN/FCM. Shown instead of the
+             browser Notification toggle (which doesn't work in the WebView).
+             Requires operator to set PTIW_FCM_SERVER_KEY / APNS_* env vars
+             server-side; without them the backend stores the token but
+             never dispatches. -->
+        <div v-if="isCapacitorHost" class="mt-4 flex items-start gap-3">
+          <Button size="sm" variant="primary" :disabled="pushBusy || pushRegistered" :loading="pushBusy" @click="enableMobilePush">
+            {{ pushRegistered ? "已开启" : "开启" }}
+          </Button>
+          <div>
+            <div class="text-sm text-slate-700 dark:text-slate-200">原生推送通知</div>
+            <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              邀请开放时通过 APN（iOS）/ FCM（Android）即时推送，锁屏也能收到。
+              服务端需配置 PTIW_FCM_SERVER_KEY / PTIW_APNS_* 环境变量。
+            </div>
+          </div>
+        </div>
+
         <!-- Browser Notification API is a no-op inside the Capacitor WebView
-             (mobile native notifications go through Telegram / 企业微信 +
-             `@capacitor/local-notifications`, not `window.Notification`).
-             Hide this toggle there so users don't flip a switch that
-             silently does nothing. -->
+             (mobile native notifications go through the native-push path
+             above, not `window.Notification`). Hide this toggle there. -->
         <div v-if="!isCapacitorHost" class="mt-4 flex items-start gap-3">
           <Toggle
             :modelValue="browserNotificationsEnabled"

@@ -37,6 +37,15 @@ interface HapticsPlugin {
     selectionEnd: () => Promise<void>;
 }
 
+interface PushPlugin {
+    requestPermissions: () => Promise<{ receive: "granted" | "denied" | "prompt" }>;
+    register: () => Promise<void>;
+    addListener: (
+        eventName: "registration" | "registrationError" | "pushNotificationReceived",
+        handler: (data: unknown) => void
+    ) => Promise<{ remove?: () => void }>;
+}
+
 interface CapacitorGlobal {
     getPlatform?: () => "web" | "ios" | "android";
     isNativePlatform?: () => boolean;
@@ -44,6 +53,7 @@ interface CapacitorGlobal {
         App?: AppPlugin;
         StatusBar?: StatusBarPlugin;
         Haptics?: HapticsPlugin;
+        PushNotifications?: PushPlugin;
     };
 }
 
@@ -158,6 +168,69 @@ export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
         return await isAutostartEnabled();
     } catch {
         return false;
+    }
+}
+
+/**
+ * Request push permission + register the device with APN/FCM, then POST the
+ * resulting token to our backend so it can address this device when an
+ * invite opens. Safe to call multiple times — APN/FCM dedupe on their end,
+ * and our backend does INSERT OR UPDATE.
+ *
+ * Returns the platform-issued token on success, or null if the user denied
+ * permission or we're not in a Capacitor shell.
+ */
+export async function requestAndRegisterPush(
+    postToken: (token: string, platform: "ios" | "android") => Promise<void>
+): Promise<string | null> {
+    const cap = getCapacitor();
+    const push = cap?.Plugins?.PushNotifications;
+    if (!push || !cap?.getPlatform) return null;
+    const platform = cap.getPlatform();
+    if (platform !== "ios" && platform !== "android") return null;
+
+    try {
+        const perm = await push.requestPermissions();
+        if (perm.receive !== "granted") return null;
+
+        return await new Promise<string | null>(async (resolve) => {
+            // `registration` event fires with the platform token once APNS/FCM
+            // hands it back. Failure path lands in registrationError.
+            let resolved = false;
+            const regListener = await push.addListener("registration", (payload) => {
+                if (resolved) return;
+                resolved = true;
+                const token = (payload as { value?: string })?.value || "";
+                if (!token) {
+                    regListener.remove?.();
+                    resolve(null);
+                    return;
+                }
+                void postToken(token, platform).catch(() => { /* server down? user retries later */ });
+                regListener.remove?.();
+                resolve(token);
+            });
+            await push.addListener("registrationError", () => {
+                if (resolved) return;
+                resolved = true;
+                regListener.remove?.();
+                resolve(null);
+            });
+            await push.register();
+
+            // 15s ceiling — if APNS/FCM hasn't answered by then, something's
+            // wrong (network dead, entitlement missing). Don't leave the UI
+            // hanging forever.
+            setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    regListener.remove?.();
+                    resolve(null);
+                }
+            }, 15_000);
+        });
+    } catch {
+        return null;
     }
 }
 

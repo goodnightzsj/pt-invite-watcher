@@ -215,6 +215,25 @@ class SqliteStore:
         ):
             cur = await self._conn.execute(index_sql)
             await cur.close()
+
+        # Device token registry for native mobile push (APN/FCM). `token` is
+        # the platform-issued push token (base64 string), `platform` is
+        # "ios" | "android", `domain_filter` is a comma-separated allowlist
+        # (empty = all sites). UNIQUE on token prevents duplicates when
+        # the same device re-registers after a reinstall.
+        cur = await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS device_tokens (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              token TEXT NOT NULL UNIQUE,
+              platform TEXT NOT NULL,
+              domain_filter TEXT DEFAULT '',
+              registered_at TEXT NOT NULL,
+              last_seen_at TEXT NOT NULL
+            );
+            """
+        )
+        await cur.close()
         await self._conn.commit()
 
         await self._ensure_default_notifications()
