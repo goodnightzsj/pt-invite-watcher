@@ -5,16 +5,13 @@
 #
 # The spec file IS Python — PyInstaller evals it during build. Keep it side-effect-free;
 # any logging here ends up in PyInstaller's build log, not the user's runtime log.
-import os
 from pathlib import Path
 
-# Spec files don't receive __file__ in some PyInstaller versions; fall back to CWD
-# which build.py sets to ROOT/scripts/build-sidecar before invoking us.
-try:
-    SPEC_DIR = Path(__file__).resolve().parent
-except NameError:  # pragma: no cover — only trips on older PyInstaller
-    SPEC_DIR = Path(os.getcwd())
-
+# PyInstaller injects `SPECPATH` (the directory of this .spec file) as a
+# global before evaluating the spec — use it rather than `__file__` (which is
+# not defined in the spec's eval namespace) or CWD (which the runner sets to
+# the repo root, not scripts/build-sidecar).
+SPEC_DIR = Path(SPECPATH).resolve()
 ROOT = SPEC_DIR.parents[1]
 ENTRY = str(SPEC_DIR / "entry.py")
 
