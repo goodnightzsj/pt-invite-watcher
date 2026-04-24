@@ -122,14 +122,46 @@ async function connect() {
             </div>
 
             <form v-else-if="step === 'remote'" class="space-y-4" @submit.prevent="connect">
-                <FormInput
-                    v-model="apiBase"
-                    label="服务器 URL"
-                    placeholder="https://pt.example.com 或 http://192.168.1.10:8080"
-                />
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">服务器 URL</label>
+                    <input
+                        v-model="apiBase"
+                        class="ui-input w-full"
+                        placeholder="https://pt.example.com 或 http://192.168.1.10:8080"
+                        type="url"
+                        inputmode="url"
+                        autocomplete="url"
+                        autocapitalize="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                        enterkeyhint="next"
+                    />
+                </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <FormInput v-model="username" label="用户名" placeholder="BasicAuth 用户名（可选）" />
-                    <FormInput v-model="password" type="password" label="密码" placeholder="BasicAuth 密码（可选）" />
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">用户名</label>
+                        <input
+                            v-model="username"
+                            class="ui-input w-full"
+                            placeholder="BasicAuth 用户名（可选）"
+                            autocomplete="username"
+                            autocapitalize="off"
+                            autocorrect="off"
+                            spellcheck="false"
+                            enterkeyhint="next"
+                        />
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">密码</label>
+                        <input
+                            v-model="password"
+                            type="password"
+                            class="ui-input w-full"
+                            placeholder="BasicAuth 密码（可选）"
+                            autocomplete="current-password"
+                            enterkeyhint="go"
+                        />
+                    </div>
                 </div>
                 <div v-if="errorMsg" class="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200">
                     {{ errorMsg }}

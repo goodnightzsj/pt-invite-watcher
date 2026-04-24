@@ -183,6 +183,24 @@ button, a, [role="button"] {
   app-region: no-drag;
 }
 
+/* iOS auto-zooms into an input on focus if its computed font-size is <16px.
+   Force a 16px minimum on inputs inside the Capacitor shells — the visual
+   size stays the same via `transform: scale(0.875)` if we need tighter
+   rendering, but the zoom-in behavior is suppressed. `text-size-adjust`
+   is belt-and-suspenders in case a page overrides root font-size.   */
+[data-host="capacitor-ios"] input,
+[data-host="capacitor-ios"] textarea,
+[data-host="capacitor-ios"] select,
+[data-host="capacitor-android"] input,
+[data-host="capacitor-android"] textarea,
+[data-host="capacitor-android"] select {
+  font-size: 16px;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 .glass {
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
