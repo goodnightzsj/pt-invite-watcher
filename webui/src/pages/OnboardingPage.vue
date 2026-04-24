@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ArrowRight, Loader2, Server, Laptop } from "lucide-vue-next";
+import { ArrowRight, Loader2, Server, Laptop, ShieldAlert } from "lucide-vue-next";
 
 import Button from "../components/Button.vue";
 import FormInput from "../components/FormInput.vue";
@@ -33,6 +33,11 @@ const submitting = ref(false);
 const errorMsg = ref("");
 
 const canSubmit = computed(() => apiBase.value.trim().length > 0 && !submitting.value);
+
+const apiBaseIsInsecureHttp = computed(() => {
+    const v = apiBase.value.trim().toLowerCase();
+    return v.startsWith("http://");
+});
 
 function base64UserPass(user: string, pass: string): string {
     // btoa requires Latin-1; typical BasicAuth credentials fit, but guard with
@@ -154,6 +159,20 @@ async function connect() {
                         spellcheck="false"
                         enterkeyhint="next"
                     />
+                    <!-- Non-blocking HTTPS nudge. Shown the moment the URL
+                         starts with `http://` (not `https://`). Doesn't
+                         stop the user from connecting — LAN is a legit
+                         use case — just makes the security implication
+                         visible before they commit. -->
+                    <div v-if="apiBaseIsInsecureHttp" class="mt-2 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800 dark:border-warning-900/70 dark:bg-warning-950/40 dark:text-warning-200">
+                        <ShieldAlert class="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                            <div class="font-medium">明文 HTTP 连接</div>
+                            <div class="mt-0.5 opacity-90">
+                                内网地址 OK；公网部署请在服务器前放反向代理 + TLS 证书（BasicAuth 凭证和扫描结果都会明文传输）。
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
