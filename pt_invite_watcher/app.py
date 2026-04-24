@@ -77,6 +77,8 @@ async def lifespan(app: FastAPI):
     yield
     await stop_scheduler(scan_task)
     await ws_broadcaster.stop()
+    from pt_invite_watcher.routes.sites import close_icon_client
+    await close_icon_client()
     await ctx.cookiecloud.close()
     await ctx.store.close()
 

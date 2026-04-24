@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Annotated
+from typing import Any, Dict, Optional, Tuple, Annotated
 
 import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -67,6 +68,72 @@ _FAVICON_BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 }
 
+# Shared outbound client: creating a fresh AsyncClient per request pays a full
+# TCP+TLS handshake every time, which adds ~50-200ms per icon on a cold pool.
+# The singleton keeps keep-alive sockets warm across requests.
+_ICON_CLIENT_LIMITS = httpx.Limits(max_connections=16, max_keepalive_connections=8)
+_ICON_CLIENT: Optional[httpx.AsyncClient] = None
+_ICON_CLIENT_LOCK = asyncio.Lock()
+
+# Server-side icon cache. Without this, N browsers pointed at the same server
+# each trigger an upstream fetch to every PT site every 12h — multiplying a
+# per-user load by the number of dashboards open. Status is stored so negative
+# results (hijacked/unreachable) don't retry on every request.
+# entry: (expires_at_monotonic, status_code, body, content_type)
+_ICON_CACHE_TTL_OK = 12 * 3600          # 12h — matches the client-side Cache-Control
+_ICON_CACHE_TTL_FAIL = 60 * 60          # 1h  — faster recovery when a hijack gets fixed
+_ICON_CACHE_MAX = 2048
+_icon_cache: Dict[str, Tuple[float, int, bytes, str]] = {}
+
+
+async def _get_icon_client() -> httpx.AsyncClient:
+    global _ICON_CLIENT
+    if _ICON_CLIENT is not None:
+        return _ICON_CLIENT
+    async with _ICON_CLIENT_LOCK:
+        if _ICON_CLIENT is None:
+            _ICON_CLIENT = httpx.AsyncClient(
+                timeout=_FAVICON_TIMEOUT_SECONDS,
+                http2=True,
+                limits=_ICON_CLIENT_LIMITS,
+            )
+    return _ICON_CLIENT
+
+
+async def close_icon_client() -> None:
+    """Called from the app lifespan on shutdown — cleanly drains the pool."""
+    global _ICON_CLIENT
+    if _ICON_CLIENT is None:
+        return
+    client = _ICON_CLIENT
+    _ICON_CLIENT = None
+    try:
+        await client.aclose()
+    except Exception:
+        logger.exception("icon proxy client close failed")
+
+
+def _icon_cache_get(dom: str) -> Optional[Tuple[int, bytes, str]]:
+    entry = _icon_cache.get(dom)
+    if entry is None:
+        return None
+    expires_at, status, body, ct = entry
+    if expires_at < time.monotonic():
+        _icon_cache.pop(dom, None)
+        return None
+    return status, body, ct
+
+
+def _icon_cache_put(dom: str, status: int, body: bytes, ct: str) -> None:
+    if len(_icon_cache) >= _ICON_CACHE_MAX:
+        # Evict the 10% closest-to-expiry entries so a single pathological run
+        # can't unbounded-grow the cache. Cheap (O(n log n)) since n is bounded.
+        drop = sorted(_icon_cache.items(), key=lambda kv: kv[1][0])[: max(1, _ICON_CACHE_MAX // 10)]
+        for k, _ in drop:
+            _icon_cache.pop(k, None)
+    ttl = _ICON_CACHE_TTL_OK if status == 200 else _ICON_CACHE_TTL_FAIL
+    _icon_cache[dom] = (time.monotonic() + ttl, status, body, ct)
+
 
 @router.get("/api/sites/icon", dependencies=[Depends(require_auth)])
 async def api_site_icon(domain: str) -> Response:
@@ -87,23 +154,38 @@ async def api_site_icon(domain: str) -> Response:
     if not dom:
         raise HTTPException(status_code=400, detail="domain required")
 
+    cached = _icon_cache_get(dom)
+    if cached is not None:
+        status, body, ct = cached
+        if status == 204:
+            return Response(status_code=204)
+        return Response(
+            content=body,
+            media_type=ct or "image/x-icon",
+            headers={"Cache-Control": "public, max-age=43200"},
+        )
+
     url = f"https://{dom}/favicon.ico"
     friendly = friendly_peers_for(dom)
 
+    def _remember_fail() -> Response:
+        _icon_cache_put(dom, 204, b"", "")
+        return Response(status_code=204)
+
     try:
-        async with httpx.AsyncClient(timeout=_FAVICON_TIMEOUT_SECONDS, http2=True) as client:
-            gr = await guarded_get(
-                client,
-                url,
-                expected_host=dom,
-                friendly_hosts=friendly,
-                headers=_FAVICON_BROWSER_HEADERS,
-                attempts=1,
-                delay_seconds=0,
-            )
+        client = await _get_icon_client()
+        gr = await guarded_get(
+            client,
+            url,
+            expected_host=dom,
+            friendly_hosts=friendly,
+            headers=_FAVICON_BROWSER_HEADERS,
+            attempts=1,
+            delay_seconds=0,
+        )
     except Exception:
         logger.exception("favicon proxy failed for %s", dom)
-        return Response(status_code=204)
+        return _remember_fail()
 
     # Redirected away from the site's own registrable domain — almost certainly a
     # hijack / takedown redirect. Don't cache the decoy's icon.
@@ -113,23 +195,25 @@ async def api_site_icon(domain: str) -> Response:
                 await gr.response.aclose()
             except Exception:
                 pass
-        return Response(status_code=204)
+        return _remember_fail()
 
     resp = gr.response
     try:
         if resp.status_code >= 400:
-            return Response(status_code=204)
+            return _remember_fail()
         content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         # Some sites serve an HTML 404 page with a 200 status when /favicon.ico is
         # missing. Treat only real image types as valid.
         if not (content_type.startswith("image/") or content_type in {"application/octet-stream", "application/x-ico"}):
-            return Response(status_code=204)
+            return _remember_fail()
         body = resp.content
         if not body or len(body) < 32 or len(body) > _FAVICON_MAX_BYTES:
-            return Response(status_code=204)
+            return _remember_fail()
+        media_type = content_type or "image/x-icon"
+        _icon_cache_put(dom, 200, body, media_type)
         return Response(
             content=body,
-            media_type=content_type or "image/x-icon",
+            media_type=media_type,
             headers={
                 # 12h browser cache is enough to let users see icon refreshes on
                 # the same day, while cutting origin hits by ~99%.
