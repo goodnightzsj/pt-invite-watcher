@@ -8,6 +8,7 @@ import { initTheme } from "./theme";
 import { loadRuntimeConfig, needsOnboarding } from "./runtime_config";
 import { applyHostAttribute, isCapacitor, syncStatusBar, wireHardwareBack } from "./capacitor_integration";
 import { installBadgeResetOnVisible, rebaseTitleAfterRouteChange } from "./title_badge";
+import { i18n } from "./i18n";
 
 import "./styles.css";
 
@@ -81,7 +82,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
 
 initTheme();
 
-createApp(App).use(router).mount("#app");
+createApp(App).use(router).use(i18n).mount("#app");
 
 // Skip chunk prefetch during Onboarding — the user hasn't authenticated yet
 // and we don't want to ping an unknown server 4 extra times.

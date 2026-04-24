@@ -20,6 +20,7 @@ import {
 } from "../browser_notifications";
 import { resetRuntimeConfig, runtimeConfig } from "../runtime_config";
 import { detectHost, isAutostartEnabled, requestAndRegisterPush, setAutostartEnabled } from "../capacitor_integration";
+import { getLocale, setLocale, type Locale } from "../i18n";
 
 const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
@@ -143,6 +144,19 @@ async function toggleAutostart(next: boolean) {
 // is idempotent on the server side.
 const pushRegistered = ref(false);
 const pushBusy = ref(false);
+
+// Locale selector — reactive to the i18n singleton so the dropdown reflects
+// the current state even if something else (e.g. browser nav) flipped it.
+const currentLocale = ref<Locale>(getLocale());
+const LOCALE_OPTIONS = [
+  { label: "简体中文", value: "zh-CN" as Locale },
+  { label: "English", value: "en-US" as Locale },
+];
+function onLocaleChange(next: Locale) {
+  setLocale(next);
+  currentLocale.value = next;
+  showToast(next === "zh-CN" ? "已切换为中文" : "Language switched to English", "success", 1600);
+}
 
 async function enableMobilePush() {
   if (pushBusy.value) return;
@@ -820,6 +834,21 @@ async function clearIconCache() {
 
     <Card title="界面设置">
       <div class="space-y-4">
+        <!-- Language selector — always available. Browser users, Tauri users,
+             Capacitor users all see it the same way. Takes effect immediately
+             without reload since vue-i18n's reactive locale ref is bound into
+             every $t() call across the app. -->
+        <div>
+          <label class="block text-sm font-medium">{{ $t("config.language") }}</label>
+          <div class="mt-2 w-56">
+            <FormSelect
+              :model-value="currentLocale"
+              :options="LOCALE_OPTIONS"
+              @update:modelValue="(v) => onLocaleChange(v as any)"
+            />
+          </div>
+        </div>
+
         <div>
           <label class="block text-sm font-medium">主题强调色 (Accent Color)</label>
           <div class="mt-2 flex flex-wrap gap-2">

@@ -15,6 +15,7 @@ import { clearIconCache } from "./icon_cache";
 import { setThemeMode } from "./theme";
 import { showToast } from "./toast";
 import { maybeInitSentry } from "./sentry";
+import { setLocale } from "./i18n";
 
 import {
   Activity,
@@ -27,13 +28,20 @@ import {
 
 const route = useRoute();
 
-const nav = [
-  { to: "/", label: "站点状态", icon: Activity },
-  { to: "/sites", label: "站点管理", icon: Globe },
-  { to: "/config", label: "服务配置", icon: Settings },
-  { to: "/notifications", label: "通知设置", icon: Bell },
-  { to: "/logs", label: "日志", icon: FileText },
-];
+// Nav labels flow through i18n so switching language (Config → 界面语言)
+// rewords them in the same session without a reload. `computed` with `t`
+// binds to the reactive locale ref so templates re-render on change.
+import { useI18n } from "vue-i18n";
+import { computed } from "vue";
+const { t } = useI18n();
+
+const nav = computed(() => [
+  { to: "/", label: t("nav.dashboard"), icon: Activity },
+  { to: "/sites", label: t("nav.sites"), icon: Globe },
+  { to: "/config", label: t("nav.config"), icon: Settings },
+  { to: "/notifications", label: t("nav.notifications"), icon: Bell },
+  { to: "/logs", label: t("nav.logs"), icon: FileText },
+]);
 
 const version = ref("");
 
@@ -78,6 +86,8 @@ onMounted(async () => {
     { id: "theme.light", label: "主题 · 日间模式", category: "设置", aliases: ["light", "day"], run: () => { setThemeMode("light"); } },
     { id: "theme.dark", label: "主题 · 夜间模式", category: "设置", aliases: ["dark", "night"], run: () => { setThemeMode("dark"); } },
     { id: "theme.system", label: "主题 · 跟随系统", category: "设置", aliases: ["system", "auto"], run: () => { setThemeMode("system"); } },
+    { id: "locale.zh", label: "语言 · 简体中文 / Chinese", category: "设置", aliases: ["zh", "中文", "chinese"], run: () => { setLocale("zh-CN"); showToast("已切换为中文", "success", 1200); } },
+    { id: "locale.en", label: "Language · English", category: "设置", aliases: ["en", "english", "英文"], run: () => { setLocale("en-US"); showToast("Language switched to English", "success", 1200); } },
   ]);
 });
 
