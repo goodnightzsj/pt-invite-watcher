@@ -1,0 +1,101 @@
+name: Release Body
+
+# Paints a consistent Release body when a `v*` tag is pushed — merges the
+# CHANGELOG.md section release-please wrote + a per-platform download table
+# that lines up with the file-naming convention in desktop/android/ios.yml.
+#
+# Runs in parallel with the build workflows. They attach binaries (per-
+# workflow, no body); this job sets the body once. The Release stays draft
+# until the operator clicks Publish, so all three workflows have time to
+# converge before anyone sees the page.
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "desktop-v*"
+      - "android-v*"
+      - "ios-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  write-body:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compose body
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          # Strip the `v`/`platform-v` prefix to get a bare version string.
+          version="${TAG#v}"; version="${version#desktop-v}"; version="${version#android-v}"; version="${version#ios-v}"
+          asset="https://github.com/${REPO}/releases/download/${TAG}"
+
+          # Pull the newest CHANGELOG section (between the top `## [X.Y.Z]`
+          # header and the next `## `). release-please writes these on every
+          # release PR merge. If CHANGELOG.md doesn't exist yet (first tag
+          # before release-please has written anything), we fall back to a
+          # generic line rather than failing.
+          changelog=""
+          if [ -f CHANGELOG.md ]; then
+            changelog=$(awk '/^## \[/{n++; if(n==2) exit} n==1' CHANGELOG.md | tail -n +2)
+          fi
+          [ -z "$changelog" ] && changelog="- See individual commits."
+
+          cat > body.md <<EOF
+          # PT Invite Watcher v${version}
+
+          > PT 站点开放注册 / 邀请名额 / 连通性监控 · 跨平台（浏览器 · 桌面 · 移动）
+
+          ## 📦 下载
+
+          | 平台 | 架构 | 文件 |
+          |---|---|---|
+          | **macOS** | Apple Silicon | [\`.dmg\`](${asset}/pt-invite-watcher-v${version}-macOS-arm64.dmg) |
+          | **macOS** | Intel | [\`.dmg\`](${asset}/pt-invite-watcher-v${version}-macOS-x86_64.dmg) |
+          | **Windows** | x86_64 | [\`.msi\`](${asset}/pt-invite-watcher-v${version}-Windows-x86_64.msi) · [\`.exe\`](${asset}/pt-invite-watcher-v${version}-Windows-x86_64.exe) |
+          | **Linux** | x86_64 | [\`.AppImage\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.AppImage) · [\`.deb\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.deb) · [\`.rpm\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.rpm) |
+          | **Android** | universal | [\`.apk\`](${asset}/pt-invite-watcher-v${version}-Android-universal.apk) · [\`.aab\`](${asset}/pt-invite-watcher-v${version}-Android-universal.aab) |
+          | **iOS** | signed / simulator | [\`.ipa\`](${asset}/pt-invite-watcher-v${version}-iOS.ipa) · [\`-Simulator.app.tar.gz\`](${asset}/pt-invite-watcher-v${version}-iOS-Simulator.app.tar.gz) |
+
+          > 桌面端首次运行可能遇到 Gatekeeper / SmartScreen 提示 —— macOS 右键→打开，Windows 点「更多信息 → 仍要运行」。签名构建需要 Apple Developer / Windows EV 证书。
+
+          ## 📝 变更
+
+          ${changelog}
+
+          ## 🔗 相关
+
+          - **Docker 镜像**：\`docker pull zsj/pt-invite-watcher:latest\`
+          - **自动更新**：桌面端已集成 Tauri updater，下个版本发布后应用内自动提示升级。
+          - **配置 / 签名 / 上架完整流程**：[docs/multi-platform.md](https://github.com/${REPO}/blob/${TAG}/docs/multi-platform.md)
+
+          ---
+
+          <sub>构建日期：$(date -u +%Y-%m-%d) · Commit \`${GITHUB_SHA:0:7}\`</sub>
+          EOF
+          echo "--- body.md preview ---"
+          head -40 body.md
+
+      - name: Upsert draft Release with composed body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          # Create-or-update. `gh release edit` fails if the release doesn't
+          # exist yet (other workflows may not have fired their `softprops`
+          # step yet); fall through to `gh release create` as a draft in that
+          # case so the body shows up immediately.
+          if gh release view "$TAG" --json url >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file body.md --draft=true
+          else
+            gh release create "$TAG" --notes-file body.md --draft --title "PT Invite Watcher ${TAG}"
+          fi

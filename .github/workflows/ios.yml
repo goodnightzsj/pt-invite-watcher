@@ -191,27 +191,41 @@ jobs:
           mkdir -p ../../../../release
           cp App-simulator.app.tar.gz ../../../../release/
 
-      # --- Artifacts + Release -------------------------------------------
-      - name: Upload signed .ipa
-        if: steps.secrets.outputs.signed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: pt-invite-watcher-ios-ipa
-          path: mobile/ios/App/build/ipa/*.ipa
-          retention-days: 30
+      # --- Rename + upload ---------------------------------------------
+      - name: Collect + rename artifacts
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          SIGNED: ${{ steps.secrets.outputs.signed }}
+        run: |
+          version="${TAG#v}"; version="${version#ios-v}"
+          mkdir -p dist
+          shopt -s nullglob
+          if [ "$SIGNED" = "true" ]; then
+            for f in mobile/ios/App/build/ipa/*.ipa; do
+              cp -v "$f" "dist/pt-invite-watcher-v${version}-iOS.ipa"
+            done
+          else
+            # Unsigned simulator build: tarred .app that a dev can drag into Simulator.app.
+            if [ -f "mobile/ios/App/release/App-simulator.app.tar.gz" ]; then
+              cp -v "mobile/ios/App/release/App-simulator.app.tar.gz" \
+                    "dist/pt-invite-watcher-v${version}-iOS-Simulator.app.tar.gz"
+            fi
+          fi
+          ls -la dist/ || true
 
-      - name: Upload unsigned simulator .app
-        if: steps.secrets.outputs.signed != 'true'
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pt-invite-watcher-ios-simulator
-          path: mobile/ios/App/release/App-simulator.app.tar.gz
+          name: pt-invite-watcher-ios-${{ steps.secrets.outputs.signed == 'true' && 'ipa' || 'simulator' }}
+          path: dist/*
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Attach to Release (tag push, signed)
         if: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/ios-v')) && steps.secrets.outputs.signed == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: mobile/ios/App/build/ipa/*.ipa
+          files: dist/*
           draft: true
           fail_on_unmatched_files: false

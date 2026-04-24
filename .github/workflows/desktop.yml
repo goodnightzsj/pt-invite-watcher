@@ -153,23 +153,56 @@ jobs:
         run: npx tauri build --target ${{ matrix.rust_target }}
 
       # --- Artifact collection ------------------------------------------
-      - name: Collect bundles
+      - name: Collect + rename bundles
         shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.rust_target }}
         run: |
+          # Consistent naming scheme across platforms — one Release page lists
+          # everything uniformly, like cc-switch's Releases:
+          #   pt-invite-watcher-v0.1.1-macOS-arm64.dmg
+          #   pt-invite-watcher-v0.1.1-Windows-x86_64.msi
+          #   pt-invite-watcher-v0.1.1-Linux-x86_64.AppImage
+          # Version fragment strips the `v`/`desktop-v` prefix from the tag
+          # so `desktop-v0.1.1` → `v0.1.1` in the filename.
+          version="${TAG#v}"; version="${version#desktop-v}"
+          case "$TARGET" in
+            aarch64-apple-darwin)      platform=macOS;       arch=arm64 ;;
+            x86_64-apple-darwin)       platform=macOS;       arch=x86_64 ;;
+            x86_64-pc-windows-msvc)    platform=Windows;     arch=x86_64 ;;
+            x86_64-unknown-linux-gnu)  platform=Linux;       arch=x86_64 ;;
+            *)                         platform="$TARGET";   arch="" ;;
+          esac
+          tagf="v${version}-${platform}-${arch}"
+
           mkdir -p dist
-          # Tauri emits to src-tauri/target/<triple>/release/bundle/<format>/
-          # Include .sig files when TAURI_SIGNING_PRIVATE_KEY was set — those
-          # are what the updater plugin verifies against the pubkey baked
-          # into the installed app. Without them the "update" button in
-          # the banner would download bits but refuse to apply them.
-          find src-tauri/target/${{ matrix.rust_target }}/release/bundle \
-            -type f \
-            \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.app.tar.gz.sig" \
-               -o -name "*.msi" -o -name "*.msi.zip" -o -name "*.msi.zip.sig" \
-               -o -name "*.exe" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \
-               -o -name "*.deb" -o -name "*.AppImage" -o -name "*.AppImage.sig" \
-               -o -name "*.rpm" \) \
-            -exec cp -v {} dist/ \;
+          rename_copy() {
+            src="$1"; ext="$2"
+            [ -f "$src" ] || return 0
+            cp -v "$src" "dist/pt-invite-watcher-${tagf}.${ext}"
+          }
+
+          base="src-tauri/target/${TARGET}/release/bundle"
+          shopt -s nullglob
+          # macOS
+          for f in "$base"/dmg/*.dmg; do rename_copy "$f" "dmg"; done
+          for f in "$base"/macos/*.app.tar.gz; do rename_copy "$f" "app.tar.gz"; done
+          for f in "$base"/macos/*.app.tar.gz.sig; do rename_copy "$f" "app.tar.gz.sig"; done
+          # Windows
+          for f in "$base"/msi/*.msi; do rename_copy "$f" "msi"; done
+          for f in "$base"/msi/*.msi.zip; do rename_copy "$f" "msi.zip"; done
+          for f in "$base"/msi/*.msi.zip.sig; do rename_copy "$f" "msi.zip.sig"; done
+          for f in "$base"/nsis/*.exe; do rename_copy "$f" "exe"; done
+          for f in "$base"/nsis/*.nsis.zip; do rename_copy "$f" "nsis.zip"; done
+          for f in "$base"/nsis/*.nsis.zip.sig; do rename_copy "$f" "nsis.zip.sig"; done
+          # Linux
+          for f in "$base"/appimage/*.AppImage; do rename_copy "$f" "AppImage"; done
+          for f in "$base"/appimage/*.AppImage.sig; do rename_copy "$f" "AppImage.sig"; done
+          for f in "$base"/deb/*.deb; do rename_copy "$f" "deb"; done
+          for f in "$base"/rpm/*.rpm; do rename_copy "$f" "rpm"; done
+
+          echo "--- dist/ ---"
           ls -la dist/
 
       - name: Generate updater manifest (latest.json)
@@ -246,13 +279,16 @@ jobs:
         # tag namespaces — the step only runs when one of them triggered
         # the workflow, so manual `workflow_dispatch` runs don't clutter
         # Releases with partial artifacts.
+        # Body is owned by release-body.yml (it writes a unified per-tag body
+        # across all three build workflows); we intentionally don't pass
+        # `body` / `body_path` / `generate_release_notes` here so
+        # softprops's file-attach doesn't clobber what release-body wrote.
         if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/desktop-v') }}
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           draft: true
           fail_on_unmatched_files: false
-          generate_release_notes: true
 
   # After all matrix jobs attach their per-target manifest slices, merge them
   # into a single `latest.json` (the filename the updater endpoint in

@@ -183,13 +183,32 @@ jobs:
             echo "type=debug" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Collect + rename artifacts
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          TYPE: ${{ steps.build.outputs.type }}
+        run: |
+          # Same naming convention as desktop.yml. Android is a universal
+          # APK/AAB (Gradle produces one-per-arch in `splits` configs, but
+          # we don't split — one file covers arm64/arm7/x86/x86_64 thanks
+          # to Capacitor's default Gradle setup).
+          version="${TAG#v}"; version="${version#android-v}"
+          mkdir -p dist
+          shopt -s nullglob
+          for apk in mobile/android/app/build/outputs/apk/${TYPE}/*.apk; do
+            cp -v "$apk" "dist/pt-invite-watcher-v${version}-Android-universal.apk"
+          done
+          for aab in mobile/android/app/build/outputs/bundle/release/*.aab; do
+            cp -v "$aab" "dist/pt-invite-watcher-v${version}-Android-universal.aab"
+          done
+          ls -la dist/
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pt-invite-watcher-android-${{ steps.build.outputs.type }}
-          path: |
-            mobile/android/app/build/outputs/apk/${{ steps.build.outputs.type }}/*.apk
-            mobile/android/app/build/outputs/bundle/release/*.aab
+          path: dist/*
           if-no-files-found: warn
           retention-days: 30
 
@@ -197,8 +216,6 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/android-v') }}
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            mobile/android/app/build/outputs/apk/${{ steps.build.outputs.type }}/*.apk
-            mobile/android/app/build/outputs/bundle/release/*.aab
+          files: dist/*
           draft: true
           fail_on_unmatched_files: false
