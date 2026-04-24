@@ -6,7 +6,7 @@ import OnboardingPage from "./pages/OnboardingPage.vue";
 import { prefetchSecondaryPages, routes } from "./router";
 import { initTheme } from "./theme";
 import { loadRuntimeConfig, needsOnboarding } from "./runtime_config";
-import { isCapacitor, syncStatusBar, wireHardwareBack } from "./capacitor_integration";
+import { applyHostAttribute, isCapacitor, syncStatusBar, wireHardwareBack } from "./capacitor_integration";
 
 import "./styles.css";
 
@@ -15,6 +15,11 @@ import "./styles.css";
 // same-origin fallback. Must happen before the router / components mount so
 // the first fetch doesn't race against a not-yet-configured state.
 loadRuntimeConfig();
+
+// Tag <html data-host="capacitor-ios|capacitor-android|tauri|browser"> so
+// CSS rules can surgically adjust per shell (e.g. hide external links on
+// mobile where opening a browser is clunky; add a drag region on Tauri).
+applyHostAttribute();
 
 const router = createRouter({
   history: createWebHistory(),

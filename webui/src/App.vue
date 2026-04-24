@@ -89,7 +89,8 @@ onMounted(async () => {
           <!-- Global Actions (Auto-Dark, GitHub) -->
           <div class="flex items-center gap-2">
             <a href="https://github.com/goodnightzsj/pt-invite-watcher" target="_blank"
-              class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:border-brand-300 hover:shadow-md dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-white/20">
+              class="host-hide-mobile flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-all hover:border-brand-300 hover:shadow-md dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-white/20"
+              aria-label="GitHub 仓库">
               <Github class="h-5 w-5" />
             </a>
             <ThemeToggle />

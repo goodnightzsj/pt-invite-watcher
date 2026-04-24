@@ -57,6 +57,27 @@ export function capacitorPlatform(): "web" | "ios" | "android" {
 }
 
 /**
+ * Detect the host shell so CSS / components can react per-platform.
+ * Precedence: capacitor first (iOS / Android), then Tauri (desktop),
+ * finally plain browser. Result is stable for the session.
+ */
+export type HostShell = "capacitor-ios" | "capacitor-android" | "tauri" | "browser";
+
+export function detectHost(): HostShell {
+    const plat = capacitorPlatform();
+    if (plat === "ios") return "capacitor-ios";
+    if (plat === "android") return "capacitor-android";
+    const anyWin = window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown };
+    if (anyWin.__TAURI__ || anyWin.__TAURI_INTERNALS__) return "tauri";
+    return "browser";
+}
+
+/** Stamp the detected shell onto <html> so CSS can target via `[data-host="..."]`. */
+export function applyHostAttribute(): void {
+    document.documentElement.dataset.host = detectHost();
+}
+
+/**
  * Wire the Android hardware-back button to the router.
  *
  * Without this, hitting "back" on Android always closes the app — iOS has no

@@ -152,6 +152,37 @@ button, a, [role="button"] {
   touch-action: manipulation;
 }
 
+/* ============================================================================
+   Host-specific tweaks via `[data-host]` stamped on <html> at boot
+   ---------------------------------------------------------------------------
+   The same bundle runs under 4 shells. These rules are small surgical deltas
+   for when one shell's UX deviates from the browser default — keep each rule
+   documented so the intent is obvious later.
+   ============================================================================ */
+
+/* Mobile (Capacitor): hide the "open GitHub" external-link button. Launching
+   Safari/Chrome from inside a WebView on mobile drops the user out of our
+   app and they have to tab back, which is friction without payoff. */
+[data-host="capacitor-ios"] .host-hide-mobile,
+[data-host="capacitor-android"] .host-hide-mobile {
+  display: none !important;
+}
+
+/* Tauri desktop: make the entire header act as a drag region for the native
+   window (like macOS / Windows native titlebars do), except on elements the
+   user actually interacts with — those re-enable default behavior.
+   Reference: https://v2.tauri.app/learn/window-customization/#manual-implementation */
+[data-host="tauri"] header {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+[data-host="tauri"] header button,
+[data-host="tauri"] header a,
+[data-host="tauri"] header input {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 .glass {
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
