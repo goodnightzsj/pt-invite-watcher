@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Native desktop + mobile shell for PT Invite Watcher (Tauri 2).",
   "scripts": {
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:android:init": "tauri android init",
