@@ -19,7 +19,7 @@ import {
   enableBrowserNotifications,
 } from "../browser_notifications";
 import { resetRuntimeConfig, runtimeConfig } from "../runtime_config";
-import { detectHost } from "../capacitor_integration";
+import { detectHost, isAutostartEnabled, setAutostartEnabled } from "../capacitor_integration";
 
 const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
@@ -114,6 +114,28 @@ const isCapacitorHost = computed(() => {
   const host = detectHost();
   return host === "capacitor-ios" || host === "capacitor-android";
 });
+
+const isTauriHost = computed(() => detectHost() === "tauri");
+
+// Reactive autostart state — synced to native on mount, written-through when
+// the toggle flips. Hidden entirely on non-Tauri hosts since autostart is a
+// desktop-app concept.
+const autostartEnabled = ref(false);
+onMounted(async () => {
+  if (isTauriHost.value) {
+    autostartEnabled.value = await isAutostartEnabled();
+  }
+});
+
+async function toggleAutostart(next: boolean) {
+  const actual = await setAutostartEnabled(next);
+  autostartEnabled.value = actual;
+  if (actual === next) {
+    showToast(next ? "已开启开机自启" : "已关闭开机自启", "success", 1800);
+  } else {
+    showToast("切换失败（权限不足或系统不支持）", "error", 2800);
+  }
+}
 
 async function resetConnection() {
   if (!(await confirm("确认重新连接服务器吗？本地保存的 URL / 凭证会被清除，下次启动会重新进入 Onboarding。"))) return;
@@ -798,6 +820,21 @@ async function clearIconCache() {
           <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>
         </div>
         <div class="mt-1 text-xs text-slate-500 dark:text-slate-300">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
+
+        <!-- Desktop-only: launch at login. Shown only on Tauri shells because
+             browser / Capacitor mobile have no equivalent concept. Paired
+             with the T4 tray so the app can live in the background from
+             boot without requiring a window. -->
+        <div v-if="isTauriHost" class="mt-4 flex items-start gap-3">
+          <Toggle :modelValue="autostartEnabled" @update:modelValue="toggleAutostart" />
+          <div>
+            <div class="text-sm text-slate-700 dark:text-slate-200">开机自启</div>
+            <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              系统启动后自动在后台运行（macOS LaunchAgent / Windows 启动注册表 / Linux .desktop 自启项）。
+              关闭窗口即隐藏到托盘，退出请用托盘菜单。
+            </div>
+          </div>
+        </div>
 
         <!-- Browser Notification API is a no-op inside the Capacitor WebView
              (mobile native notifications go through Telegram / 企业微信 +

@@ -118,6 +118,50 @@ export function haptic(style: "light" | "medium" | "heavy" | "selection" = "ligh
 }
 
 /**
+ * Tauri autostart (launch at login) bridge — no-op on non-Tauri shells.
+ *
+ * `tauri-plugin-autostart` exposes itself via IPC at
+ * `plugin:autostart|enable|disable|is_enabled`. Rather than adding
+ * `@tauri-apps/plugin-autostart` to webui/package.json (which would leak
+ * a Tauri dep into the browser + Capacitor builds), we call the core IPC
+ * proxy directly — available under `window.__TAURI__.core.invoke` when
+ * `withGlobalTauri: true` is set in tauri.conf.json (we do).
+ */
+interface TauriInvoker {
+    core?: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+    invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+}
+
+function tauriInvoke(): TauriInvoker["core"] | null {
+    const t = (window as unknown as { __TAURI__?: TauriInvoker }).__TAURI__;
+    if (!t) return null;
+    if (t.core?.invoke) return t.core;
+    if (t.invoke) return { invoke: t.invoke };
+    return null;
+}
+
+export async function isAutostartEnabled(): Promise<boolean> {
+    const core = tauriInvoke();
+    if (!core) return false;
+    try {
+        return Boolean(await core.invoke("plugin:autostart|is_enabled"));
+    } catch {
+        return false;
+    }
+}
+
+export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
+    const core = tauriInvoke();
+    if (!core) return false;
+    try {
+        await core.invoke(enabled ? "plugin:autostart|enable" : "plugin:autostart|disable");
+        return await isAutostartEnabled();
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Wire the Android hardware-back button to the router.
  *
  * Without this, hitting "back" on Android always closes the app — iOS has no

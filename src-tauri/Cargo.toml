@@ -26,6 +26,9 @@ tauri = { version = "2", features = ["tray-icon"] }
 # Needed for spawning the Python sidecar on desktop; no-op on mobile since
 # the sidecar module is cfg-gated off those targets.
 tauri-plugin-shell = "2"
+# Launch-at-login: macOS LaunchAgent plist, Windows startup registry, Linux
+# .desktop autostart file. User-toggleable from Config → 界面设置.
+tauri-plugin-autostart = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

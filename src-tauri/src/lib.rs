@@ -32,6 +32,13 @@ mod tray;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // Desktop autostart — users toggle from Config → 界面设置. Registering
+        // the plugin with `None` args means the CLI command used to re-launch
+        // the app is the default (the executable path). No-op on mobile.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let main_window = app
                 .get_webview_window("main")
