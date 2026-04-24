@@ -33,14 +33,22 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ""      # skip default packages; setup-ndk below handles NDK
 
       - name: Install Android NDK
-        shell: bash
-        run: |
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
           # Tauri 2 needs the NDK for cross-compiling Rust to the 4 android arches.
-          # Pin a known-working revision; bump when Tauri upgrades its MSRV.
-          yes | sdkmanager "ndk;26.2.11394342" >/dev/null
-          echo "NDK_HOME=$ANDROID_HOME/ndk/26.2.11394342" >> $GITHUB_ENV
+          # r26d is the latest LTS at time of writing; bump carefully (NDK major
+          # revs can break Tauri's bundled cc/linker invocations).
+          ndk-version: r26d
+          add-to-path: false
+
+      - name: Export NDK_HOME for Tauri
+        shell: bash
+        run: echo "NDK_HOME=${{ steps.ndk.outputs.ndk-path }}" >> $GITHUB_ENV
 
       - name: Setup Rust + android targets
         uses: dtolnay/rust-toolchain@stable
