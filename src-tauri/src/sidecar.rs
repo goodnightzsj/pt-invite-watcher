@@ -126,7 +126,11 @@ pub fn try_start_embedded(app: &AppHandle) -> Result<Option<Sidecar>, String> {
         .build()
         .map_err(|e| format!("build probe client: {e}"))?;
 
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // 20s budget covers cold-disk first-run on Windows where PyInstaller
+    // has to unpack its archive before the Python interpreter even starts.
+    // Typical warm start is 1-3s; leave generous headroom so slow disks
+    // don't push users onto the remote-mode fallback unnecessarily.
+    let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         // `/health` is intentionally NOT behind auth (it's a liveness probe),
         // so this handshake doesn't need the token. Actual API calls do.
@@ -141,7 +145,7 @@ pub fn try_start_embedded(app: &AppHandle) -> Result<Option<Sidecar>, String> {
         if Instant::now() >= deadline {
             // Give up — caller will surface remote mode and we release the child.
             let _ = child.kill();
-            return Err("sidecar did not respond to /health within 10s".into());
+            return Err("sidecar did not respond to /health within 20s".into());
         }
         std::thread::sleep(Duration::from_millis(150));
     }
