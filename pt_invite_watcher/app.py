@@ -46,6 +46,46 @@ def _warn_if_webui_dist_stale() -> None:
         logger.exception("failed to check webui build staleness")
 
 
+async def _startup_self_check(ctx) -> None:
+    """Emit a one-shot startup banner covering the subsystems operators ask
+    about first when something looks wrong: version, DB location, how many
+    sites the registry sees, whether upstream providers are configured.
+
+    Wrapped in broad try/except per probe so a single flaky dependency doesn't
+    poison the overall startup; the lifespan itself is still free to fail on
+    genuinely fatal errors elsewhere (e.g. malformed config).
+    """
+    try:
+        from pt_invite_watcher.engines.site_registry import list_all as _registry_list_all
+        registry_count = len(list(_registry_list_all()))
+    except Exception:
+        registry_count = -1
+
+    try:
+        from pt_invite_watcher.config import Settings as _Settings  # noqa: F401
+        db_path = getattr(ctx.settings.db, "path", "?")
+    except Exception:
+        db_path = "?"
+
+    mp_cfg = getattr(ctx.settings, "moviepilot", None)
+    mp_configured = bool(getattr(mp_cfg, "base_url", "") if mp_cfg else False)
+
+    cc_cfg = getattr(ctx.settings, "cookiecloud", None)
+    cc_configured = bool(getattr(cc_cfg, "base_url", "") if cc_cfg else False)
+
+    logger.info(
+        "startup: version=%s db=%s registry_sites=%s moviepilot=%s cookiecloud=%s",
+        __version__,
+        db_path,
+        registry_count,
+        "configured" if mp_configured else "not-configured",
+        "configured" if cc_configured else "not-configured",
+    )
+
+    if registry_count <= 0:
+        logger.warning("startup: site registry is empty — preset picker will show no options")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = load_settings()
@@ -53,6 +93,7 @@ async def lifespan(app: FastAPI):
     _warn_if_webui_dist_stale()
     ctx = await build_context(settings)
     app.state.ctx = ctx
+    await _startup_self_check(ctx)
     await ws_broadcaster.start()
 
     # Wire up logs to WebSocket
