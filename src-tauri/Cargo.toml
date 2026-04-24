@@ -35,7 +35,9 @@ serde_json = "1"
 # Ephemeral local port picking for the Python sidecar.
 portpicker = "0.1"
 # Probe the sidecar's /health until it answers before unblocking the webview.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# `blocking` is used by sidecar.rs inside the sync Tauri setup hook on desktop
+# targets; module itself is cfg-gated off mobile so the feature is inert there.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
 env_logger = "0.11"

@@ -20,6 +20,10 @@ use std::net::TcpListener;
 use serde_json::json;
 use tauri::Manager;
 
+// Sidecar is only relevant on desktop — iOS / Android cannot spawn Python
+// subprocesses (platform sandbox). Cfg-gate the whole module so mobile builds
+// don't drag in `reqwest::blocking` or try to resolve the sidecar binary.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod sidecar;
 
 // The `#[tauri::mobile_entry_point]` attribute is how the Android / iOS
@@ -34,18 +38,15 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Mobile targets cannot spawn arbitrary subprocesses; force remote mode.
-            #[cfg(any(target_os = "android", target_os = "ios"))]
-            let embedded_result: Result<Option<sidecar::Sidecar>, String> = Ok(None);
-
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            let embedded_result = sidecar::try_start_embedded(app.handle());
-
             let main_window = app
                 .get_webview_window("main")
                 .ok_or("main window missing")?;
 
-            let bootstrap = match embedded_result {
+            // Mobile targets can't spawn the Python sidecar (sandbox forbids
+            // arbitrary subprocesses) — they boot straight into remote mode,
+            // so keep the sidecar code path off their compilation path entirely.
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            let bootstrap = match sidecar::try_start_embedded(app.handle()) {
                 Ok(Some(sc)) => {
                     let api_base = format!("http://127.0.0.1:{}", sc.port);
                     let ws_base = format!("ws://127.0.0.1:{}", sc.port);
@@ -66,6 +67,9 @@ pub fn run() {
                     })
                 }
             };
+
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let bootstrap = json!({ "mode": "remote" });
 
             // Inject __PTIW_RUNTIME__ before the webview's JS runs. Tauri 2 queues
             // initialization scripts to fire before the first page load.
