@@ -163,12 +163,28 @@ export function apiUrl(path: string): string {
  *   1. runtimeConfig.wsBase (set by Tauri shell or Onboarding)
  *   2. Derived from apiBase
  *   3. Derived from window.location (same-origin browser)
+ *
+ * When BasicAuth credentials are configured (Tauri sidecar token / remote-mode
+ * Onboarding entry), we append `?token=<base64 user:pass>` — browsers can't
+ * set custom headers on `new WebSocket(url)` so query-param is the standard
+ * way to pass credentials through a WS handshake. Same-origin browser
+ * deployments still ride the HTTP BasicAuth challenge that the browser
+ * remembers, so no token is needed there.
  */
 export function wsUrl(path: string): string {
     const wsBase = runtimeConfig.wsBase || deriveWsBase(runtimeConfig.apiBase);
-    if (wsBase) return wsBase + (path.startsWith("/") ? path : `/${path}`);
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}${path}`;
+    let baseUrl = "";
+    if (wsBase) {
+        baseUrl = wsBase + (path.startsWith("/") ? path : `/${path}`);
+    } else {
+        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+        baseUrl = `${proto}//${window.location.host}${path}`;
+    }
+    if (runtimeConfig.basicAuth) {
+        const sep = baseUrl.includes("?") ? "&" : "?";
+        return `${baseUrl}${sep}token=${encodeURIComponent(runtimeConfig.basicAuth)}`;
+    }
+    return baseUrl;
 }
 
 /**
