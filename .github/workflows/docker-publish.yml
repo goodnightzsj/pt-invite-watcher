@@ -3,6 +3,17 @@ name: Build and Push Docker Image
 on:
   push:
     branches: [main]
+    # Explicit positive filter — only the paths that actually end up baked
+    # into the Docker image trigger a rebuild. Prevents dead CI runs on
+    # docs edits, Tauri-shell tweaks, Capacitor config changes, and mobile
+    # workflow changes that have zero effect on the backend container.
+    paths:
+      - "pt_invite_watcher/**"
+      - "webui/**"          # Dockerfile builds webui from source + bundles dist
+      - "requirements.txt"
+      - "docker/**"
+      - "tests/**"
+      - ".github/workflows/docker-publish.yml"
   workflow_dispatch:
 
 jobs:

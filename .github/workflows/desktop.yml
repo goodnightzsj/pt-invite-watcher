@@ -7,7 +7,11 @@ name: Desktop Build (Win / macOS / Linux)
 # concerns itself with the large, platform-native build pipeline.
 on:
   push:
-    tags: ["v*"]
+    # `v*` tags release all three platforms together (the common case).
+    # `desktop-v*` is the per-platform knob for when only the desktop needs
+    # a new build — e.g. a macOS-specific fix that doesn't affect mobile.
+    # Same idea mirrors in android.yml / ios.yml with `android-v*` / `ios-v*`.
+    tags: ["v*", "desktop-v*"]
   workflow_dispatch:
 
 permissions:
@@ -170,7 +174,11 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to Release (tag push)
-        if: startsWith(github.ref, 'refs/tags/v')
+        # Match both the omnibus `v*` and the platform-specific `desktop-v*`
+        # tag namespaces — the step only runs when one of them triggered
+        # the workflow, so manual `workflow_dispatch` runs don't clutter
+        # Releases with partial artifacts.
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/desktop-v') }}
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*

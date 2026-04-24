@@ -261,14 +261,35 @@ Windows 签名：
 # 简单做法：base64 .pfx 然后在 workflow 加一步 decode 到 /tmp/cert.pfx
 ```
 
-### 触发构建
+### 触发与发布策略
+
+**只有 tag push 会创建 GitHub Release**——手动 `workflow_dispatch` 只把产物挂到 Actions → Artifacts 面板（保留 30 天），不动 Release。这样做的目的：
+
+- 每次 commit 跑 4 个 runner 的 native build 既费时（~30 分钟/提交）又无人下载，违背分发价值。
+- 开发阶段只想看「native 壳还能编过吗」时，用 `workflow_dispatch` 按需跑；正式发版打 tag。
+
+**两种 tag 命名空间**：
+
+| Tag 形式 | 触发哪些 workflow | 用途 |
+|---|---|---|
+| `v0.1.0` | desktop + android + ios | 三端同步发版（最常见） |
+| `desktop-v0.1.0` | 仅 desktop.yml | 只改桌面端（例：macOS 签名修复） |
+| `android-v0.1.0` | 仅 android.yml | 只补 Android 版本 |
+| `ios-v0.1.0` | 仅 ios.yml | 只补 iOS 版本 |
+
+每个 workflow 会把产物挂到 **同一个 tag 对应的 draft Release**（`softprops/action-gh-release` 自动按 tag name 合并）。review 完草稿点 "Publish" 即生效。
+
+**Docker 镜像 workflow** 独立：`main` 分支 push 时自动构建 + 推 Docker Hub，并用 `paths` 白名单过滤纯文档 / Tauri 壳 / 移动配置类改动（这些不影响后端容器）。Docker 镜像不走 Release，继续滚动覆盖 `:latest`。
 
 ```bash
-# 打 tag → 全部三个 workflow 都跑，产物挂到 Release 草稿
-git tag v0.1.0
-git push origin v0.1.0
+# 三端同步发版
+git tag v0.1.0 && git push origin v0.1.0
 
-# 或在 GitHub Actions 页面点 "Run workflow" 手动触发任一条
+# 仅桌面补丁（Android / iOS 不变）
+git tag desktop-v0.1.1 && git push origin desktop-v0.1.1
+
+# CI 调试：不动 Release
+# GitHub Actions 页面 → Run workflow → 选分支
 ```
 
 ---

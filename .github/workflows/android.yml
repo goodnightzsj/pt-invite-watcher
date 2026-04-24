@@ -19,7 +19,9 @@ name: Android Build (Capacitor)
 
 on:
   push:
-    tags: ["v*"]
+    # `v*` releases all three platforms; `android-v*` is the per-platform
+    # knob for shipping just Android without bumping desktop/iOS versions.
+    tags: ["v*", "android-v*"]
   workflow_dispatch:
     inputs:
       build_type:
@@ -192,7 +194,7 @@ jobs:
           retention-days: 30
 
       - name: Attach to Release (tag push)
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/android-v') }}
         uses: softprops/action-gh-release@v2
         with:
           files: |
