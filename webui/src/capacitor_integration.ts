@@ -83,6 +83,17 @@ export function detectHost(): HostShell {
 /** Stamp the detected shell onto <html> so CSS can target via `[data-host="..."]`. */
 export function applyHostAttribute(): void {
     document.documentElement.dataset.host = detectHost();
+    // Additionally mark macOS Tauri so CSS can reserve horizontal space for
+    // the traffic-light buttons without affecting Windows/Linux where the
+    // shell either has no traffic lights or uses the right-side min/max/close.
+    // navigator.platform is deprecated but still the shortest reliable hint
+    // across WebKit + Chromium; userAgent mention of "Mac OS X" is the
+    // standards-track fallback.
+    const ua = navigator.userAgent || "";
+    const isMac = /Mac OS X/i.test(ua) || /Macintosh/i.test(navigator.platform || "");
+    if (isMac) {
+        document.documentElement.dataset.os = "mac";
+    }
 }
 
 /**

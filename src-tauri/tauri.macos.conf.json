@@ -1,4 +1,20 @@
 {
+  "app": {
+    "windows": [
+      {
+        "title": "PT Invite Watcher",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 22 }
+      }
+    ]
+  },
   "bundle": {
     "externalBin": ["binaries/pt-invite-watcher-server"]
   }

@@ -183,6 +183,15 @@ button, a, [role="button"] {
   app-region: no-drag;
 }
 
+/* macOS Tauri: the native title bar is `Overlay` mode so the three traffic
+   lights float over our glass header. Without a left inset they'd overlap
+   the logo; 80px gives the standard 3-button cluster (red/yellow/green,
+   each ~14px with gaps) a comfortable margin. Other platforms keep a
+   normal left edge. */
+[data-host="tauri"][data-os="mac"] header > div {
+  padding-left: 80px;
+}
+
 /* iOS auto-zooms into an input on focus if its computed font-size is <16px.
    Force a 16px minimum on inputs inside the Capacitor shells — the visual
    size stays the same via `transform: scale(0.875)` if we need tighter
