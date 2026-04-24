@@ -37,6 +37,7 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 
 let scanPollTimer: number | undefined;
 let inflightPollTimer: number | undefined;
+let menuUnlisten: (() => void) | undefined;
 
 const errorModalOpen = ref(false);
 const errorModalTitle = ref("");
@@ -302,12 +303,37 @@ watch([hasInflightScan, scanRunning], ([hasInflight, running]) => {
 
 onMounted(async () => {
   await refresh();
+
+  // macOS native menu → "立即扫描" (Cmd+Shift+R) → this component. Tauri
+  // emits the event via `app.emit("menu:scan-now", ())` in src-tauri/src/menu.rs.
+  // Non-Tauri hosts don't have `window.__TAURI__` so the listener is a no-op.
+  const anyWin = window as unknown as {
+    __TAURI__?: {
+      event?: {
+        listen?: (name: string, handler: () => void) => Promise<() => void>;
+      };
+    };
+  };
+  const listen = anyWin.__TAURI__?.event?.listen;
+  if (listen) {
+    try {
+      menuUnlisten = await listen("menu:scan-now", () => {
+        if (!scanRunning.value) void runScan();
+      });
+    } catch {
+      /* ignore — webview didn't expose listen */
+    }
+  }
 });
 onUnmounted(() => {
   clearInflightPoll();
   if (scanPollTimer) {
     window.clearInterval(scanPollTimer);
     scanPollTimer = undefined;
+  }
+  if (menuUnlisten) {
+    menuUnlisten();
+    menuUnlisten = undefined;
   }
   if (wsRefreshRaf != null) {
     window.cancelAnimationFrame(wsRefreshRaf);

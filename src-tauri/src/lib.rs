@@ -29,6 +29,10 @@ mod sidecar;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod tray;
 
+// Native macOS menu bar — no-op on other platforms (see menu.rs).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod menu;
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -95,6 +99,9 @@ pub fn run() {
                     eprintln!("tray install failed: {e}; continuing without tray");
                 }
                 tray::intercept_close_to_hide(app.handle());
+                if let Err(e) = menu::install_menu(app.handle()) {
+                    eprintln!("menu install failed: {e}; continuing with default menu");
+                }
             }
 
             Ok(())
