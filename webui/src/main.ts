@@ -7,6 +7,7 @@ import { prefetchSecondaryPages, routes } from "./router";
 import { initTheme } from "./theme";
 import { loadRuntimeConfig, needsOnboarding } from "./runtime_config";
 import { applyHostAttribute, isCapacitor, syncStatusBar, wireHardwareBack } from "./capacitor_integration";
+import { installBadgeResetOnVisible, rebaseTitleAfterRouteChange } from "./title_badge";
 
 import "./styles.css";
 
@@ -46,7 +47,9 @@ const BASE_TITLE = "PT Invite Watcher";
 router.afterEach((to) => {
   const pageTitle = (to.meta?.title as string | undefined) || "";
   document.title = pageTitle ? `${pageTitle} · ${BASE_TITLE}` : BASE_TITLE;
+  rebaseTitleAfterRouteChange();
 });
+installBadgeResetOnVisible();
 
 // Keyboard-driven navigation for desktop + Tauri users. Cmd/Ctrl+1..5 jumps
 // to the five main views; only active when no text input is focused so we

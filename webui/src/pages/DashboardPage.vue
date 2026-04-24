@@ -21,6 +21,7 @@ import { showToast } from "../toast";
 import { formatLocalTime, formatRelativeTime } from "../utils/date";
 import { notifyBrowser } from "../browser_notifications";
 import { haptic } from "../capacitor_integration";
+import { bumpBadge } from "../title_badge";
 
 const loading = ref(false);
 const dashboardLoading = ref(false);
@@ -124,11 +125,14 @@ async function refresh(opts: { toast?: boolean; silent?: boolean } = {}) {
     const data = await api.dashboard();
     const nextRows = data.rows || [];
 
-    // Detect invites-just-opened transitions for browser notifications.
+    // Detect invites-just-opened transitions for browser notifications +
+    // background-tab title badge.
     if (invitesStateSeeded) {
+      let newlyOpened = 0;
       for (const r of nextRows) {
         const prev = prevInvitesState.get(r.domain);
         if (prev && prev !== "open" && r.invites_state === "open") {
+          newlyOpened += 1;
           const count = r.invites_available != null ? ` · 可用 ${r.invites_available}` : "";
           notifyBrowser(
             r.domain,
@@ -137,6 +141,13 @@ async function refresh(opts: { toast?: boolean; silent?: boolean } = {}) {
             { url: r.invite_url || r.url }
           );
         }
+      }
+      // Title badge: only increment when the user's tab is backgrounded
+      // (document.hidden). If they're watching the dashboard actively, the
+      // toast + row re-render already tells them — no need to pollute the
+      // title. Counter clears on visibility-change (see main.ts).
+      if (newlyOpened > 0 && document.hidden) {
+        bumpBadge(newlyOpened);
       }
     }
     for (const r of nextRows) prevInvitesState.set(r.domain, r.invites_state);
