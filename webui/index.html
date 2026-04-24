@@ -37,6 +37,13 @@
       />
     </noscript>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- PWA manifest — lets browser users "Add to Home Screen" on mobile / install
+         as a standalone window on desktop. Tauri + Capacitor shells ignore it. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS Safari bookmark behavior: treat as standalone app when added to home screen. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PT Invite Watcher" />
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-50 font-sans">
     <div id="app"></div>
