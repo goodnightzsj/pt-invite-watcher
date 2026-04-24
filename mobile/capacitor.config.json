@@ -7,6 +7,27 @@
     "iosScheme": "https"
   },
   "android": {
-    "useLegacyBridge": false
+    "useLegacyBridge": false,
+    "backgroundColor": "#020617"
+  },
+  "ios": {
+    "backgroundColor": "#020617",
+    "contentInset": "never"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 300,
+      "backgroundColor": "#020617",
+      "androidSplashResourceName": "splash",
+      "iosSpinnerStyle": "small",
+      "spinnerColor": "#6366f1"
+    },
+    "StatusBar": {
+      "overlaysWebView": true,
+      "style": "DARK",
+      "backgroundColor": "#00000000"
+    }
   }
 }

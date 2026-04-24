@@ -111,6 +111,11 @@
 html {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: contain;
+  /* Retina text rendering on webkit. `grayscale` is the iOS default and makes
+     our Inter + SF Pro stack visibly crisper than the auto-default. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 button, a {
   -webkit-touch-callout: none;
@@ -118,6 +123,33 @@ button, a {
 nav button, nav a, header a, header button {
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Native-feeling scroll containers: inertial scrolling on iOS webkit
+   (legacy, but still picked up by older WebViews bundled with Capacitor)
+   and snap-to-top behavior when the outer element is tapped. */
+.scroll-momentum {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Tactile press-state for things that act like buttons. Hover is unreliable
+   on touchscreens (tap-sticks until next interaction), so we also drive a
+   subtle scale on `:active` that makes every press feel connected. The
+   transition is deliberately short — slow scales feel laggy. */
+.press {
+  transition: transform 120ms ease-out, background-color 120ms ease-out;
+  transform-origin: center;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+/* Prevent pinch-zoom on double-tap while preserving intentional pinch gestures.
+   Double-tap-zoom is almost never wanted in a SPA and commonly fires on
+   accidental rapid-double-clicks of buttons. */
+button, a, [role="button"] {
+  touch-action: manipulation;
 }
 
 .glass {
