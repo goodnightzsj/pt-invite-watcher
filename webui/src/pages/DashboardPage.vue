@@ -19,6 +19,7 @@ import RelativeTime from "../components/RelativeTime.vue";
 import { api, type SiteRow, type ScanStatus } from "../api";
 import { showToast } from "../toast";
 import { formatLocalTime, formatRelativeTime } from "../utils/date";
+import { notifyBrowser } from "../browser_notifications";
 
 const loading = ref(false);
 const dashboardLoading = ref(false);
@@ -106,13 +107,41 @@ async function waitForDashboardIdle(timeoutMs = 5000) {
   }
 }
 
+// Track the invites_state per domain from the PREVIOUS refresh so we can
+// detect "just transitioned to open" and fire a desktop notification. Map is
+// seeded on first successful refresh (no notifications on initial page load —
+// those would all look like new openings to the browser even though they've
+// been open for a while).
+const prevInvitesState = new Map<string, string>();
+let invitesStateSeeded = false;
+
 async function refresh(opts: { toast?: boolean; silent?: boolean } = {}) {
   if (dashboardLoading.value) return;
   dashboardLoading.value = true;
   if (!opts.silent) loading.value = true;
   try {
     const data = await api.dashboard();
-    rows.value = data.rows || [];
+    const nextRows = data.rows || [];
+
+    // Detect invites-just-opened transitions for browser notifications.
+    if (invitesStateSeeded) {
+      for (const r of nextRows) {
+        const prev = prevInvitesState.get(r.domain);
+        if (prev && prev !== "open" && r.invites_state === "open") {
+          const count = r.invites_available != null ? ` · 可用 ${r.invites_available}` : "";
+          notifyBrowser(
+            r.domain,
+            `邀请已开放：${r.name || r.domain}`,
+            `${r.domain}${count}`,
+            { url: r.invite_url || r.url }
+          );
+        }
+      }
+    }
+    for (const r of nextRows) prevInvitesState.set(r.domain, r.invites_state);
+    invitesStateSeeded = true;
+
+    rows.value = nextRows;
     scanStatus.value = data.scan_status;
     scanHint.value = (data as any).scan_hint || null;
     allowStateReset.value = (data as any).ui?.allow_state_reset ?? true;

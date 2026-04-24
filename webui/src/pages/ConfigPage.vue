@@ -12,6 +12,12 @@ import Toggle from "../components/Toggle.vue";
 import { api, type ConfigResponse } from "../api";
 import { showToast } from "../toast";
 import { type AccentColor, getAccentColor, setAccentColor, PALETTES } from "../theme";
+import {
+  browserNotificationsEnabled,
+  browserNotificationsPermission,
+  disableBrowserNotifications,
+  enableBrowserNotifications,
+} from "../browser_notifications";
 
 const STORAGE_REFRESH_ENABLED = "ptiw_auto_refresh_enabled";
 const STORAGE_REFRESH_MINUTES = "ptiw_auto_refresh_minutes";
@@ -77,6 +83,34 @@ const clearFlags = reactive({
 function updateAccent(color: AccentColor) {
   accent.value = color;
   setAccentColor(color);
+}
+
+// Permission text surfaced next to the toggle so users understand why the
+// toggle may be a no-op (browser denied / unsupported). Recomputed on each
+// render since the browser may change the permission independently via
+// site settings.
+const notifPermissionLabel = computed(() => {
+  const p = browserNotificationsPermission();
+  if (p === "unsupported") return "当前浏览器不支持桌面通知";
+  if (p === "denied") return "浏览器已拒绝授权，需在站点设置里重新允许";
+  if (p === "default") return "尚未授权，开启时会请求浏览器权限";
+  return "已授权";
+});
+
+async function toggleBrowserNotifications(next: boolean) {
+  if (!next) {
+    disableBrowserNotifications();
+    showToast("已关闭桌面通知", "info", 1800);
+    return;
+  }
+  const perm = await enableBrowserNotifications();
+  if (perm === "granted") {
+    showToast("桌面通知已开启：邀请开放时会推送", "success", 2600);
+  } else if (perm === "unsupported") {
+    showToast("当前浏览器不支持桌面通知", "error", 3000);
+  } else {
+    showToast("浏览器已拒绝授权，请在地址栏旁的权限设置里手动允许", "error", 4500);
+  }
 }
 
 const model = reactive<Model>({
@@ -739,6 +773,20 @@ async function clearIconCache() {
           <div class="text-sm text-slate-700 dark:text-slate-200">允许在“站点状态”页显示“重置状态”按钮</div>
         </div>
         <div class="mt-1 text-xs text-slate-500 dark:text-slate-300">用于清空扫描结果（不影响站点配置）；建议在内网或启用 BasicAuth 后开启。</div>
+
+        <div class="mt-4 flex items-start gap-3">
+          <Toggle
+            :modelValue="browserNotificationsEnabled"
+            @update:modelValue="toggleBrowserNotifications"
+          />
+          <div>
+            <div class="text-sm text-slate-700 dark:text-slate-200">桌面通知（浏览器后台标签页也能收到邀请开放提醒）</div>
+            <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {{ notifPermissionLabel }} ·
+              服务端 Telegram / 企业微信通知保持独立，两者互不冲突。
+            </div>
+          </div>
+        </div>
 
         <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
           <div class="flex items-start justify-between gap-3">
