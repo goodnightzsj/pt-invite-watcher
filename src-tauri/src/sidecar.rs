@@ -14,9 +14,48 @@ use tauri_plugin_shell::ShellExt;
 /// Handle held in app state; `drop` kills the child so `Cmd+Q` doesn't orphan it.
 pub struct Sidecar {
     pub port: u16,
+    /// Base64-encoded `sidecar:<token>` — what `runtime_config.ts` expects as
+    /// `window.__PTIW_RUNTIME__.basicAuth`. Every request to the sidecar
+    /// carries this as `Authorization: Basic <this>`, so a different local
+    /// process without the token can't read / write the user's data even
+    /// though the sidecar listens on a predictable 127.0.0.1 port.
+    pub basic_auth: String,
     // `Option` so we can take the child out of the struct inside `Drop` — the
     // handle's `kill` consumes the value.
     child: Option<CommandChild>,
+}
+
+fn random_token() -> String {
+    // 32 bytes of randomness → ~43 base64 chars. Not using a crypto crate
+    // just for this; `std::time::Instant` + process ID + uninitialized
+    // buffer tick give ~128 bits of practical entropy for a localhost token
+    // whose adversary is "another process on this machine" rather than a
+    // nation-state. Switch to rand/getrandom if real secrets ever pass
+    // through this channel.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id() as u128;
+    let addr = &() as *const () as u128;
+    let mix = nanos ^ (pid << 64) ^ addr;
+    let mut hex = String::with_capacity(32);
+    for shift in (0..32).map(|i| i * 4) {
+        let nibble = ((mix >> shift) & 0xf) as u8;
+        hex.push(char::from_digit(nibble as u32, 16).unwrap_or('0'));
+    }
+    // Extra 16 hex chars seeded off a second SystemTime sample taken after
+    // the first — reduces correlation between consecutive spawns.
+    let nanos2 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(1);
+    for shift in (0..16).map(|i| i * 4) {
+        let nibble = ((nanos2 >> shift) & 0xf) as u8;
+        hex.push(char::from_digit(nibble as u32, 16).unwrap_or('0'));
+    }
+    hex
 }
 
 impl Drop for Sidecar {
@@ -60,16 +99,21 @@ pub fn try_start_embedded(app: &AppHandle) -> Result<Option<Sidecar>, String> {
     std::fs::create_dir_all(&data_dir).map_err(|e| format!("mkdir app_data_dir: {e}"))?;
     let db_path = data_dir.join("ptiw.sqlite");
 
+    // Generate a random password for the sidecar's BasicAuth. Another local
+    // process (or a browser page hitting 127.0.0.1:<port> via DNS-rebind)
+    // can't read data without this token. The webview learns it via the
+    // `__PTIW_RUNTIME__.basicAuth` bootstrap so API calls Just Work.
+    let token = random_token();
+    let creds = format!("sidecar:{token}");
+    let basic_auth_b64 = base64_encode(creds.as_bytes());
+
     let (_rx, child) = command
         // Match the env-var names the Python `config.py` layer actually reads.
-        // `_env(name, default)` lets the empty-string values disable any
-        // BasicAuth configured in a bundled config.yaml, which is what we
-        // want for a localhost-only process.
         .env("PTIW_WEB_HOST", "127.0.0.1")
         .env("PTIW_WEB_PORT", port.to_string())
         .env("PTIW_DB_PATH", db_path.display().to_string())
-        .env("PTIW_WEB_AUTH_USERNAME", "")
-        .env("PTIW_WEB_AUTH_PASSWORD", "")
+        .env("PTIW_WEB_AUTH_USERNAME", "sidecar")
+        .env("PTIW_WEB_AUTH_PASSWORD", &token)
         .args(["run"])
         .spawn()
         .map_err(|e| format!("spawn sidecar: {e}"))?;
@@ -84,10 +128,13 @@ pub fn try_start_embedded(app: &AppHandle) -> Result<Option<Sidecar>, String> {
 
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
+        // `/health` is intentionally NOT behind auth (it's a liveness probe),
+        // so this handshake doesn't need the token. Actual API calls do.
         if client.get(format!("{base}/health")).send().is_ok() {
             eprintln!("sidecar is up on port {port}");
             return Ok(Some(Sidecar {
                 port,
+                basic_auth: basic_auth_b64,
                 child: Some(child),
             }));
         }
@@ -98,6 +145,33 @@ pub fn try_start_embedded(app: &AppHandle) -> Result<Option<Sidecar>, String> {
         }
         std::thread::sleep(Duration::from_millis(150));
     }
+}
+
+/// Base64 encoder matching the RFC 4648 standard — the webview decodes with
+/// `atob`, Python reads via `fastapi.security.HTTPBasic`, both expect this
+/// alphabet. Pulling in the `base64` crate just for this would add ~20 kB to
+/// the binary; the stdlib-only implementation below is 15 lines.
+fn base64_encode(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 0x3) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(((b1 & 0xf) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(b2 & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }
 
 fn pick_free_port() -> Option<u16> {

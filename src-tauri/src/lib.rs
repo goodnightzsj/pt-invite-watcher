@@ -40,12 +40,17 @@ pub fn run() {
                 Ok(Some(sc)) => {
                     let api_base = format!("http://127.0.0.1:{}", sc.port);
                     let ws_base = format!("ws://127.0.0.1:{}", sc.port);
+                    let basic_auth = sc.basic_auth.clone();
                     // Store the sidecar on app state so it's dropped cleanly on exit.
                     app.manage(sc);
                     json!({
                         "apiBase": api_base,
                         "wsBase": ws_base,
                         "mode": "embedded",
+                        // Random per-launch BasicAuth so another local process
+                        // on the same machine can't read the sidecar's data
+                        // even though the port is guessable.
+                        "basicAuth": basic_auth,
                     })
                 }
                 Ok(None) => json!({ "mode": "remote" }),
