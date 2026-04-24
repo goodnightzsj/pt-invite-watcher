@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Globe, UserPlus, Ticket, AlertTriangle, RefreshCw, AlertCircle, Loader2 } from "lucide-vue-next";
+import { Globe, UserPlus, Ticket, AlertTriangle, RefreshCw, AlertCircle, Loader2, Download } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
 import Card from "../components/Card.vue";
@@ -388,6 +388,60 @@ const filteredRows = computed(() => {
 });
 const sortedRows = computed(() => sortedSiteRows(filteredRows.value));
 
+/**
+ * CSV export of the currently filtered + sorted site list.
+ *
+ * Exports what the user sees — filter chips flow through, so exporting while
+ * the "异常站点" filter is active gives them a CSV of just those rows. Uses
+ * the proper CSV escaping (quote fields with commas / quotes / newlines and
+ * double any embedded quotes), not a naive `.join(",")`.
+ *
+ * Includes a BOM so Excel on Windows doesn't mojibake Chinese. The file name
+ * embeds an ISO-like local timestamp so multiple exports don't collide.
+ */
+function csvEscape(v: unknown): string {
+  const s = v == null ? "" : String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function exportCsv() {
+  const rows = sortedRows.value;
+  if (!rows.length) {
+    showToast("当前没有可导出的站点", "info", 2000);
+    return;
+  }
+  const header = ["站点", "域名", "URL", "引擎", "连通性", "可访问备注", "注册", "注册备注", "邀请", "可用邀请", "最后检查", "最后变更"];
+  const body = rows.map((r) => [
+    r.name || "",
+    r.domain,
+    r.url,
+    r.engine || "",
+    r.reachability_state,
+    r.reachability_note || "",
+    r.registration_state,
+    r.registration_note || "",
+    r.invites_state,
+    r.invites_available ?? "",
+    r.last_checked_at || "",
+    r.last_changed_at || "",
+  ]);
+  const csv = [header, ...body].map((row) => row.map(csvEscape).join(",")).join("\n");
+  // BOM → Excel auto-detects UTF-8 and doesn't garble Chinese characters.
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  a.download = `pt-sites-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast(`已导出 ${rows.length} 个站点为 CSV`, "success", 2200);
+}
+
 const stats = computed(() => {
   const r = rows.value;
   return {
@@ -407,6 +461,15 @@ const stats = computed(() => {
           <Button variant="primary" :disabled="scanRunning" :loading="scanRunning" @click="runScan"
             class="flex-1 sm:flex-none">
             {{ scanRunning ? "扫描中…" : "立即扫描" }}
+          </Button>
+          <Button
+            :disabled="!hasRows"
+            title="导出当前筛选下的站点列表为 CSV（Excel 可直接打开）"
+            @click="exportCsv"
+            class="flex-1 sm:flex-none"
+          >
+            <Download class="mr-1 h-4 w-4" aria-hidden="true" />
+            导出 CSV
           </Button>
           <Button v-if="allowStateReset" variant="danger" :disabled="scanRunning || loading || scanningDomains.size > 0"
             title="清空扫描结果（不影响站点配置）" @click="resetState" class="flex-1 sm:flex-none">
