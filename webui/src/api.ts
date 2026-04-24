@@ -136,6 +136,7 @@ export type ConfigResponse = {
     trust_env: boolean;
   };
   ui?: { allow_state_reset: boolean };
+  observability?: { sentry_dsn?: string };
 };
 
 export type NotificationsResponse = {

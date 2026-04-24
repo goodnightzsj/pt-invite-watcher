@@ -61,7 +61,21 @@ async def api_config_get(ctx: Annotated[AppContext, Depends(get_ctx)]) -> Dict[s
 
     ui = {"allow_state_reset": rc.ui.allow_state_reset}
 
-    return {"moviepilot": moviepilot, "connectivity": connectivity, "cookie": cookie, "scan": scan, "ui": ui}
+    # Frontend observability: hand the browser-facing Sentry DSN (if any) so
+    # the webui can lazy-load @sentry/browser and forward JS errors to the
+    # same project. Empty string = no frontend observability, and the webui
+    # skips the Sentry module entirely.
+    from pt_invite_watcher.observability import public_frontend_dsn
+    observability = {"sentry_dsn": public_frontend_dsn()}
+
+    return {
+        "moviepilot": moviepilot,
+        "connectivity": connectivity,
+        "cookie": cookie,
+        "scan": scan,
+        "ui": ui,
+        "observability": observability,
+    }
 
 
 @router.put("/api/config", dependencies=[Depends(require_auth)])

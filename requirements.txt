@@ -8,3 +8,8 @@ h2>=4.1
 aiosqlite>=0.20
 beautifulsoup4>=4.12
 pyyaml>=6.0
+# Optional — only active when PTIW_SENTRY_DSN is set. Adds ~2MB to the image
+# (fine vs the benefit of capturing unhandled scanner exceptions). When the
+# env var is unset, sentry-sdk is imported but init() is skipped, and no
+# network calls are made.
+sentry-sdk[fastapi]>=2.0

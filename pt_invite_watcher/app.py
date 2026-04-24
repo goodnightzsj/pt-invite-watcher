@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from pt_invite_watcher.app_context import build_context
 from pt_invite_watcher.config import load_settings
+from pt_invite_watcher.observability import init_observability
 from pt_invite_watcher import __version__
 from pt_invite_watcher.scheduler import start_scheduler, stop_scheduler
 from pt_invite_watcher.routes import ASSETS_DIR, router, ws_broadcaster
@@ -92,6 +93,9 @@ async def _startup_self_check(ctx) -> None:
 async def lifespan(app: FastAPI):
     settings = load_settings()
     logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO))
+    # Opt-in Sentry — no-op when PTIW_SENTRY_DSN is unset. Runs before
+    # build_context so any errors during context setup are also captured.
+    init_observability(release=f"pt-invite-watcher@{__version__}")
     _warn_if_webui_dist_stale()
     ctx = await build_context(settings)
     app.state.ctx = ctx

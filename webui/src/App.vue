@@ -14,6 +14,7 @@ import { registerCommands } from "./commands";
 import { clearIconCache } from "./icon_cache";
 import { setThemeMode } from "./theme";
 import { showToast } from "./toast";
+import { maybeInitSentry } from "./sentry";
 
 import {
   Activity,
@@ -45,6 +46,16 @@ onMounted(async () => {
     version.value = resp.version;
   } catch (e) {
     // ignore
+  }
+  // Kick off Sentry init in the background (lazy dynamic import). No-op when
+  // the server isn't configured with a frontend DSN. Doesn't block render.
+  try {
+    const cfg = await api.configGet();
+    if (cfg?.observability?.sentry_dsn) {
+      void maybeInitSentry(cfg.observability.sentry_dsn);
+    }
+  } catch {
+    /* config probe failing is non-fatal — we'll retry on next interaction */
   }
 
   // Register global commands — nav to each route, theme toggles, icon cache
