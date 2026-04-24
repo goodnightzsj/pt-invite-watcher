@@ -1,17 +1,49 @@
-name: Android Build
+name: Android Build (Capacitor)
+
+# Builds the Capacitor Android APK (and, when signing secrets are present, AAB).
+# The mobile shell is Capacitor rather than Tauri because mobile platforms
+# cannot spawn the Python sidecar — we'd just pay NDK + Rust cross-compile
+# cost for zero functional gain. Capacitor wraps the same `webui/` bundle in
+# a standard WebView and is materially simpler to build on CI.
+#
+# Triggers:
+#   - `git push v*` → full release, attaches artifacts to the release draft
+#   - workflow_dispatch → artifacts-only run, no release
+#
+# Secrets (all optional; without them the build produces a debug-signed APK
+# useful for sideloading):
+#   ANDROID_KEYSTORE_BASE64      base64-encoded .keystore
+#   ANDROID_KEYSTORE_PASSWORD    keystore password
+#   ANDROID_KEY_ALIAS            alias inside keystore
+#   ANDROID_KEY_PASSWORD         alias password
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type"
+        required: true
+        default: "debug"
+        type: choice
+        options:
+          - debug
+          - release
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   build-android:
-    runs-on: ubuntu-22.04
-    name: Android APK + AAB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
 
     steps:
       - uses: actions/checkout@v4
@@ -22,128 +54,149 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: |
-            package-lock.json
             webui/package-lock.json
+            mobile/package-lock.json
 
-      - name: Setup JDK 17
+      - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: ""      # skip default packages; setup-ndk below handles NDK
+          api-level: 34
+          build-tools: 34.0.0
 
-      - name: Install Android NDK
-        id: ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          # Tauri 2 needs the NDK for cross-compiling Rust to the 4 android arches.
-          # r26d is the latest LTS at time of writing; bump carefully (NDK major
-          # revs can break Tauri's bundled cc/linker invocations).
-          ndk-version: r26d
-          add-to-path: false
+      # --- Frontend + Capacitor sync -----------------------------------
+      - name: Install webui deps + build
+        working-directory: webui
+        run: |
+          npm ci
+          npm run build
 
-      - name: Export NDK_HOME for Tauri
-        shell: bash
-        run: echo "NDK_HOME=${{ steps.ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+      - name: Install Capacitor deps
+        run: npm ci
 
-      - name: Setup Rust + android targets
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: >
-            aarch64-linux-android,
-            armv7-linux-androideabi,
-            i686-linux-android,
-            x86_64-linux-android
+      - name: Add Android platform (first-time init)
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "src-tauri -> target"
-          shared-key: tauri-android
+      - name: Sync Capacitor
+        run: npx cap sync android
 
-      - name: Cache Gradle
+      # --- Gradle caching -----------------------------------------------
+      - name: Gradle cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            src-tauri/gen/android/.gradle
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/build.gradle*', '**/gradle-wrapper.properties') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/android/**/*.gradle*', 'mobile/android/**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: Install root npm deps (tauri-cli)
-        run: npm ci
-
-      - name: Build webui
-        run: |
-          npm ci --prefix webui
-          npm run --prefix webui build
-
-      - name: Tauri android init (idempotent)
-        shell: bash
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          NDK_HOME: ${{ env.NDK_HOME }}
-        run: |
-          # `init` generates src-tauri/gen/android/ — a full Gradle project. The
-          # command is idempotent; running it on a cache hit is a quick no-op.
-          if [ ! -d src-tauri/gen/android ]; then
-            npx tauri android init --ci
-          fi
-
-      - name: Decode upload keystore (if provided)
-        # Play Store uploads require a signed AAB. CI stores the keystore as a
-        # base64 secret so it's not committed; when absent the build still
-        # produces a debug-signed APK useful for sideloading and internal tests.
+      # --- Optional release signing -------------------------------------
+      - name: Detect keystore secret
+        id: keystore
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         shell: bash
         run: |
-          if [ -z "$KS" ]; then
-            echo "::notice::ANDROID_KEYSTORE_BASE64 not set — build will be debug-signed only"
-            exit 0
+          if [ -n "$KS" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
           fi
-          mkdir -p src-tauri/gen/android
-          echo "$KS" | base64 -d > src-tauri/gen/android/upload.keystore
-          cat > src-tauri/gen/android/key.properties <<EOF
-          storeFile=upload.keystore
-          storePassword=$KS_PASS
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASS
+
+      - name: Decode keystore
+        if: steps.keystore.outputs.present == 'true'
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        shell: bash
+        run: echo "$KS" | base64 -d > android/app/release.keystore
+
+      - name: Configure signing properties
+        if: steps.keystore.outputs.present == 'true'
+        env:
+          KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          cat >> android/gradle.properties <<EOF
+          RELEASE_STORE_FILE=release.keystore
+          RELEASE_STORE_PASSWORD=${KS_PASSWORD}
+          RELEASE_KEY_ALIAS=${KEY_ALIAS}
+          RELEASE_KEY_PASSWORD=${KEY_PASSWORD}
           EOF
 
-      - name: Tauri android build
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          NDK_HOME: ${{ env.NDK_HOME }}
-        run: npx tauri android build --apk --aab
-
-      - name: Collect artifacts
+      - name: Patch build.gradle with signing config
+        if: steps.keystore.outputs.present == 'true'
         shell: bash
         run: |
-          mkdir -p dist
-          find src-tauri/gen/android/app/build/outputs -type f \
-            \( -name "*.apk" -o -name "*.aab" \) -exec cp -v {} dist/ \;
-          ls -la dist/
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+          gradle = Path("android/app/build.gradle")
+          text = gradle.read_text()
+          if "signingConfigs" not in text:
+              signing_block = """
+              signingConfigs {
+                  release {
+                      if (project.hasProperty('RELEASE_STORE_FILE')) {
+                          storeFile file(RELEASE_STORE_FILE)
+                          storePassword RELEASE_STORE_PASSWORD
+                          keyAlias RELEASE_KEY_ALIAS
+                          keyPassword RELEASE_KEY_PASSWORD
+                      }
+                  }
+              }
+          """
+              text = re.sub(r"(android\s*\{\s*\n)", r"\1" + signing_block, text, count=1)
+          text = re.sub(
+              r"(release\s*\{\s*\n)",
+              r"\1            signingConfig signingConfigs.release\n",
+              text,
+              count=1,
+          )
+          gradle.write_text(text)
+          print("Patched android/app/build.gradle with release signing config")
+          PY
 
-      - name: Upload artifact
+      # --- Gradle build -------------------------------------------------
+      - name: Gradle build
+        id: build
+        shell: bash
+        run: |
+          cd android
+          if [ "${{ steps.keystore.outputs.present }}" = "true" ] && [ "${{ github.event.inputs.build_type }}" != "debug" ]; then
+            ./gradlew assembleRelease bundleRelease --no-daemon
+            echo "type=release" >> "$GITHUB_OUTPUT"
+          else
+            ./gradlew assembleDebug --no-daemon
+            echo "type=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pt-invite-watcher-android
-          path: dist/*
+          name: pt-invite-watcher-android-${{ steps.build.outputs.type }}
+          path: |
+            mobile/android/app/build/outputs/apk/${{ steps.build.outputs.type }}/*.apk
+            mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Attach to Release (tag push)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            mobile/android/app/build/outputs/apk/${{ steps.build.outputs.type }}/*.apk
+            mobile/android/app/build/outputs/bundle/release/*.aab
           draft: true
           fail_on_unmatched_files: false

@@ -79,62 +79,84 @@ npm run tauri:dev      # 热重载：改 webui/src 下任何文件自动刷新
 
 ---
 
-## 移动端（iOS / Android）
+## 移动端（iOS / Android，Capacitor）
+
+移动端用 **Capacitor**，不是 Tauri。原因：
+
+- 移动端本来就跑不了 Python sidecar（沙箱禁止外部进程），Tauri 的 `externalBin` 机制在 iOS/Android 上是摆设。
+- 用 Tauri 做移动就要付出 NDK + Rust cross-compile 的代价换零功能收益。
+- Capacitor 就是「把 Web 打成原生 WebView 壳」，简单稳定，CI 快。
+
+共用的是 `webui/` 的 Vite 构建产物——一次 build，桌面浏览器 / Tauri 桌面 / Capacitor 移动三处消费。
 
 ### Android
 
 前置：
 
-- Android Studio + SDK（API 33+）
-- JDK 17
-- `ANDROID_HOME` / `NDK_HOME` 环境变量指向 SDK / NDK
+- JDK 21
+- Android Studio + SDK（API 34+）
+- `ANDROID_HOME` 指向 SDK
 
 初始化（**首次**）：
 
 ```bash
-npm run tauri:android:init
-# 产出 src-tauri/gen/android/   — 这是一个完整的 Gradle 项目，可用 Android Studio 打开
+npm --prefix webui run build     # 先把前端 dist 打好
+npm --prefix mobile install      # 安装 Capacitor 依赖
+npm run mobile:android:init      # cap add android → 生成 mobile/android/ Gradle 工程
+npm run mobile:sync              # 把 dist 同步进原生壳
 ```
 
-开发 / 构建：
+构建：
 
 ```bash
-npm run tauri:android:dev     # 连真机或跑模拟器
-npm run tauri:android:build   # 产出 APK + AAB（on-device 装 APK，上 Play Store 传 AAB）
+cd mobile/android
+./gradlew assembleDebug          # 输出 APK（debug-signed，可 sideload）
+./gradlew assembleRelease bundleRelease  # 需要 release.keystore 配置好；输出 APK + AAB
 ```
-
-产物：`src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`
 
 ### iOS
 
 前置：
 
-- macOS（iOS 构建只能在 macOS 上）
-- Xcode 15+
-- Apple Developer Account（$99/yr，上 TestFlight / App Store 必需；本地模拟器不需要）
+- macOS + Xcode 15+
+- CocoaPods（`gem install cocoapods`）
+- Apple Developer Account（$99/yr，签名 / TestFlight / App Store 必需；模拟器不需要）
 
 初始化（**首次**）：
 
 ```bash
-npm run tauri:ios:init
-# 产出 src-tauri/gen/apple/   — Xcode 工程可直接打开
+npm --prefix webui run build
+npm --prefix mobile install
+npm run mobile:ios:init          # cap add ios → 生成 mobile/ios/ Xcode 工程
+npm run mobile:sync
+cd mobile/ios/App && pod install --repo-update
 ```
 
-开发 / 构建：
+构建：
 
 ```bash
-npm run tauri:ios:dev         # 跑在 iOS 模拟器
-npm run tauri:ios:build       # 构建 .ipa
+# 签名 release 流程（需准备好 .p12 + provisioning profile）：
+xcodebuild -workspace App.xcworkspace -scheme App \
+  -configuration Release -destination "generic/platform=iOS" \
+  -archivePath build/App.xcarchive archive
+xcodebuild -exportArchive -archivePath build/App.xcarchive \
+  -exportPath build/ipa -exportOptionsPlist ExportOptions.plist
+
+# 未签名 simulator 快速验证：
+xcodebuild -workspace App.xcworkspace -scheme App \
+  -configuration Release -destination "generic/platform=iOS Simulator" \
+  -sdk iphonesimulator CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_ALLOWED=NO \
+  -derivedDataPath build
 ```
 
 ### 为什么移动端不支持本地模式
 
-Tauri 2 的 `externalBin` 机制在 iOS / Android 上无法启动外部进程（系统沙箱禁止）。要让 Python 扫描逻辑在移动端本地运行，只有两条路：
+iOS / Android 沙箱禁止应用启动外部进程，Python sidecar 没法跑。要让扫描逻辑在移动端本地运行，只有两条路：
 
-1. **捆绑 Python 解释器**（Chaquopy / BeeWare）。Android 可行，iOS 可行但复杂；二进制从 30MB 膨胀到 ~100MB，且移动后台无法长时运行扫描任务（iOS 的后台执行限制会杀掉 Python 进程），体验比云端模式差。
-2. **把扫描核心 Rust 化**（`pt_invite_watcher/engines/*.py` → `src-tauri/engines-rs/`）。工作量大（~2-3k 行），但能做成真的离线扫描。
+1. **捆绑 Python 解释器**（Chaquopy / BeeWare）。Android 可行，iOS 复杂；二进制膨胀到 ~100MB，且移动后台无法长时运行扫描任务（iOS 后台执行限制会杀掉 Python 进程），体验比云端模式差。
+2. **把扫描核心 Rust 化**（`pt_invite_watcher/engines/*.py` → `src-tauri/engines-rs/`，全平台复用）。工作量大（~2-3k 行），但能做成真的离线扫描。
 
-两条路都属于 Phase 4 的长期规划。现阶段移动端走远程模式（连接用户自托管的桌面 / 服务器实例）是最务实的选择。
+两条路都属于长期规划。现阶段移动端走远程模式（连接用户自托管的桌面 / 服务器实例）是最务实的选择。
 
 ---
 
