@@ -15,8 +15,6 @@
 //! 3. **Clean shutdown** — kill the sidecar (if any) when the main window
 //!    closes. No orphan Python processes after `Cmd+Q`.
 
-use std::net::TcpListener;
-
 use serde_json::json;
 use tauri::Manager;
 
@@ -26,17 +24,9 @@ use tauri::Manager;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod sidecar;
 
-// The `#[tauri::mobile_entry_point]` attribute is how the Android / iOS
-// targets know where to hand off control after JNI / Swift boot. Desktop
-// targets ignore it (compiled via `main.rs` → `run()` directly).
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::try_init().ok();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let main_window = app
                 .get_webview_window("main")
@@ -60,7 +50,7 @@ pub fn run() {
                 }
                 Ok(None) => json!({ "mode": "remote" }),
                 Err(err) => {
-                    log::warn!("embedded sidecar failed to start: {err}; falling back to remote mode");
+                    eprintln!("embedded sidecar failed to start: {err}; falling back to remote mode");
                     json!({
                         "mode": "remote",
                         "sidecarError": err,
@@ -85,13 +75,3 @@ pub fn run() {
         .expect("error while running Tauri application");
 }
 
-/// Grab any free localhost port without holding it — the sidecar process will
-/// re-bind the same number milliseconds later. Small race window in practice;
-/// re-attempt on failure in the sidecar module.
-#[allow(dead_code)]
-fn pick_port() -> Option<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0").ok()?;
-    let port = listener.local_addr().ok()?.port();
-    drop(listener);
-    Some(port)
-}

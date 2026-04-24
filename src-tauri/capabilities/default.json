@@ -11,8 +11,6 @@
     "core:window:allow-unmaximize",
     "core:window:allow-show",
     "core:window:allow-hide",
-    "shell:allow-open",
-    "notification:default",
-    "dialog:default"
+    "shell:allow-open"
   ]
 }

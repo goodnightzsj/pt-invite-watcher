@@ -24,7 +24,7 @@ impl Drop for Sidecar {
         if let Some(child) = self.child.take() {
             // Best-effort: if kill fails we've already closed, nothing to do.
             if let Err(e) = child.kill() {
-                log::warn!("sidecar kill failed: {e}");
+                eprintln!("sidecar kill failed: {e}");
             }
         }
     }
@@ -44,7 +44,7 @@ pub fn try_start_embedded(app: &AppHandle) -> Result<Option<Sidecar>, String> {
         Ok(cmd) => cmd,
         Err(e) => {
             // No bundled sidecar = remote-only mode (not an error).
-            log::info!("no bundled sidecar: {e}; using remote mode");
+            eprintln!("no bundled sidecar: {e}; using remote mode");
             return Ok(None);
         }
     };
@@ -85,7 +85,7 @@ pub fn try_start_embedded(app: &AppHandle) -> Result<Option<Sidecar>, String> {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if client.get(format!("{base}/health")).send().is_ok() {
-            log::info!("sidecar is up on port {port}");
+            eprintln!("sidecar is up on port {port}");
             return Ok(Some(Sidecar {
                 port,
                 child: Some(child),
