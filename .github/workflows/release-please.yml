@@ -1,0 +1,52 @@
+name: Release Please
+
+# Parses conventional commits on every main push, maintains an open "release PR"
+# that bumps version + updates CHANGELOG.md. When the release PR is merged:
+#   1. A tag (e.g. v0.2.0) is pushed
+#   2. That tag triggers .github/workflows/desktop.yml / android.yml / ios.yml
+#   3. Those attach their artifacts to the same Release draft
+#
+# So one conventional-commit discipline → one-click version bump → three native
+# builds auto-attached → publish. No hand-edited CHANGELOG, no manual tagging.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # Single-project manifest: releases are tracked in a top-level
+          # CHANGELOG.md / package versioning. `simple` release-type leaves
+          # the maintainer in charge of which files carry the version
+          # (webui/package.json, mobile/package.json, src-tauri/Cargo.toml
+          # all get bumped via extra-files below).
+          release-type: simple
+          package-name: pt-invite-watcher
+          # Extra files whose version strings should stay in sync with the
+          # top-level version. release-please replaces matched literals.
+          extra-files: |
+            webui/package.json
+            mobile/package.json
+            src-tauri/Cargo.toml
+            src-tauri/tauri.conf.json
+          # Conventional-commit mapping — anything not listed falls to
+          # "Other" and doesn't bump version.
+          changelog-types: |
+            [
+              {"type": "feat", "section": "✨ Features"},
+              {"type": "fix", "section": "🐛 Bug Fixes"},
+              {"type": "perf", "section": "⚡ Performance"},
+              {"type": "sec", "section": "🔒 Security"},
+              {"type": "a11y", "section": "♿ Accessibility"},
+              {"type": "refactor", "section": "♻️ Refactoring"},
+              {"type": "ci", "section": "🔧 CI"},
+              {"type": "docs", "section": "📝 Docs", "hidden": false}
+            ]
