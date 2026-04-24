@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { Globe, UserPlus, Ticket, AlertTriangle, RefreshCw, AlertCircle, Loader2 } from "lucide-vue-next";
 
 import Badge from "../components/Badge.vue";
@@ -321,11 +322,39 @@ function formatElapsed(ms: number | null): string {
 }
 
 type FilterMode = "all" | "unreachable" | "openReg" | "openInvite";
-const filterMode = ref<FilterMode>("all");
+
+// Hydrate from URL so refreshing or sharing a filtered view preserves context.
+// e.g. `/dashboard?filter=openReg` reopens the "开放注册" filter on mount.
+const route = useRoute();
+const router = useRouter();
+const initialFilter = (route.query.filter as FilterMode | undefined) || "all";
+const validFilters: readonly FilterMode[] = ["all", "unreachable", "openReg", "openInvite"];
+const filterMode = ref<FilterMode>(
+  validFilters.includes(initialFilter as FilterMode) ? (initialFilter as FilterMode) : "all"
+);
 
 function toggleFilter(mode: FilterMode) {
   filterMode.value = filterMode.value === mode ? "all" : mode;
 }
+
+// Mirror to URL via `replace` (not `push`) so the back button doesn't stack
+// every filter toggle the user makes. Wrapped in watch with flush:"post" to
+// coalesce with Vue's render batching.
+let syncingFilterQuery = false;
+watch(
+  filterMode,
+  (mode) => {
+    if (syncingFilterQuery) return;
+    syncingFilterQuery = true;
+    const q: Record<string, string> = { ...route.query } as any;
+    if (mode === "all") delete q.filter;
+    else q.filter = mode;
+    router.replace({ query: q }).catch(() => { /* NavigationDuplicated is safe to ignore */ }).finally(() => {
+      syncingFilterQuery = false;
+    });
+  },
+  { flush: "post" }
+);
 
 const hasRows = computed(() => rows.value.length > 0);
 const filteredRows = computed(() => {
