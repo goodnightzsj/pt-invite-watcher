@@ -59,11 +59,13 @@ pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&PredefinedMenuItem::fullscreen(app, None)?)
         .build()?;
 
+    // `bring_all_to_front` isn't in Tauri v2's PredefinedMenuItem API (it's
+    // only available on macOS's native NSMenu via AppKit). Stick to what's
+    // portable — Minimize + Close are enough for the vast majority of
+    // window-menu muscle memory.
     let window_menu = SubmenuBuilder::new(app, "Window")
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .item(&PredefinedMenuItem::close_window(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::bring_all_to_front(app, None)?)
         .build()?;
 
     let menu = MenuBuilder::new(app)
