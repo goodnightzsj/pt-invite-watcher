@@ -24,6 +24,11 @@ use tauri::Manager;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod sidecar;
 
+// Tray UI and close-to-tray behavior are desktop-only — mobile shells don't
+// have a system tray concept.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod tray;
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -73,6 +78,17 @@ pub fn run() {
                 serde_json::to_string(&bootstrap).unwrap_or_else(|_| "{{}}".into())
             );
             main_window.eval(&script).ok();
+
+            // Desktop-only: system tray + close-to-hide. Mobile doesn't have
+            // a tray concept and its close-button semantics are handled by
+            // the OS (swipe away from app switcher).
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                if let Err(e) = tray::install_tray(app.handle()) {
+                    eprintln!("tray install failed: {e}; continuing without tray");
+                }
+                tray::intercept_close_to_hide(app.handle());
+            }
 
             Ok(())
         })

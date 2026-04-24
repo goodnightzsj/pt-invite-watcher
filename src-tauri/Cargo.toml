@@ -22,7 +22,7 @@ tauri-build = { version = "2", features = [] }
 # Minimal dependency set — each additional Tauri plugin adds a measurable
 # chunk of Rust compile time in CI (reminder-hub's lean matrix runs 4x faster
 # than our original). We only enable what the current shell actually calls.
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 # Needed for spawning the Python sidecar on desktop; no-op on mobile since
 # the sidecar module is cfg-gated off those targets.
 tauri-plugin-shell = "2"
