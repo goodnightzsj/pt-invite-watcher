@@ -294,6 +294,42 @@ git tag desktop-v0.1.1 && git push origin desktop-v0.1.1
 
 ---
 
+## Tauri 桌面自动更新
+
+Tauri 桌面端内置了从 GitHub Releases 拉更新的机制。启用需要一次性生成签名密钥对：
+
+```bash
+# 本地执行一次（需装 tauri-cli：npm install -g @tauri-apps/cli@next）
+cargo tauri signer generate -w ~/.tauri/ptiw.key
+
+# 输出：
+# Public  key: dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1Ymxp...
+# Private key: untrusted comment: rsign encrypted ...
+```
+
+**把 public key 粘到 `src-tauri/tauri.conf.json`**：
+
+```json
+"updater": {
+  "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1Ymxp..."
+}
+```
+
+**把 private key 加到 GitHub Secrets**：
+
+- `TAURI_SIGNING_PRIVATE_KEY` → `~/.tauri/ptiw.key` 的完整内容（base64 blob）
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` → 生成时的密码（若设置了）
+
+首次 tag push 后：
+1. `desktop.yml` 矩阵编译时 `TAURI_SIGNING_PRIVATE_KEY` 存在 → tauri-bundler 对每个产物生成 `.sig`。
+2. 每个 runner 产出自己的 manifest 切片 `latest-<triple>.json`。
+3. `updater-manifest` job 合并切片为 `latest.json`，挂到同一 Release。
+4. 用户安装的旧版本通过 `window.__TAURI__` 调 `plugin:updater|check` → HTTP GET `https://github.com/.../releases/latest/download/latest.json` → 看到新 version → 下载 + 验证 `.sig` → 重启。
+
+**没生成 keypair 时**：`updater` 插件安静失败，UpdateBanner 永远不显示，其它功能不受影响。
+
+---
+
 ## 数据迁移 / 切换模式
 
 **本地模式的 SQLite 位置**：

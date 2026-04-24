@@ -8,6 +8,7 @@ import Toast from "./components/Toast.vue";
 import MobileNav from "./components/MobileNav.vue";
 import ConfirmDialog from "./components/ConfirmDialog.vue";
 import CommandPalette from "./components/CommandPalette.vue";
+import UpdateBanner from "./components/UpdateBanner.vue";
 import { toasts, removeToast } from "./toast";
 import { registerCommands } from "./commands";
 import { clearIconCache } from "./icon_cache";
@@ -86,6 +87,10 @@ onUnmounted(() => {
          as 0 and the fallback 0.5rem keeps the header from hugging the window
          chrome on desktop. `pl-safe` / `pr-safe` handle landscape iPhone where
          the notch eats screen edges. -->
+    <!-- Self-update banner (Tauri desktop only). Sits above the header so
+         users see it regardless of which page they're on. -->
+    <UpdateBanner />
+
     <header class="sticky top-0 z-50 w-full glass border-x-0 border-t-0 rounded-none pt-safe pl-safe pr-safe">
       <div class="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
         <!-- Logo — the brand chip uses the theme accent with a soft glow so the app identity is

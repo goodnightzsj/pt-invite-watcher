@@ -43,6 +43,14 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Self-update from GitHub Releases. Public key + endpoint are
+        // declared in tauri.conf.json so they're baked into the binary.
+        // Manually triggered from the frontend (no silent background
+        // downloads).
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Needed by the updater so it can relaunch the app after applying
+        // an update.
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let main_window = app
                 .get_webview_window("main")

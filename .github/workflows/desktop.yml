@@ -158,13 +158,71 @@ jobs:
         run: |
           mkdir -p dist
           # Tauri emits to src-tauri/target/<triple>/release/bundle/<format>/
+          # Include .sig files when TAURI_SIGNING_PRIVATE_KEY was set — those
+          # are what the updater plugin verifies against the pubkey baked
+          # into the installed app. Without them the "update" button in
+          # the banner would download bits but refuse to apply them.
           find src-tauri/target/${{ matrix.rust_target }}/release/bundle \
             -type f \
-            \( -name "*.dmg" -o -name "*.app.tar.gz" \
-               -o -name "*.msi" -o -name "*.exe" \
-               -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) \
+            \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.app.tar.gz.sig" \
+               -o -name "*.msi" -o -name "*.msi.zip" -o -name "*.msi.zip.sig" \
+               -o -name "*.exe" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \
+               -o -name "*.deb" -o -name "*.AppImage" -o -name "*.AppImage.sig" \
+               -o -name "*.rpm" \) \
             -exec cp -v {} dist/ \;
           ls -la dist/
+
+      - name: Generate updater manifest (latest.json)
+        # The updater plugin looks for a JSON manifest at the configured
+        # endpoint. Generate it per-runner with the matching .sig content
+        # and platform → download-URL mapping. Each matrix runner produces
+        # a slice; a final merge step on the release job combines them.
+        # When TAURI_SIGNING_PRIVATE_KEY isn't set, .sig files don't exist
+        # and we skip manifest generation entirely.
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/desktop-v') }}
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.rust_target }}
+        run: |
+          shopt -s nullglob
+          sigs=(dist/*.sig)
+          if [ ${#sigs[@]} -eq 0 ]; then
+            echo "::notice::No .sig files — skipping updater manifest (TAURI_SIGNING_PRIVATE_KEY not configured?)"
+            exit 0
+          fi
+          # Pick the first .sig for this target; Tauri produces exactly one
+          # per format (dmg → .app.tar.gz.sig on mac, exe → .nsis.zip.sig on win).
+          sig_file="${sigs[0]}"
+          sig_contents=$(cat "$sig_file")
+          # Bundle filename = sig without trailing .sig
+          bundle_name="$(basename "$sig_file" .sig)"
+          # release-please tags are `v0.1.0`, we strip leading `v` for version field.
+          version="${TAG#v}"
+          version="${version#desktop-v}"
+          mkdir -p dist-manifest
+          cat > "dist-manifest/latest-${TARGET}.json" <<EOF
+          {
+            "version": "${version}",
+            "notes": "See CHANGELOG.md",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "${TARGET}": {
+                "signature": ${sig_contents@Q},
+                "url": "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${bundle_name}"
+              }
+            }
+          }
+          EOF
+          echo "Generated dist-manifest/latest-${TARGET}.json"
+
+      - name: Upload updater manifest slice
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/desktop-v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-manifest-${{ matrix.rust_target }}
+          path: dist-manifest/*.json
+          if-no-files-found: ignore
 
       - name: Upload artifact (workflow_dispatch)
         uses: actions/upload-artifact@v4
@@ -172,6 +230,16 @@ jobs:
           name: pt-invite-watcher-${{ matrix.rust_target }}
           path: dist/*
           if-no-files-found: error
+
+      - name: Attach updater manifest slices to Release
+        # Attach the per-target manifest files directly — the final merge
+        # step produces `latest.json` that the updater endpoint URL points at.
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/desktop-v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-manifest/*
+          draft: true
+          fail_on_unmatched_files: false
 
       - name: Attach to Release (tag push)
         # Match both the omnibus `v*` and the platform-specific `desktop-v*`
@@ -185,3 +253,48 @@ jobs:
           draft: true
           fail_on_unmatched_files: false
           generate_release_notes: true
+
+  # After all matrix jobs attach their per-target manifest slices, merge them
+  # into a single `latest.json` (the filename the updater endpoint in
+  # tauri.conf.json points at) and attach to the same Release draft.
+  updater-manifest:
+    name: Merge updater manifest
+    needs: build-desktop
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/desktop-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all updater manifest slices
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-manifest-*
+          path: slices
+          merge-multiple: true
+      - name: Merge slices → latest.json
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, glob, sys
+          slices = glob.glob("slices/latest-*.json")
+          if not slices:
+              print("::warning::No signed artifacts this run — skipping latest.json")
+              sys.exit(0)
+          merged = {"platforms": {}}
+          for f in slices:
+              with open(f) as fh:
+                  d = json.load(fh)
+              merged.setdefault("version", d["version"])
+              merged.setdefault("notes", d.get("notes", ""))
+              merged.setdefault("pub_date", d.get("pub_date", ""))
+              merged["platforms"].update(d["platforms"])
+          with open("latest.json", "w") as fh:
+              json.dump(merged, fh, indent=2)
+          print("Wrote merged latest.json:")
+          print(open("latest.json").read())
+          PY
+      - name: Attach merged latest.json to Release
+        if: hashFiles('latest.json') != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          files: latest.json
+          draft: true
+          fail_on_unmatched_files: false

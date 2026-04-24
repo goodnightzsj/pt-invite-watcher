@@ -29,6 +29,11 @@ tauri-plugin-shell = "2"
 # Launch-at-login: macOS LaunchAgent plist, Windows startup registry, Linux
 # .desktop autostart file. User-toggleable from Config → 界面设置.
 tauri-plugin-autostart = "2"
+# Self-updating from GitHub Releases — download + verify .sig against the
+# pubkey baked into tauri.conf.json, then relaunch. User sees a banner when
+# a new version is available; no background auto-download.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
