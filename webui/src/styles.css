@@ -254,16 +254,42 @@ body {
   @apply transition-shadow duration-200 hover:shadow-glow;
 }
 
-/* Vue Transitions */
+/* Vue Transitions
+ * ---
+ * Tuned to feel snappy enough for mobile (240ms) while still guiding the
+ * eye through the swap. On small viewports we use a subtler 6px Y-drop
+ * because the visible area is smaller and a 10px jump feels like a shift.
+ * Honor `prefers-reduced-motion` by collapsing transitions — essential for
+ * vestibular-sensitive users.
+ */
 .page-enter-active,
 .page-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.24s ease, transform 0.24s ease;
 }
 
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active,
+  .page-leave-active,
+  .list-enter-active,
+  .list-leave-active,
+  .press {
+    transition: none !important;
+  }
+  .page-enter-from,
+  .page-leave-to,
+  .list-enter-from,
+  .list-leave-to {
+    transform: none !important;
+  }
+  .press:active {
+    transform: none !important;
+  }
 }
 
 

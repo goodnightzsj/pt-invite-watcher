@@ -29,6 +29,14 @@ const router = createRouter({
   routes: needsOnboarding()
     ? [{ path: "/:_all*", component: OnboardingPage }]
     : routes,
+  // Always start at the top when navigating to a new page; restore saved
+  // position when going back via browser/mobile back button. Without this
+  // Vue Router leaves the scroll position wherever it was before nav, which
+  // is jarring when pages have very different content lengths.
+  scrollBehavior(_to, _from, savedPosition) {
+    if (savedPosition) return savedPosition;
+    return { top: 0, left: 0, behavior: "smooth" };
+  },
 });
 
 initTheme();
