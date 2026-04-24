@@ -128,13 +128,46 @@ class FaviconProxyTest(unittest.TestCase):
 
         with patch.object(sites_module, "guarded_get", fake_guarded_get):
             first = self._run(self._call("broken.example"))
+            calls_after_first = calls["n"]
             second = self._run(self._call("broken.example"))
 
         self.assertEqual(first.status_code, 204)
         self.assertEqual(second.status_code, 204)
-        # Negative cache also catches exceptions — we don't keep hammering a
-        # consistently-failing origin every time the dashboard re-renders.
-        self.assertEqual(calls["n"], 1)
+        # First call walks every candidate path, because a single transient
+        # exception doesn't tell us the origin is dead — a 404 on /favicon.ico
+        # might still mean /favicon.png works. Exhausting the list is the
+        # honest outcome.
+        self.assertEqual(calls_after_first, len(sites_module._FAVICON_PATHS))
+        # But we ONLY walk it once — the second call hits the negative cache
+        # so we don't keep hammering a consistently-failing origin on every
+        # dashboard re-render.
+        self.assertEqual(calls["n"], calls_after_first)
+
+    def test_falls_through_to_favicon_png_when_favicon_ico_is_404(self) -> None:
+        """Many modern sites drop .ico and only ship PNG — the probe chain
+        must walk through path candidates until one returns a valid image."""
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
+        seen_urls: list[str] = []
+
+        async def fake_guarded_get(client, url, **kwargs):
+            seen_urls.append(url)
+            if url.endswith("/favicon.ico"):
+                return _FakeGuardResult(response=_FakeResponse(404, b"", "text/html"))
+            if url.endswith("/favicon.png"):
+                return _FakeGuardResult(response=_FakeResponse(200, png, "image/png"))
+            # Later candidates should never be reached once a valid image hits.
+            return _FakeGuardResult(response=_FakeResponse(200, b"should-not-read", "image/png"))
+
+        with patch.object(sites_module, "guarded_get", fake_guarded_get):
+            resp = self._run(self._call("png-only.example"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.body, png)
+        # We probed .ico first (which 404'd) and .png second (which won) — and
+        # did NOT keep walking into apple-touch-icon once a valid image was found.
+        self.assertEqual(len(seen_urls), 2)
+        self.assertTrue(seen_urls[0].endswith("/favicon.ico"))
+        self.assertTrue(seen_urls[1].endswith("/favicon.png"))
 
     def test_successful_image_served_from_cache_on_second_request(self) -> None:
         png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200

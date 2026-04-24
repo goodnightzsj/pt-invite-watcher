@@ -68,6 +68,17 @@ _FAVICON_BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 }
 
+# Probe order: start with the historical default, then fall through to modern
+# locations. Many recent PT sites only ship PNG / apple-touch-icon and answer
+# /favicon.ico with 404, so skipping the fallbacks misses icons we could have
+# served. Stops at the first valid image — doesn't keep pounding on a site.
+_FAVICON_PATHS: tuple[str, ...] = (
+    "/favicon.ico",
+    "/favicon.png",
+    "/apple-touch-icon.png",
+    "/apple-touch-icon-precomposed.png",
+)
+
 # Shared outbound client: creating a fresh AsyncClient per request pays a full
 # TCP+TLS handshake every time, which adds ~50-200ms per icon on a cold pool.
 # The singleton keeps keep-alive sockets warm across requests.
@@ -165,7 +176,6 @@ async def api_site_icon(domain: str) -> Response:
             headers={"Cache-Control": "public, max-age=43200"},
         )
 
-    url = f"https://{dom}/favicon.ico"
     friendly = friendly_peers_for(dom)
 
     def _remember_fail() -> Response:
@@ -174,57 +184,79 @@ async def api_site_icon(domain: str) -> Response:
 
     try:
         client = await _get_icon_client()
-        gr = await guarded_get(
-            client,
-            url,
-            expected_host=dom,
-            friendly_hosts=friendly,
-            headers=_FAVICON_BROWSER_HEADERS,
-            attempts=1,
-            delay_seconds=0,
-        )
     except Exception:
-        logger.exception("favicon proxy failed for %s", dom)
+        logger.exception("favicon proxy failed to obtain client for %s", dom)
         return _remember_fail()
 
-    # Redirected away from the site's own registrable domain — almost certainly a
-    # hijack / takedown redirect. Don't cache the decoy's icon.
-    if gr.off_site_reason or gr.response is None or gr.error is not None:
-        if gr.response is not None:
+    # Try each candidate path in order. An offsite-redirect verdict from any
+    # probe is decisive — once guarded_get says "this origin is redirecting you
+    # elsewhere" we short-circuit rather than keep probing (they'd all redirect
+    # the same way and we'd just pile up 204s).
+    for path in _FAVICON_PATHS:
+        url = f"https://{dom}{path}"
+        try:
+            gr = await guarded_get(
+                client,
+                url,
+                expected_host=dom,
+                friendly_hosts=friendly,
+                headers=_FAVICON_BROWSER_HEADERS,
+                attempts=1,
+                delay_seconds=0,
+            )
+        except Exception:
+            logger.exception("favicon proxy failed for %s (path=%s)", dom, path)
+            # Transient error on one path shouldn't doom the rest; try the next.
+            continue
+
+        if gr.off_site_reason:
+            # Hijack / parked redirect — give up on this domain entirely.
+            if gr.response is not None:
+                try:
+                    await gr.response.aclose()
+                except Exception:
+                    pass
+            return _remember_fail()
+
+        if gr.response is None or gr.error is not None:
+            if gr.response is not None:
+                try:
+                    await gr.response.aclose()
+                except Exception:
+                    pass
+            continue
+
+        resp = gr.response
+        try:
+            if resp.status_code >= 400:
+                continue
+            content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            # Some sites serve an HTML 404 page with a 200 status when the
+            # favicon is missing. Treat only real image types as valid.
+            if not (content_type.startswith("image/") or content_type in {"application/octet-stream", "application/x-ico"}):
+                continue
+            body = resp.content
+            if not body or len(body) < 32 or len(body) > _FAVICON_MAX_BYTES:
+                continue
+            media_type = content_type or "image/x-icon"
+            _icon_cache_put(dom, 200, body, media_type)
+            return Response(
+                content=body,
+                media_type=media_type,
+                headers={
+                    # 12h browser cache is enough to let users see icon refreshes on
+                    # the same day, while cutting origin hits by ~99%.
+                    "Cache-Control": "public, max-age=43200",
+                },
+            )
+        finally:
             try:
-                await gr.response.aclose()
+                await resp.aclose()
             except Exception:
                 pass
-        return _remember_fail()
 
-    resp = gr.response
-    try:
-        if resp.status_code >= 400:
-            return _remember_fail()
-        content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        # Some sites serve an HTML 404 page with a 200 status when /favicon.ico is
-        # missing. Treat only real image types as valid.
-        if not (content_type.startswith("image/") or content_type in {"application/octet-stream", "application/x-ico"}):
-            return _remember_fail()
-        body = resp.content
-        if not body or len(body) < 32 or len(body) > _FAVICON_MAX_BYTES:
-            return _remember_fail()
-        media_type = content_type or "image/x-icon"
-        _icon_cache_put(dom, 200, body, media_type)
-        return Response(
-            content=body,
-            media_type=media_type,
-            headers={
-                # 12h browser cache is enough to let users see icon refreshes on
-                # the same day, while cutting origin hits by ~99%.
-                "Cache-Control": "public, max-age=43200",
-            },
-        )
-    finally:
-        try:
-            await resp.aclose()
-        except Exception:
-            pass
+    # Exhausted all candidate paths without a valid icon.
+    return _remember_fail()
 
 
 @router.get("/api/sites/registry", dependencies=[Depends(require_auth)])
