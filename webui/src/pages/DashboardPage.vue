@@ -38,6 +38,7 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 let scanPollTimer: number | undefined;
 let inflightPollTimer: number | undefined;
 let menuUnlisten: (() => void) | undefined;
+let paletteScanHandler: (() => void) | undefined;
 
 const errorModalOpen = ref(false);
 const errorModalTitle = ref("");
@@ -324,6 +325,15 @@ onMounted(async () => {
       /* ignore — webview didn't expose listen */
     }
   }
+
+  // Command palette → "立即扫描全部站点" dispatches this custom event.
+  // Keeping the bridge via a plain window event (rather than direct method
+  // call) means App.vue can register the command without importing
+  // DashboardPage's scanRunning state.
+  paletteScanHandler = () => {
+    if (!scanRunning.value) void runScan();
+  };
+  window.addEventListener("ptiw:scan-now", paletteScanHandler);
 });
 onUnmounted(() => {
   clearInflightPoll();
@@ -334,6 +344,10 @@ onUnmounted(() => {
   if (menuUnlisten) {
     menuUnlisten();
     menuUnlisten = undefined;
+  }
+  if (paletteScanHandler) {
+    window.removeEventListener("ptiw:scan-now", paletteScanHandler);
+    paletteScanHandler = undefined;
   }
   if (wsRefreshRaf != null) {
     window.cancelAnimationFrame(wsRefreshRaf);

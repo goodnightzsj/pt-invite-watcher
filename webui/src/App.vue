@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { RouterLink, RouterView, useRoute } from "vue-router";
-import { onMounted, ref } from "vue";
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "./api";
 
 import ThemeToggle from "./components/ThemeToggle.vue";
 import Toast from "./components/Toast.vue";
 import MobileNav from "./components/MobileNav.vue";
 import ConfirmDialog from "./components/ConfirmDialog.vue";
+import CommandPalette from "./components/CommandPalette.vue";
 import { toasts, removeToast } from "./toast";
+import { registerCommands } from "./commands";
+import { clearIconCache } from "./icon_cache";
+import { setThemeMode } from "./theme";
+import { showToast } from "./toast";
 
 import {
   Activity,
@@ -30,6 +35,9 @@ const nav = [
 
 const version = ref("");
 
+const router = useRouter();
+let unregisterCommands: (() => void) | undefined;
+
 onMounted(async () => {
   try {
     const resp = await api.version();
@@ -37,6 +45,32 @@ onMounted(async () => {
   } catch (e) {
     // ignore
   }
+
+  // Register global commands — nav to each route, theme toggles, icon cache
+  // clear, scan trigger (via custom window event the Dashboard listens for).
+  // Command palette (Cmd/Ctrl+K) surfaces all of these with fuzzy search.
+  unregisterCommands = registerCommands([
+    { id: "nav.dashboard", label: "打开 · 站点状态", category: "导航", aliases: ["dashboard", "home", "主页"], shortcut: "⌘1", run: () => router.push("/") },
+    { id: "nav.sites", label: "打开 · 站点管理", category: "导航", aliases: ["sites", "manage"], shortcut: "⌘2", run: () => router.push("/sites") },
+    { id: "nav.config", label: "打开 · 服务配置", category: "导航", aliases: ["config", "settings", "设置"], shortcut: "⌘3", run: () => router.push("/config") },
+    { id: "nav.notifications", label: "打开 · 通知设置", category: "导航", aliases: ["notifications", "alerts"], shortcut: "⌘4", run: () => router.push("/notifications") },
+    { id: "nav.logs", label: "打开 · 日志", category: "导航", aliases: ["logs", "events"], shortcut: "⌘5", run: () => router.push("/logs") },
+    {
+      id: "action.scan", label: "立即扫描全部站点", category: "操作", aliases: ["scan", "refresh"], shortcut: "⌘⇧R",
+      run: () => { window.dispatchEvent(new CustomEvent("ptiw:scan-now")); showToast("已触发扫描", "info", 1600); },
+    },
+    {
+      id: "action.clear-icon-cache", label: "清除站点图标缓存", category: "操作", aliases: ["icons", "favicon"],
+      run: () => { clearIconCache(); showToast("图标缓存已清除", "success", 1600); },
+    },
+    { id: "theme.light", label: "主题 · 日间模式", category: "设置", aliases: ["light", "day"], run: () => { setThemeMode("light"); } },
+    { id: "theme.dark", label: "主题 · 夜间模式", category: "设置", aliases: ["dark", "night"], run: () => { setThemeMode("dark"); } },
+    { id: "theme.system", label: "主题 · 跟随系统", category: "设置", aliases: ["system", "auto"], run: () => { setThemeMode("system"); } },
+  ]);
+});
+
+onUnmounted(() => {
+  unregisterCommands?.();
 });
 </script>
 
@@ -112,6 +146,10 @@ onMounted(async () => {
     <!-- Cloud Bottom Nav (Mobile) -->
     <!-- Cloud Bottom Nav (Mobile) -->
     <MobileNav :items="nav" />
+
+    <!-- Command palette (Cmd/Ctrl+K). Lives at app root so it's always
+         available regardless of which route is mounted. -->
+    <CommandPalette />
 
     <!-- Toast Queue — inset by safe-area so home-indicator on iPhone doesn't
          swallow the first toast. Desktop + browser fall back to the 24/5 rem. -->
