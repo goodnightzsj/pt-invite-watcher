@@ -1,0 +1,12 @@
+{
+  "appId": "com.pt_invite_watcher.app",
+  "appName": "PT Invite Watcher",
+  "webDir": "../pt_invite_watcher/webui_dist",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https"
+  },
+  "android": {
+    "useLegacyBridge": false
+  }
+}
