@@ -105,17 +105,34 @@ jobs:
       - name: Install root npm deps (brings tauri-cli)
         run: npm ci
 
+      - name: Resolve macOS signing identity
+        # Without this, tauri-bundler tries to codesign with an empty
+        # identity and errors out. `-` is Tauri's ad-hoc sentinel which
+        # skips real codesign — the resulting .dmg triggers Gatekeeper
+        # (right-click → Open works) but the build succeeds end-to-end.
+        id: mac_signing
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -n "$IDENTITY" ]; then
+            echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+          else
+            echo "identity=-" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Tauri build
         env:
-          # macOS: optional signing / notarization. If the secrets aren't set,
-          # Tauri still produces a .dmg — just unsigned. Users download + right-click-open.
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # macOS: optional signing / notarization. If the secrets aren't
+          # set, we pass `-` (ad-hoc) so tauri-bundler skips the keychain
+          # import step entirely — previously that step failed with "failed
+          # to import keychain certificate" on empty `APPLE_CERTIFICATE`.
+          APPLE_SIGNING_IDENTITY: ${{ steps.mac_signing.outputs.identity }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows: optional code-signing .pfx
+          # Windows: optional code-signing .pfx (empty = unsigned .msi/.exe).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target ${{ matrix.rust_target }}

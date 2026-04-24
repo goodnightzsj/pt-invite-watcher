@@ -77,7 +77,9 @@ def ensure_pyinstaller() -> None:
 
 def run_pyinstaller(spec_path: Path, workdir: Path) -> None:
     cmd = [sys.executable, "-m", "PyInstaller", str(spec_path), "--distpath", str(workdir / "dist"), "--workpath", str(workdir / "build"), "--noconfirm"]
-    print("→", " ".join(cmd))
+    # ASCII-only prefix — Windows' default cp1252 console encoding doesn't
+    # carry the `→` arrow and crashes the script with UnicodeEncodeError.
+    print(">>", " ".join(cmd))
     subprocess.check_call(cmd)
 
 
