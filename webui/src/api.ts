@@ -193,30 +193,75 @@ function handleAuthFailure(): void {
   setTimeout(() => window.location.reload(), 1500);
 }
 
+// Retryable HTTP responses. 408 (request timeout), 425 (too early), 429 (rate
+// limit), 500/502/503/504 — all are either transient load conditions or
+// startup races (e.g. FastAPI /health can 503 briefly during lifespan init).
+// POST/PUT/DELETE are NOT retried because they aren't guaranteed idempotent
+// at this layer — a retried scan-run call could fire two scans. Only GETs
+// get the retry path.
+const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 400;
+
+function shouldRetry(method: string, status: number): boolean {
+  if (method.toUpperCase() !== "GET") return false;
+  return RETRYABLE_STATUSES.has(status);
+}
+
+function backoffDelay(attempt: number): number {
+  // Exponential with ±25% jitter: 400ms → 800ms → 1600ms base, clamped.
+  const base = Math.min(1600, RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
+  const jitter = base * (Math.random() * 0.5 - 0.25);
+  return Math.max(100, Math.round(base + jitter));
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   // `path` is expected to be the same relative string call sites have always
   // passed (e.g. "/api/dashboard"). `apiUrl` prepends the runtime base if one
   // is set (remote mode / Tauri embedded-sidecar mode) and keeps the string
   // relative otherwise (same-origin browser).
   const url = apiUrl(path);
-  const resp = await fetch(url, {
+  const method = (init?.method || "GET").toUpperCase();
+  const requestInit: RequestInit = {
     ...init,
     headers: {
       "Content-Type": "application/json",
       ...authHeader(),
       ...(init?.headers || {}),
     },
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    // In remote-mode shells (Capacitor / Tauri), a 401 means the stored
-    // credentials are no longer valid — typically because the user changed
-    // them server-side. Bounce them back to Onboarding instead of stranding
-    // them on a dashboard that will keep 401-ing every request.
-    if (resp.status === 401) handleAuthFailure();
-    throw new HttpError(resp.status, resp.statusText, text, url);
+  };
+
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= RETRY_ATTEMPTS; attempt++) {
+    try {
+      const resp = await fetch(url, requestInit);
+      if (resp.ok) return (await resp.json()) as T;
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(method, resp.status)) {
+        // Drain body on each attempt so `fetch` doesn't leak connections
+        // — some servers leave TCP half-open until the body is consumed.
+        try { await resp.text(); } catch { /* ignore */ }
+        await new Promise((r) => setTimeout(r, backoffDelay(attempt)));
+        continue;
+      }
+      const text = await resp.text();
+      // In remote-mode shells (Capacitor / Tauri), a 401 means the stored
+      // credentials are no longer valid — typically because the user changed
+      // them server-side. Bounce them back to Onboarding instead of stranding
+      // them on a dashboard that will keep 401-ing every request.
+      if (resp.status === 401) handleAuthFailure();
+      throw new HttpError(resp.status, resp.statusText, text, url);
+    } catch (e) {
+      // Network-level failures (offline, DNS, TLS) land here as TypeError.
+      // Retry only GETs — the same-idempotency reasoning applies.
+      if (attempt < RETRY_ATTEMPTS && method === "GET" && e instanceof TypeError) {
+        lastErr = e;
+        await new Promise((r) => setTimeout(r, backoffDelay(attempt)));
+        continue;
+      }
+      throw e;
+    }
   }
-  return (await resp.json()) as T;
+  throw lastErr || new Error("request failed after retries");
 }
 
 export const api = {
