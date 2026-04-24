@@ -20,6 +20,7 @@ import { api, type SiteRow, type ScanStatus } from "../api";
 import { showToast } from "../toast";
 import { formatLocalTime, formatRelativeTime } from "../utils/date";
 import { notifyBrowser } from "../browser_notifications";
+import { haptic } from "../capacitor_integration";
 
 const loading = ref(false);
 const dashboardLoading = ref(false);
@@ -186,11 +187,14 @@ async function runScan() {
         showToast("当前无可扫描站点（均在扫描中）", "info", 2400);
       } else if (skipped > 0) {
         showToast(`扫描已完成（跳过 ${skipped} 个在途站点）`, "success", 2400);
+        haptic("medium");
       } else {
         showToast("扫描已完成", "success", 2200);
+        haptic("medium");
       }
     } else {
       showToast(`扫描失败：${status?.error || "unknown"}`, "error", 4500);
+      haptic("heavy");
     }
     await refresh();
   } catch (e: any) {
@@ -387,6 +391,10 @@ const filterMode = ref<FilterMode>(
 
 function toggleFilter(mode: FilterMode) {
   filterMode.value = filterMode.value === mode ? "all" : mode;
+  // Haptic selection tick confirms the filter switch without the user having
+  // to visually verify the chip state — especially useful in motion / when
+  // glancing at the dashboard while doing something else.
+  haptic("selection");
 }
 
 // Mirror to URL via `replace` (not `push`) so the back button doesn't stack

@@ -30,12 +30,20 @@ interface StatusBarPlugin {
     setOverlaysWebView: (options: { overlay: boolean }) => Promise<void>;
 }
 
+interface HapticsPlugin {
+    impact: (options: { style: "LIGHT" | "MEDIUM" | "HEAVY" }) => Promise<void>;
+    selectionStart: () => Promise<void>;
+    selectionChanged: () => Promise<void>;
+    selectionEnd: () => Promise<void>;
+}
+
 interface CapacitorGlobal {
     getPlatform?: () => "web" | "ios" | "android";
     isNativePlatform?: () => boolean;
     Plugins?: {
         App?: AppPlugin;
         StatusBar?: StatusBarPlugin;
+        Haptics?: HapticsPlugin;
     };
 }
 
@@ -75,6 +83,27 @@ export function detectHost(): HostShell {
 /** Stamp the detected shell onto <html> so CSS can target via `[data-host="..."]`. */
 export function applyHostAttribute(): void {
     document.documentElement.dataset.host = detectHost();
+}
+
+/**
+ * Fire a native haptic pulse — a tiny physical thud on iOS / Android that
+ * confirms a tap landed where the user wanted. Graceful no-op on browser +
+ * Tauri. `selection` is the lightest, used for list-item focus / filter-toggle
+ * changes. `light` / `medium` correspond to iOS's UIImpactFeedbackGenerator
+ * styles and roughly to Android's HapticFeedbackConstants equivalents.
+ *
+ * Keep usage sparse — overusing haptics makes the UI feel gimmicky; reserve
+ * for confirming state changes users don't otherwise get immediate feedback
+ * from (e.g. successful save, scan complete, filter applied).
+ */
+export function haptic(style: "light" | "medium" | "heavy" | "selection" = "light"): void {
+    const h = getCapacitor()?.Plugins?.Haptics;
+    if (!h) return;
+    if (style === "selection") {
+        h.selectionChanged().catch(() => { });
+        return;
+    }
+    h.impact({ style: style.toUpperCase() as "LIGHT" | "MEDIUM" | "HEAVY" }).catch(() => { });
 }
 
 /**
