@@ -29,10 +29,6 @@ jobs:
             rust_target: aarch64-apple-darwin
             sidecar_triple: aarch64-apple-darwin
             bundle_dir: macos
-          - os: macos-13                       # Intel runner for the x86_64 .dmg
-            rust_target: x86_64-apple-darwin
-            sidecar_triple: x86_64-apple-darwin
-            bundle_dir: macos
           - os: ubuntu-22.04                   # glibc target that covers most distros
             rust_target: x86_64-unknown-linux-gnu
             sidecar_triple: x86_64-unknown-linux-gnu
@@ -169,7 +165,6 @@ jobs:
           version="${TAG#v}"; version="${version#desktop-v}"
           case "$TARGET" in
             aarch64-apple-darwin)      platform=macOS;       arch=arm64 ;;
-            x86_64-apple-darwin)       platform=macOS;       arch=x86_64 ;;
             x86_64-pc-windows-msvc)    platform=Windows;     arch=x86_64 ;;
             x86_64-unknown-linux-gnu)  platform=Linux;       arch=x86_64 ;;
             *)                         platform="$TARGET";   arch="" ;;

@@ -59,7 +59,6 @@ jobs:
           | 平台 | 架构 | 文件 |
           |---|---|---|
           | **macOS** | Apple Silicon | [\`.dmg\`](${asset}/pt-invite-watcher-v${version}-macOS-arm64.dmg) |
-          | **macOS** | Intel | [\`.dmg\`](${asset}/pt-invite-watcher-v${version}-macOS-x86_64.dmg) |
           | **Windows** | x86_64 | [\`.msi\`](${asset}/pt-invite-watcher-v${version}-Windows-x86_64.msi) · [\`.exe\`](${asset}/pt-invite-watcher-v${version}-Windows-x86_64.exe) |
           | **Linux** | x86_64 | [\`.AppImage\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.AppImage) · [\`.deb\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.deb) |
           | **Android** | universal | [\`.apk\`](${asset}/pt-invite-watcher-v${version}-Android-universal.apk) |
