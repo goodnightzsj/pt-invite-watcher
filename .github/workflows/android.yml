@@ -210,7 +210,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pt-invite-watcher-android-${{ steps.build.outputs.type }}
-          path: dist/*
+          # `actions/upload-artifact` resolves `path` from the workspace root,
+          # NOT from the job's `working-directory`. Our rename step creates
+          # `mobile/dist/...` (CWD=mobile/) so we re-prefix here. softprops
+          # has the same root-relative behavior.
+          path: mobile/dist/*
           if-no-files-found: warn
           retention-days: 30
 
@@ -218,6 +222,6 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/android-v') }}
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: mobile/dist/*
           draft: true
           fail_on_unmatched_files: false
