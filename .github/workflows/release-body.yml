@@ -61,11 +61,11 @@ jobs:
           | **macOS** | Apple Silicon | [\`.dmg\`](${asset}/pt-invite-watcher-v${version}-macOS-arm64.dmg) |
           | **macOS** | Intel | [\`.dmg\`](${asset}/pt-invite-watcher-v${version}-macOS-x86_64.dmg) |
           | **Windows** | x86_64 | [\`.msi\`](${asset}/pt-invite-watcher-v${version}-Windows-x86_64.msi) · [\`.exe\`](${asset}/pt-invite-watcher-v${version}-Windows-x86_64.exe) |
-          | **Linux** | x86_64 | [\`.AppImage\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.AppImage) · [\`.deb\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.deb) · [\`.rpm\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.rpm) |
-          | **Android** | universal | [\`.apk\`](${asset}/pt-invite-watcher-v${version}-Android-universal.apk) · [\`.aab\`](${asset}/pt-invite-watcher-v${version}-Android-universal.aab) |
-          | **iOS** | signed / simulator | [\`.ipa\`](${asset}/pt-invite-watcher-v${version}-iOS.ipa) · [\`-Simulator.app.tar.gz\`](${asset}/pt-invite-watcher-v${version}-iOS-Simulator.app.tar.gz) |
+          | **Linux** | x86_64 | [\`.AppImage\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.AppImage) · [\`.deb\`](${asset}/pt-invite-watcher-v${version}-Linux-x86_64.deb) |
+          | **Android** | universal | [\`.apk\`](${asset}/pt-invite-watcher-v${version}-Android-universal.apk) |
+          | **iOS** | simulator | [\`.app.tar.gz\`](${asset}/pt-invite-watcher-v${version}-iOS-Simulator.app.tar.gz) |
 
-          > 桌面端首次运行可能遇到 Gatekeeper / SmartScreen 提示 —— macOS 右键→打开，Windows 点「更多信息 → 仍要运行」。签名构建需要 Apple Developer / Windows EV 证书。
+          > 桌面端首次运行可能遇到 Gatekeeper / SmartScreen 提示 —— macOS 右键→打开，Windows 点「更多信息 → 仍要运行」。签名 / 上架版本（含 \`.rpm\` / \`.aab\` / \`.ipa\`）需要 Apple Developer / Windows EV / Android keystore 证书；详见 [docs/multi-platform.md](https://github.com/${REPO}/blob/${TAG}/docs/multi-platform.md)。
 
           ## 📝 变更
 
