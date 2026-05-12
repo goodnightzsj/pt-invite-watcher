@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hmac
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
@@ -50,7 +51,9 @@ def _ws_is_authorized(websocket: WebSocket) -> bool:
     if ":" not in decoded:
         return False
     user, _, pw = decoded.partition(":")
-    return user == ba.username and pw == ba.password
+    # Constant-time compare — matches the HTTP BasicAuth path; don't leak
+    # username/password length or prefix via early-exit timing.
+    return hmac.compare_digest(user, ba.username or "") and hmac.compare_digest(pw, ba.password or "")
 
 
 @router.websocket("/ws/events")

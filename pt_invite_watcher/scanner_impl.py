@@ -213,6 +213,12 @@ class Scanner:
             logger.exception("failed to clear scan hint")
 
     async def run_once(self) -> Dict[str, Any]:
+        # Fail fast instead of queuing behind the scheduler: a full cycle holds
+        # _run_lock for minutes, so a blocking acquire here would make the
+        # "立即扫描" request hang. (locked()→acquire() has no suspension point
+        # in between on asyncio's single thread, so the check is race-free.)
+        if self._run_lock.locked():
+            raise AlreadyScanningError("global")
         async with self._run_lock:
             return await self._run_once_locked(ctx_reason="scan_context", prefer_moviepilot_cache_if_fresh=False)
 
@@ -288,6 +294,8 @@ class Scanner:
             return result.status
 
     async def run_one(self, domain: str) -> Dict[str, Any]:
+        if self._run_lock.locked():
+            raise AlreadyScanningError(_normalize_domain(domain) or "global")
         async with self._run_lock:
             started_at = datetime.now(timezone.utc)
             target = _normalize_domain(domain)

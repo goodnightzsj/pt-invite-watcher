@@ -26,6 +26,9 @@ async def check_invites_for_site(
             invites = await mteam_detector.check_invites(client, site, user_agent, retry_delay_seconds=retry_delay_seconds)
             if invites.state == "unknown":
                 if cookie_header_for_invites:
+                    # Fallback path keeps the default retry delay on purpose
+                    # (see tests/test_scanner_invites); the M-Team JSON probe
+                    # already burned the per-site retry budget.
                     invites = await detector.check_invites(client, site, user_agent, cookie_header_for_invites)
             return invites
 

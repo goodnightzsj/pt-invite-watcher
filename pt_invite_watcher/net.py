@@ -82,6 +82,26 @@ async def request_with_retry(
 
     last_exc: Optional[Exception] = None
     last_resp: Optional[TResponse] = None
+    # Cap the *cumulative* sleep across all retries. _MAX_WAIT_SECONDS already
+    # caps a single Retry-After, but `attempts × 300s` would still let one
+    # hostile site hold a scan task for many minutes. Once the budget is spent
+    # we stop retrying and hand back whatever we have.
+    total_waited = 0
+
+    async def _bounded_sleep(seconds: int) -> bool:
+        """Sleep up to ``seconds``, clipped to the remaining budget.
+
+        Returns ``False`` when the budget is exhausted (caller should give up
+        and return immediately rather than retry again)."""
+        nonlocal total_waited
+        remaining = _MAX_WAIT_SECONDS - total_waited
+        if remaining <= 0:
+            return False
+        clipped = min(int(seconds), remaining)
+        if clipped > 0:
+            await asyncio.sleep(clipped)
+            total_waited += clipped
+        return True
 
     for attempt in range(used_attempts):
         try:
@@ -103,8 +123,9 @@ async def request_with_retry(
                     sleep_for = min(retry_after, _MAX_WAIT_SECONDS)
                 else:
                     sleep_for = _backoff_seconds(attempt, wait_seconds)
-                if sleep_for > 0:
-                    await asyncio.sleep(sleep_for)
+                if not await _bounded_sleep(sleep_for):
+                    # Out of retry budget — return the (closed) last response.
+                    return resp, None, attempt + 1
                 continue
             return resp, None, attempt + 1
         except asyncio.CancelledError:
@@ -113,15 +134,15 @@ async def request_with_retry(
             # Transient TCP/DNS failures — retry quickly, these rarely need 30s cooling.
             last_exc = e
             if attempt < used_attempts - 1:
-                await asyncio.sleep(_backoff_seconds(attempt, _CONNECT_RETRY_BASE_SECONDS))
+                if not await _bounded_sleep(_backoff_seconds(attempt, _CONNECT_RETRY_BASE_SECONDS)):
+                    return None, e, attempt + 1
                 continue
             return None, e, attempt + 1
         except httpx.RequestError as e:
             last_exc = e
             if attempt < used_attempts - 1:
-                sleep_for = _backoff_seconds(attempt, wait_seconds)
-                if sleep_for > 0:
-                    await asyncio.sleep(sleep_for)
+                if not await _bounded_sleep(_backoff_seconds(attempt, wait_seconds)):
+                    return None, e, attempt + 1
                 continue
             return None, e, attempt + 1
         except Exception as e:

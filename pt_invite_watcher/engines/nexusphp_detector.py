@@ -208,6 +208,18 @@ class NexusPhpDetector:
                         evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="registration_closed", matched=closed_pat),
                     )
 
+                # Closed-registration NexusPHP sites commonly redirect
+                # signup.php -> login.php on the same registrable domain
+                # (so guarded_get follows it instead of raising
+                # RedirectedAwayError). The login page contains a <form>, so
+                # the _has_signup_form check below would mis-report "open".
+                # Catch the login page explicitly first.
+                if _looks_like_login(resp):
+                    return AspectResult(
+                        state="closed",
+                        evidence=Evidence(url=str(resp.url), http_status=resp.status_code, reason="registration_login_redirect"),
+                    )
+
                 if not _has_signup_form(resp.text or ""):
                     return AspectResult(
                         state="closed",
