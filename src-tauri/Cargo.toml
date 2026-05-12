@@ -1,6 +1,6 @@
 [package]
 name = "pt-invite-watcher-shell"
-version = "0.1.1"
+version = "0.1.2"
 description = "Native desktop / mobile shell for PT Invite Watcher"
 edition = "2021"
 # Tauri 2 supports stable Rust 1.77+; pin to avoid silent toolchain drift between dev boxes.
