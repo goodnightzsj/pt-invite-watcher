@@ -23,6 +23,7 @@ All predicates err on the side of *detection*: a false positive surfaces as a "å
 reports a hijacked site as healthy.
 """
 
+import ipaddress
 import logging
 import re
 from contextlib import suppress
@@ -93,7 +94,17 @@ def same_registrable_domain(a: str, b: str) -> bool:
 
 
 def is_blacklisted_host(host: str) -> bool:
-    rd = registrable_domain(host)
+    h = (host or "").strip().lower().rstrip(".")
+    # A literal IP in a private / loopback / link-local / reserved range is
+    # never a legitimate PT target â€” block it as SSRF defense-in-depth
+    # (the same-registrable-domain redirect check already blocks most paths;
+    # this catches an initial URL pointing straight at an internal address).
+    try:
+        ip = ipaddress.ip_address(h)
+        return bool(ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+    except ValueError:
+        pass
+    rd = registrable_domain(h)
     if not rd:
         return False
     return rd in _REDIRECT_BLACKLIST

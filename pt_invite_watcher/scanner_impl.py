@@ -278,6 +278,13 @@ class Scanner:
             ctx_reason=ctx_reason,
             prefer_moviepilot_cache_if_fresh=prefer_moviepilot_cache_if_fresh,
         ) as prepared:
+            # Drop circuit-breaker state for sites no longer in the list, so a
+            # long-running deployment with churning MoviePilot sites doesn't
+            # accumulate dead entries forever.
+            current = {_normalize_domain(getattr(s, "domain", "")) for s in (prepared.sites or [])}
+            current.discard("")
+            if current:
+                self._circuit = {d: v for d, v in self._circuit.items() if d in current}
             result = await _run_once_locked_impl(
                 store=self._store,
                 prepared=prepared,

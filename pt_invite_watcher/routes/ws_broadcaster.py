@@ -176,6 +176,12 @@ class WebSocketBroadcaster:
                 for ws in failed:
                     if ws in self._clients:
                         self._clients.remove(ws)
+            # Close the dropped sockets so the endpoint coroutine (parked in
+            # receive_text()) unblocks and runs its cleanup, instead of
+            # leaving a zombie connection that's removed-but-never-closed.
+            for ws in failed:
+                with suppress(Exception):
+                    await ws.close()
 
 
 ws_broadcaster = WebSocketBroadcaster()

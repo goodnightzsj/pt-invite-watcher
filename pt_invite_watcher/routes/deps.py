@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 from typing import Annotated, Any, Dict, Optional
 
@@ -31,7 +32,11 @@ def _maybe_require_auth(credentials: Optional[HTTPBasicCredentials], settings: S
         return
     if not credentials or not credentials.username or not credentials.password:
         raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Basic"})
-    if credentials.username != settings.web.basic_auth.username or credentials.password != settings.web.basic_auth.password:
+    # Constant-time compare — `!=` short-circuits on the first differing byte,
+    # leaking the username/password length & prefix via response timing.
+    user_ok = hmac.compare_digest(credentials.username, settings.web.basic_auth.username or "")
+    pass_ok = hmac.compare_digest(credentials.password, settings.web.basic_auth.password or "")
+    if not (user_ok and pass_ok):
         raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
 
 
