@@ -104,6 +104,12 @@ def is_blacklisted_host(host: str) -> bool:
         return bool(ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
     except ValueError:
         pass
+    # `localhost` and bare single-label / *.local / *.internal names resolve to
+    # internal hosts but aren't IP literals — a real PT target is always a FQDN.
+    if h in {"localhost", "localhost.localdomain"} or "." not in h:
+        return True
+    if h.endswith(".localhost") or h.endswith(".local") or h.endswith(".internal") or h.endswith(".lan") or h.endswith(".home.arpa"):
+        return True
     rd = registrable_domain(h)
     if not rd:
         return False
