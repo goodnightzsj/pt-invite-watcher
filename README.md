@@ -4,7 +4,26 @@
 
 ## 📸 界面预览
 
-![PT Invite Watcher Web UI](docs/screenshots/web-ui.png)
+仪表盘 — 站点状态总览、扫描进度、最近事件：
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+<details>
+<summary>更多页面截图（站点管理 / 服务配置 / 通知设置 / 日志）</summary>
+
+### 站点管理
+![Sites](docs/screenshots/sites.png)
+
+### 服务配置（所有运行参数可在 Web UI 热更新）
+![Config](docs/screenshots/config.png)
+
+### 通知设置（Telegram / 企业微信）
+![Notifications](docs/screenshots/notifications.png)
+
+### 实时日志（WebSocket 流式推送，可按分类 / 站点 / 关键字过滤）
+![Logs](docs/screenshots/logs.png)
+
+</details>
 
 ## ✨ 功能特性
 
