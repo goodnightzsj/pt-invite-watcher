@@ -222,6 +222,13 @@ async def guarded_get(
     friendly = friendly_hosts or frozenset()
     chain: list[dict[str, Any]] = []
     total_retries = 0
+    # SSRF defense-in-depth: the redirect-hop loop below blocks blacklisted
+    # hosts, but the *initial* URL was never checked — a site URL (or an
+    # /api/sites/icon domain param) pointing straight at 127.0.0.1 /
+    # 169.254.169.254 / a private range got fetched. Block it here too.
+    initial_host = (urlparse(url).hostname or "").lower()
+    if initial_host and is_blacklisted_host(initial_host):
+        return GuardedResponse(None, None, 0, chain, "blacklisted", initial_host)
     for _hop in range(max_redirects + 1):
         current_url = target  # bind explicitly so the lambda below captures the right value
         resp, err, used = await request_with_retry(

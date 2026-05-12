@@ -28,3 +28,9 @@ pt_invite_watcher/webui_dist/
 Plan.md
 .ai_memory/
 .ace-tool/
+# --- trellis local (do not commit) ---
+.trellis/
+.claude/
+.agents/
+AGENTS.md
+.codex/

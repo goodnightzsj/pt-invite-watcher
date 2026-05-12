@@ -19,6 +19,9 @@ async def api_logs(
     keyword: str = "",
     limit: int = 200,
 ) -> Dict[str, Any]:
+    # Clamp: limit=0 means "no LIMIT clause" in the store and would pull the
+    # whole event_log table into memory + JSON on a single request.
+    limit = 200 if limit <= 0 else min(limit, 2000)
     items = await ctx.store.list_events(category=category, domain=domain, keyword=keyword, limit=limit)
     return {"items": items}
 
