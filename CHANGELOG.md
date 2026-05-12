@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.2](https://github.com/goodnightzsj/pt-invite-watcher/compare/v0.1.1...v0.1.2) (2026-05-12)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** drop Intel Mac (x86_64-apple-darwin) from desktop build matrix ([517552d](https://github.com/goodnightzsj/pt-invite-watcher/commit/517552d8c8d339c91403eac92514d9f5b85fdcf0))
+* false-positive open-registration + retry-wait cap + scan-run hang ([3a73d9a](https://github.com/goodnightzsj/pt-invite-watcher/commit/3a73d9a88fb1217d796c69963cb325681765ab42))
+* **r2:** constant-time HTTP BasicAuth, SSRF IP block, bounded circuit map, close zombie WS ([46f4a64](https://github.com/goodnightzsj/pt-invite-watcher/commit/46f4a64442af17715d6fd1f5178caec8a43c31f8))
+* **release-body:** drop dead links for unbuilt artifacts (.rpm/.aab/.ipa) ([6698049](https://github.com/goodnightzsj/pt-invite-watcher/commit/6698049edaeae58c7babc8ef509a21dd26731057))
+
+
+### 📝 Docs
+
+* add Web UI screenshot to README ([6ee0b53](https://github.com/goodnightzsj/pt-invite-watcher/commit/6ee0b535e825ca78145b1be93e3ff6202c1a60df))
+* expand README screenshots gallery (all Web UI pages) ([d622334](https://github.com/goodnightzsj/pt-invite-watcher/commit/d62233484445d8d8b9e2dff2b2e01809dde5e2b5))
+
 ## [0.1.1](https://github.com/goodnightzsj/pt-invite-watcher/compare/v0.1.0...v0.1.1) (2026-04-24)
 
 
