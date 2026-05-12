@@ -2,6 +2,10 @@
 
 长期运行的 PT 站点 **开放注册 / 可用邀请数 / 连通性** 监控服务（默认支持 NexusPHP 与 M-Team），站点列表来源于 MoviePilot 或手动配置，Cookie 优先从 CookieCloud 获取并支持回退。所有运行配置可在 Web UI 中热更新，不需重启容器。
 
+## 📸 界面预览
+
+![PT Invite Watcher Web UI](docs/screenshots/web-ui.png)
+
 ## ✨ 功能特性
 
 - **多源站点管理**
