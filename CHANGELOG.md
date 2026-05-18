@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/goodnightzsj/pt-invite-watcher/compare/v0.1.2...v0.1.3) (2026-05-12)
+
+
+### 🐛 Bug Fixes
+
+* **r3:** is_blacklisted_host also rejects localhost / single-label / .local style names ([f0e949a](https://github.com/goodnightzsj/pt-invite-watcher/commit/f0e949afed73ff1b3ed44968f70df28b6a73a5cc))
+* **r3:** SSRF — block private/loopback IPs on the INITIAL guarded_get URL too; clamp /api/logs limit ([76080ea](https://github.com/goodnightzsj/pt-invite-watcher/commit/76080eaf8ebd9327054b173923567731239bc766))
+
 ## [0.1.2](https://github.com/goodnightzsj/pt-invite-watcher/compare/v0.1.1...v0.1.2) (2026-05-12)
 
 
